@@ -72,6 +72,18 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PL", "S"]
 ignore = [
     "PLR0913", # an extraction record legitimately takes many explicit inputs
     "S101",    # assert is how tests assert
+    # RUF002/RUF003 flag "ambiguous" Unicode in docstrings and comments. This repository's
+    # subject is multilingual trade documents: its prose legitimately contains Greek letters,
+    # currency symbols, en dashes and the typographic marks that appear on the pages being
+    # read. The rules exist to catch a homoglyph smuggled into ASCII code, and in *prose* they
+    # produce nothing but noise — a linter that cries wolf on every explanation of a Greek
+    # final sigma is a linter somebody switches off entirely.
+    #
+    # RUF001, which flags the same characters in **string literals**, stays on. That is where a
+    # homoglyph would be a real defect, and where a Greek `Α` standing in for a Latin `A` would
+    # silently break a comparison. Deliberate cases there carry a `noqa` with a reason.
+    "RUF002",
+    "RUF003",
 ]
 
 [tool.ruff.lint.per-file-ignores]
