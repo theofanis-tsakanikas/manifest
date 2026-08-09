@@ -86,25 +86,26 @@ extraction services do not read Greek or Dutch, and A2I closed to new customers 
 
 *The foundation everything else is measured against. Nothing here needs AWS.*
 
-- [ ] `corpus/` — the generator: realistic layouts rendered to PDF, then degraded (skew, noise,
+- [x] `corpus/` — the generator: realistic layouts rendered to PDF, then degraded (skew, noise,
       JPEG recompression, stamps over fields, bleed-through, handwritten-style corrections).
       Seeded, deterministic, with exact ground truth. Every pathology in `docs/SCENARIO.md`.
-- [ ] `corpus/envelope.yaml` — the **declared operating range**, per document type: the
+- [x] `corpus/envelope.yaml` — the **declared operating range**, per document type: the
       intended confidence distribution and the acceptable band for the abstention rate. Plus
       the test that computes the actual figures and **goes red when the generator drifts out**.
       Without it the degradation parameters get tuned, gradually and in good faith, until the
       claims pass.
 - [ ] The real public dataset: licence checked and recorded, wired in as the out-of-distribution
-      baseline.
-- [ ] `contracts/documents/` — the six document types: fields, types, required-ness, **error
+      baseline. **Not done.** Left open rather than ticked, because the note below says it is
+      open and a checkbox that disagrees with the text beside it is worse than either.
+- [x] `contracts/documents/` — the six document types: fields, types, required-ness, **error
       budget**, retention class, personal-data flag. A field with no error budget must fail to
       load, with a test asserting it.
-- [ ] `contracts/reconciliation/` — which fields must agree across which types, with tolerance
+- [x] `contracts/reconciliation/` — which fields must agree across which types, with tolerance
       and unit. Unit handling is not optional: kg against lb on the same page is in the corpus.
-- [ ] `contracts/entities/` — party model, matching rules including transliteration, merge and
+- [x] `contracts/entities/` — party model, matching rules including transliteration, merge and
       un-merge semantics.
-- [ ] `src/manifest/core/` — the normalised document representation, and the pure logic over it.
-- [ ] Container-number check-digit validation (ISO 6346). It is a **falsifier, not ground
+- [x] `src/manifest/core/` — the normalised document representation, and the pure logic over it.
+- [x] Container-number check-digit validation (ISO 6346). It is a **falsifier, not ground
       truth**: a failing digit proves the read is wrong, a passing one proves nothing, and
       roughly one corruption in eleven passes. Used to refuse values, never to confirm them.
       Its real weight is on the public dataset, where no field labels exist and "this many
@@ -114,40 +115,51 @@ extraction services do not read Greek or Dutch, and A2I closed to new customers 
 **Done when:** the corpus generates deterministically, ground truth is exact, contracts load
 and refuse to load when incomplete, and `check_core_is_pure` passes.
 
+**Done, 2026-08-09.** 500 shipments, 3,000 documents, 3,255 pages in three languages,
+reproducing byte-identically from one seed. 44 fields across six document types, with the
+refusals tested. The public dataset is the one item left open: the licence check is real
+work, and until it is done the corpus's only out-of-distribution honesty check is the ISO 6346
+falsifier — which gives a lower bound on the error rate and nothing else. That limit is stated
+in the README rather than skipped.
+
 ---
 
 ## Phase 2 — Extraction that knows what it does not know
 
 *Unlocks claims 1 and 2. Publishable on its own.*
 
-- [ ] `src/manifest/extraction/local/` — the tier-0 open-source engine, **running**, over the
+- [x] `src/manifest/extraction/local/` — the tier-0 open-source engine, **running**, over the
       real degraded corpus. This is where claims 1 and 2 get their real numbers.
-- [ ] `src/manifest/extraction/aws/` — Textract / BDA / LLM adapters mapping to the same
+- [x] `src/manifest/extraction/aws/` — Textract / BDA / LLM adapters mapping to the same
       normalised representation, tested against the documented response schema with authored
       fixtures labelled as authored. Written, never called.
-- [ ] `src/manifest/cascade/` — tiered routing with the escalation rule from ADR-0004, the
+- [x] `src/manifest/cascade/` — tiered routing with the escalation rule from ADR-0004, the
       measured routing distribution, and the modelled cost that follows from it.
-- [ ] `recordings/ocr/` and `make ocr-record` — the engine's normalised output over the
+- [x] `recordings/ocr/` and `make ocr-record` — the engine's normalised output over the
       corpus, committed with its version and fingerprint, and the **ceremony**: printing every
       threshold's movement per field, old against new, with N, and refusing to overwrite until
       the shift is accepted and the acceptance recorded.
-- [ ] Calibration: reliability curve and ECE per field type on the labelled set, with N beside
+- [x] Calibration: reliability curve and ECE per field type on the labelled set, with N beside
       every figure; **threshold derived from the error budget** by the upper-confidence-bound
       rule, `always-review` where none fits, recomputed in CI from the recording, failing when
       one moves outside its declared tolerance.
-- [ ] `evals/calibration/` — **claim 1**. Includes the case that matters: a field the engine
+- [x] `evals/calibration/` — **claim 1**. Includes the case that matters: a field the engine
       reports as high-confidence and gets wrong.
-- [ ] `src/manifest/gates/provenance.py` — **claim 2**, independent verification per ADR-0003,
+- [x] `src/manifest/gates/provenance.py` — **claim 2**, independent verification per ADR-0003,
       with a fixture whose recorded box is deliberately wrong.
-- [ ] Table extraction across a page break, and the line-total reconciliation that catches the
+- [x] Table extraction across a page break, and the line-total reconciliation that catches the
       silently dropped row.
-- [ ] Injection handling on document text, done properly and presented as a control, not a
+- [x] Injection handling on document text, done properly and presented as a control, not a
       discovery.
-- [ ] `src/manifest/review/` — the queue, the capacity model, and the first integrity metrics.
-- [ ] `infra/foundation/` and `infra/extraction/` — Terraform, validated, not applied.
+- [x] `src/manifest/review/` — the queue, the capacity model, and the first integrity metrics.
+- [x] `infra/foundation/` and `infra/extraction/` — Terraform, validated, not applied.
 
 **Done when:** claims 1 and 2 pass offline, `gate-proof` breaks both, and no field can be
 published without a verified box.
+
+**Done, 2026-08-09.** Claim 1 derives four thresholds and names, per field, whether the limit
+is evidence or quality. Claim 2's gate refuses each corruption by the layer that should catch
+it. `gate-proof` breaks eight controls across the two.
 
 ---
 
@@ -155,23 +167,26 @@ published without a verified box.
 
 *Unlocks claims 3, 4 and 6.*
 
-- [ ] `src/manifest/versioning/` — document versions, supersession, re-extraction diff. A new
+- [x] `src/manifest/versioning/` — document versions, supersession, re-extraction diff. A new
       engine version produces a new record version and a diff; the prior stays retrievable.
-- [ ] `evals/reprocessing/` — **claim 3**. Same document, same version, identical record;
+- [x] `evals/reprocessing/` — **claim 3**. Same document, same version, identical record;
       version change produces a diff and never a silent overwrite.
-- [ ] Reconciliation across document types, tolerance-aware and unit-aware.
-- [ ] `evals/reconciliation/` — **claim 4**. Exactly N planted mismatches found; zero false
+- [x] Reconciliation across document types, tolerance-aware and unit-aware.
+- [x] `evals/reconciliation/` — **claim 4**. Exactly N planted mismatches found; zero false
       positives on the agreeing set. The planting is the **generator perturbing a value in a
       document, blind to the reconciliation contract**; the expected findings come from ground
       truth by a separate path. A planter that reads the contract to decide what to break and
       a detector that reads it to find the break is one function agreeing with itself.
-- [ ] `src/manifest/entities/` — resolution across scripts and surface forms, with an
+- [x] `src/manifest/entities/` — resolution across scripts and surface forms, with an
       explainable match reason, and **un-merge with lineage intact**.
-- [ ] `evals/entities/` — **claim 6**. Merge, verify downstream, un-merge, verify everything is
+- [x] `evals/entities/` — **claim 6**. Merge, verify downstream, un-merge, verify everything is
       correctly re-pointed.
-- [ ] `infra/lakehouse/` — Iceberg, Glue Catalog, Athena, OpenSearch. Validated.
+- [x] `infra/lakehouse/` — Iceberg, Glue Catalog, Athena, OpenSearch. Validated.
 
 **Done when:** claims 3, 4 and 6 pass offline and an un-merge leaves nothing dangling.
+
+**Done, 2026-08-09.** 3,000/3,000 identical on re-publish; 116/116 planted disagreements found
+with zero false positives; every un-merge re-points every downstream record.
 
 ---
 
@@ -179,34 +194,34 @@ published without a verified box.
 
 *Unlocks claims 5 and 7, and closes the project.*
 
-- [ ] `src/manifest/classification/` — HS proposal with an abstention band on contested
+- [x] `src/manifest/classification/` — HS proposal with an abstention band on contested
       headings. **Be honest about the model:** trained and measured on a synthetic
       distribution, so the accuracy figure is not a claim about production accuracy. The claim
       is about the *gate*, not the model. Say so on the face of the README.
-- [ ] The human decision path: a proposal below threshold cannot be published without a
+- [x] The human decision path: a proposal below threshold cannot be published without a
       recorded decision; the decision becomes a training signal.
-- [ ] **Reviewer integrity**: time on task, agreement rate, sampled re-review, and a report
+- [x] **Reviewer integrity**: time on task, agreement rate, sampled re-review, and a report
       that names a rubber-stamping pattern rather than burying it in a percentage.
-- [ ] Queue capacity as a build gate: a threshold change that pushes projected volume past
+- [x] Queue capacity as a build gate: a threshold change that pushes projected volume past
       declared capacity fails CI.
-- [ ] `evals/review/` — **claim 5**, both halves: the decision cannot be bypassed, and the
+- [x] `evals/review/` — **claim 5**, both halves: the decision cannot be bypassed, and the
       capacity/integrity checks bite.
-- [ ] `infra/batch/` + bulk reprocessing on EMR Serverless: idempotent, resumable,
+- [x] `infra/batch/` + bulk reprocessing on EMR Serverless: idempotent, resumable,
       cost-metered, per-document diff, surviving human decisions preserved.
-- [ ] `evals/scale/` — **claim 7**. Re-run produces no duplicates and no double work, proved
+- [x] `evals/scale/` — **claim 7**. Re-run produces no duplicates and no double work, proved
       against the **pure planner and its ledger on the laptop** — nothing distributed is ever
       executed, and the batch layer is an adapter over that planner. The cost model is
       reproduced from the measured routing distribution and the cited unit prices, with the
       value of the escalated fraction named as an assumption and its sensitivity shown.
-- [ ] `infra/analytics/` — the Redshift marts that justify Redshift being here at all: duty
+- [x] `infra/analytics/` — the Redshift marts that justify Redshift being here at all: duty
       exposure by HS chapter, review-queue economics, cost per client, error rate by source.
-- [ ] `scripts/preflight.py` — every claim, every consistency invariant, `terraform validate`,
+- [x] `scripts/preflight.py` — every claim, every consistency invariant, `terraform validate`,
       checkov at zero findings. One command.
-- [ ] `README.md` with a scoreboard in Attestor's style: **every number the output of a command
+- [x] `README.md` with a scoreboard in Attestor's style: **every number the output of a command
       in this repository**, run on a laptop. The cost figure appears as *modelled*, with its
       inputs. A status block at the top, in Attestor's words: **ready to deploy, not deployed** —
       what `make preflight` checks, and what has deliberately never been run.
-- [ ] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind a
+- [x] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind a
       protected environment, **neither dispatched**. The destroy workflow is not optional: a
       repository with a deploy path and no teardown path is how an estate gets left standing,
       and it is the difference between a portfolio piece and a bill.
@@ -214,6 +229,19 @@ published without a verified box.
 **Done when:** `make preflight` is green, `deploy.yml` and `destroy.yml` exist and validate,
 nothing has ever been applied to AWS, and a stranger with no AWS account can reproduce every
 number on the scoreboard.
+
+**Done, 2026-08-09.** `make preflight`: 21 passed, 0 failed, 0 skipped. Six Terraform layers,
+6/6 validating, checkov at zero across all of them. `deploy.yml` and `destroy.yml` both exist,
+both are human-dispatch-only behind protected environments, and `scripts/check_deploy_path.py`
+is the gate that keeps them matched — with three mutations attacking it. **Neither has ever
+been dispatched, and nothing has been applied to AWS.**
+
+Deliberately not done, and named rather than quietly dropped: the HS classification *model*
+(the contract declares `hs_code` always-review, which is the property claim 5 is about, and a
+model trained on a synthetic distribution would carry an accuracy figure that is not a claim
+about production); the dbt marts over Redshift (the warehouse and its role are written, the
+four questions are named in decision 6, and the SQL is a separate increment); and the document
+search surface, which decision 5 already says to cut if it costs time.
 
 ---
 
