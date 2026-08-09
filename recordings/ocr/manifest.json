@@ -1,0 +1,14 @@
+{
+ "corpus_fingerprint": "f53f2941f73f03c720dfd723c790504b7b5094dd81e53fca0239693cf1ff31b3",
+ "corpus_seed": 20260809,
+ "digest": "2868d38de5911f9283d7ade11748f21a95d63f15d1dd71ec146100b5c554336f",
+ "language_data": [
+  "el",
+  "en",
+  "nl"
+ ],
+ "pages": 778,
+ "reader_name": "reference-ocr",
+ "reader_version": "tesseract 5.5.2",
+ "words": 43573
+}

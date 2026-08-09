@@ -57,7 +57,7 @@ RUFF = _tool("ruff")
 #: it another way still runs the scan.
 CHECKOV = str(_CV) if (_CV := ROOT / ".venv-checkov" / "bin" / "checkov").exists() else "checkov"
 
-LINT_PATHS = ["src", "tests", "scripts"]
+LINT_PATHS = ["src", "tests", "scripts", "corpus"]
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -94,6 +94,14 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "planting is blind",
+        [PYTHON, "scripts/check_planting_is_blind.py"],
+        "The corpus plants mismatches in the vocabulary of shipment facts and knows nothing "
+        "about the rules that will find them. Without it, claim 4 is one function agreeing "
+        "with itself and reports green forever.",
+    ),
+    Check(
+        "correctness",
         "gate-proof",
         [PYTHON, "scripts/gate_proof.py"],
         "Each gate refuses a real violation, for the right reason. Slow, and the most "
@@ -101,6 +109,21 @@ CHECKS: list[Check] = [
         slow=True,
     ),
     # ── Consistency ─────────────────────────────────────────────────────────
+    Check(
+        "consistency",
+        "contracts",
+        [PYTHON, "scripts/check_contracts.py"],
+        "Every contract loads and the set cross-checks. A rule naming a field nobody declared "
+        "is otherwise discovered at run time, on a document, in front of a customer.",
+    ),
+    Check(
+        "consistency",
+        "corpus reproduces",
+        [PYTHON, "-m", "corpus.generate", "--check"],
+        "If the corpus drifts, every claim above was scored against a different corpus than "
+        "the one that was reviewed — which is the same as not having scored them.",
+        slow=True,
+    ),
     Check(
         "consistency",
         "lint",

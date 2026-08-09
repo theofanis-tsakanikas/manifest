@@ -90,7 +90,12 @@ ignore = [
 # S311: the corpus generator degrades pages with a *seeded* generator. Determinism is the
 # requirement, not cryptographic strength — and the seed is what makes a failure reproducible
 # by the person reading it.
-"corpus/**" = ["PLR2004", "S311"]
+# The corpus's *content* is multilingual trade documents, so its Greek labels and party
+# names are the data rather than a homoglyph risk. RUF001 is switched off here and stays on
+# everywhere else, where a Greek `\u0391` standing in for a Latin `A` would silently break a
+# comparison. PLR0917 counts positional arguments on layout functions whose signature mirrors
+# the page: a caption, a coordinate, a value.
+"corpus/**" = ["PLR2004", "S311", "RUF001", "PLR0917"]
 "tests/**" = ["PLR2004", "S105", "S106", "S311"]
 "evals/**" = ["PLR2004", "S311"]
 # These scripts shell out to `terraform`, `make`, `git` and `tesseract` by name. A hardcoded

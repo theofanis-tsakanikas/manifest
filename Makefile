@@ -16,7 +16,7 @@ RUFF := $(if $(wildcard $(VENV)/bin/ruff),$(VENV)/bin/ruff,ruff)
 CHECKOV_VENV := .venv-checkov
 CHECKOV := $(if $(wildcard $(CHECKOV_VENV)/bin/checkov),$(CHECKOV_VENV)/bin/checkov,checkov)
 
-LINT_PATHS := src tests scripts
+LINT_PATHS := src tests scripts corpus
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Everything above the "cloud" section runs with NO AWS account and NO
@@ -51,6 +51,23 @@ fmt: ## Apply ruff formatting
 	$(RUFF) format $(LINT_PATHS)
 	$(RUFF) check --fix $(LINT_PATHS)
 
+# ── The corpus and the engine recording ──────────────────────────────────────
+
+.PHONY: corpus
+corpus: ## Generate the corpus from its seed — pages and ground truth
+	$(PY) -m corpus.generate
+
+.PHONY: corpus-check
+corpus-check: ## The generator reproduces the committed ground truth, exactly
+	$(PY) -m corpus.generate --check
+
+# The ceremony, not a command. It is the one act that can move every threshold in this
+# repository at once, so it refuses to overwrite without ACCEPT=1 and prints what changed
+# before it writes. See ADR-0005 and docs/DECISIONS.md 19.
+.PHONY: ocr-record
+ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to overwrite)
+	$(PY) scripts/ocr_record.py $(if $(ACCEPT),--accept,)
+
 # ── The seven claims ─────────────────────────────────────────────────────────
 #
 # One target per claim, added by the phase that earns it. A target here whose claim is not
@@ -65,11 +82,19 @@ fmt: ## Apply ruff formatting
 #   claim 7  bulk reprocessing is idempotent, cost modelled      — phase 4
 
 .PHONY: claims
-claims: core-pure ## Every claim gate that exists today
+claims: core-pure planting-blind contracts-validate corpus-check ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
 	$(PY) scripts/check_core_is_pure.py
+
+.PHONY: planting-blind
+planting-blind: ## The corpus plants mismatches blind to the rules that will find them
+	$(PY) scripts/check_planting_is_blind.py
+
+.PHONY: contracts-validate
+contracts-validate: ## Every contract loads and the set cross-checks
+	$(PY) scripts/check_contracts.py
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason
