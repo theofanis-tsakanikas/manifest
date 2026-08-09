@@ -16,6 +16,10 @@ fields:
     error_budget: 0.005
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Certificate no."
+      el: "Αρ. πιστοποιητικού"
+      nl: "Certificaatnr."
   - name: country_of_origin
     type: country
     description: >-
@@ -24,6 +28,10 @@ fields:
       lands on. Two characters, no redundancy, nothing to check it against on this document.
     error_budget: 0.001
 
+    anchors:
+      en: "Country of origin"
+      el: "Χώρα καταγωγής"
+      nl: "Land van oorsprong"
   - name: issuing_chamber
     type: text
     description: >-
@@ -34,6 +42,10 @@ fields:
     retention: operational
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Issuing chamber"
+      el: "Εκδούσα αρχή"
+      nl: "Afgevende instantie"
   - name: issue_date
     type: date
     description: >-
@@ -41,6 +53,10 @@ fields:
       surfacing, so the date is a duty-relevant field rather than an administrative one.
     error_budget: 0.005
 
+    anchors:
+      en: "Date"
+      el: "Ημερομηνία"
+      nl: "Datum"
   - name: consignee
     type: party
     description: >-
@@ -54,3 +70,7 @@ fields:
         answer a customs authority's question about it afterwards.
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
+    anchors:
+      en: "Consignee"
+      el: "Παραλήπτης"
+      nl: "Geadresseerde"

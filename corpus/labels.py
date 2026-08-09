@@ -1,5 +1,10 @@
 """Field labels in the three document languages.
 
+**Field captions are not here.** They live in `contracts/documents/*.yaml` as `anchors`,
+because extraction has to look for the same string the renderer printed and two descriptions of
+one label diverge on the first busy afternoon. What remains here is what is *not* a field: the
+document titles, the line-item table headers, and the words a form prints around its values.
+
 Separate from the layout code because they are data, and because putting them here makes the
 one thing a reader of the corpus wants to check — *is this really Greek, or is it English with
 Greek characters?* — checkable in one file.
@@ -52,76 +57,6 @@ LABELS: Final[dict[str, Labels]] = {
         Language.DUTCH: "AANKOMSTBERICHT",
     },
     # Fields
-    "shipper": {
-        Language.ENGLISH: "Shipper",
-        Language.GREEK: "Αποστολέας",
-        Language.DUTCH: "Afzender",
-    },
-    "consignee": {
-        Language.ENGLISH: "Consignee",
-        Language.GREEK: "Παραλήπτης",
-        Language.DUTCH: "Geadresseerde",
-    },
-    "seller": {
-        Language.ENGLISH: "Seller",
-        Language.GREEK: "Πωλητής",
-        Language.DUTCH: "Verkoper",
-    },
-    "buyer": {Language.ENGLISH: "Buyer", Language.GREEK: "Αγοραστής", Language.DUTCH: "Koper"},
-    "vessel": {Language.ENGLISH: "Vessel", Language.GREEK: "Πλοίο", Language.DUTCH: "Schip"},
-    "port_of_loading": {
-        Language.ENGLISH: "Port of loading",
-        Language.GREEK: "Λιμένας φόρτωσης",
-        Language.DUTCH: "Laadhaven",
-    },
-    "port_of_discharge": {
-        Language.ENGLISH: "Port of discharge",
-        Language.GREEK: "Λιμένας εκφόρτωσης",
-        Language.DUTCH: "Loshaven",
-    },
-    "container": {
-        Language.ENGLISH: "Container no.",
-        Language.GREEK: "Αρ. εμπορευματοκιβωτίου",
-        Language.DUTCH: "Containernr.",
-    },
-    "gross_weight": {
-        Language.ENGLISH: "Gross weight",
-        Language.GREEK: "Μικτό βάρος",
-        Language.DUTCH: "Brutogewicht",
-    },
-    "net_weight": {
-        Language.ENGLISH: "Net weight",
-        Language.GREEK: "Καθαρό βάρος",
-        Language.DUTCH: "Nettogewicht",
-    },
-    "packages": {
-        Language.ENGLISH: "Packages",
-        Language.GREEK: "Δέματα",
-        Language.DUTCH: "Colli",
-    },
-    "volume": {Language.ENGLISH: "Volume", Language.GREEK: "Όγκος", Language.DUTCH: "Volume"},
-    "bl_number": {
-        Language.ENGLISH: "B/L no.",
-        Language.GREEK: "Αρ. φορτωτικής",
-        Language.DUTCH: "Vrachtbriefnr.",
-    },
-    "invoice_number": {
-        Language.ENGLISH: "Invoice no.",
-        Language.GREEK: "Αρ. τιμολογίου",
-        Language.DUTCH: "Factuurnr.",
-    },
-    "date": {Language.ENGLISH: "Date", Language.GREEK: "Ημερομηνία", Language.DUTCH: "Datum"},
-    "total": {Language.ENGLISH: "Total", Language.GREEK: "Σύνολο", Language.DUTCH: "Totaal"},
-    "currency": {
-        Language.ENGLISH: "Currency",
-        Language.GREEK: "Νόμισμα",
-        Language.DUTCH: "Valuta",
-    },
-    "incoterm": {
-        Language.ENGLISH: "Incoterm",
-        Language.GREEK: "Όρος παράδοσης",
-        Language.DUTCH: "Leveringsconditie",
-    },
     "description": {
         Language.ENGLISH: "Description of goods",
         Language.GREEK: "Περιγραφή εμπορευμάτων",
@@ -142,57 +77,6 @@ LABELS: Final[dict[str, Labels]] = {
         Language.ENGLISH: "HS code",
         Language.GREEK: "Κωδικός Σ.Ο.",
         Language.DUTCH: "GS-code",
-    },
-    "country_of_origin": {
-        Language.ENGLISH: "Country of origin",
-        Language.GREEK: "Χώρα καταγωγής",
-        Language.DUTCH: "Land van oorsprong",
-    },
-    "certificate_number": {
-        Language.ENGLISH: "Certificate no.",
-        Language.GREEK: "Αρ. πιστοποιητικού",
-        Language.DUTCH: "Certificaatnr.",
-    },
-    "issuing_chamber": {
-        Language.ENGLISH: "Issuing chamber",
-        Language.GREEK: "Εκδούσα αρχή",
-        Language.DUTCH: "Afgevende instantie",
-    },
-    "declaration_reference": {
-        Language.ENGLISH: "Declaration ref.",
-        Language.GREEK: "Αρ. διασάφησης",
-        Language.DUTCH: "Aangiftenr.",
-    },
-    "declared_value": {
-        Language.ENGLISH: "Customs value",
-        Language.GREEK: "Δασμολογητέα αξία",
-        Language.DUTCH: "Douanewaarde",
-    },
-    "duty": {Language.ENGLISH: "Duty", Language.GREEK: "Δασμός", Language.DUTCH: "Rechten"},
-    "procedure_code": {
-        Language.ENGLISH: "Procedure code",
-        Language.GREEK: "Κωδικός καθεστώτος",
-        Language.DUTCH: "Regelingcode",
-    },
-    "declarant": {
-        Language.ENGLISH: "Declarant",
-        Language.GREEK: "Διασαφιστής",
-        Language.DUTCH: "Aangever",
-    },
-    "notice_reference": {
-        Language.ENGLISH: "Notice ref.",
-        Language.GREEK: "Αρ. ειδοποίησης",
-        Language.DUTCH: "Berichtnr.",
-    },
-    "estimated_arrival": {
-        Language.ENGLISH: "Estimated arrival",
-        Language.GREEK: "Εκτιμώμενη άφιξη",
-        Language.DUTCH: "Verwachte aankomst",
-    },
-    "terminal": {
-        Language.ENGLISH: "Terminal",
-        Language.GREEK: "Τερματικός σταθμός",
-        Language.DUTCH: "Terminal",
     },
     "remarks": {
         Language.ENGLISH: "Remarks",

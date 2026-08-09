@@ -16,6 +16,10 @@ fields:
     error_budget: 0.01
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Invoice no."
+      el: "Αρ. τιμολογίου"
+      nl: "Factuurnr."
   - name: gross_weight
     type: quantity
     dimension: mass
@@ -25,6 +29,10 @@ fields:
       of lading, and the field most often stated in pounds on a page that is otherwise metric.
     error_budget: 0.005
 
+    anchors:
+      en: "Gross weight"
+      el: "Μικτό βάρος"
+      nl: "Brutogewicht"
   - name: net_weight
     type: quantity
     dimension: mass
@@ -34,6 +42,10 @@ fields:
       the invoice where the invoice states one.
     error_budget: 0.005
 
+    anchors:
+      en: "Net weight"
+      el: "Καθαρό βάρος"
+      nl: "Nettogewicht"
   - name: package_count
     type: quantity
     dimension: count
@@ -43,6 +55,10 @@ fields:
       takes an absolute tolerance, because half a percent of three cartons is meaningless.
     error_budget: 0.002
 
+    anchors:
+      en: "Packages"
+      el: "Δέματα"
+      nl: "Colli"
   - name: volume
     type: quantity
     dimension: volume
@@ -53,6 +69,10 @@ fields:
     error_budget: 0.02
     retention: operational
 
+    anchors:
+      en: "Volume"
+      el: "Όγκος"
+      nl: "Volume"
   - name: container_number
     type: container_number
     description: >-
@@ -60,3 +80,7 @@ fields:
       independently checkable by its own arithmetic.
     error_budget: 0.001
     comparison: [unicode, whitespace, case, alphanumeric]
+    anchors:
+      en: "Container no."
+      el: "Αρ. εμπορευματοκιβωτίου"
+      nl: "Containernr."

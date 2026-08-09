@@ -17,6 +17,10 @@ fields:
     error_budget: 0.002
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Declaration ref."
+      el: "Αρ. διασάφησης"
+      nl: "Aangiftenr."
   - name: hs_code
     type: hs_code
     description: >-
@@ -27,6 +31,10 @@ fields:
       consequence rather than of the model.
     always_review: true
 
+    anchors:
+      en: "HS code"
+      el: "Κωδικός Σ.Ο."
+      nl: "GS-code"
   - name: declared_value
     type: money
     dimension: money
@@ -35,12 +43,20 @@ fields:
       value is a wrong duty, in both directions.
     error_budget: 0.002
 
+    anchors:
+      en: "Customs value"
+      el: "Δασμολογητέα αξία"
+      nl: "Douanewaarde"
   - name: currency
     type: code
     description: ISO 4217 currency of the declared value.
     error_budget: 0.001
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Currency"
+      el: "Νόμισμα"
+      nl: "Valuta"
   - name: duty_amount
     type: money
     dimension: money
@@ -50,6 +66,10 @@ fields:
     required: false
     error_budget: 0.005
 
+    anchors:
+      en: "Duty"
+      el: "Δασμός"
+      nl: "Rechten"
   - name: procedure_code
     type: code
     description: >-
@@ -58,6 +78,10 @@ fields:
     error_budget: 0.001
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Procedure code"
+      el: "Κωδικός καθεστώτος"
+      nl: "Regelingcode"
   - name: country_of_origin
     type: country
     description: >-
@@ -65,6 +89,10 @@ fields:
       exactly where a disagreement is the signal rather than the noise.
     error_budget: 0.001
 
+    anchors:
+      en: "Country of origin"
+      el: "Χώρα καταγωγής"
+      nl: "Land van oorsprong"
   - name: declarant
     type: party
     description: >-
@@ -79,9 +107,17 @@ fields:
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
 
+    anchors:
+      en: "Declarant"
+      el: "Διασαφιστής"
+      nl: "Aangever"
   - name: declaration_date
     type: date
     description: >-
       The date of acceptance. UCC Art. 51 counts the retention period from the end of the year
       this date falls in, so a wrong year is a records failure with a legal consequence.
     error_budget: 0.001
+    anchors:
+      en: "Date"
+      el: "Ημερομηνία"
+      nl: "Datum"

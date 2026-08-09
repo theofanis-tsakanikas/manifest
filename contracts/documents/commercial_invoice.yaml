@@ -16,6 +16,10 @@ fields:
     error_budget: 0.002
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Invoice no."
+      el: "Αρ. τιμολογίου"
+      nl: "Factuurnr."
   - name: invoice_total
     type: money
     dimension: money
@@ -25,6 +29,10 @@ fields:
       so this carries one of the two tightest budgets in the set.
     error_budget: 0.002
 
+    anchors:
+      en: "Total"
+      el: "Σύνολο"
+      nl: "Totaal"
   - name: currency
     type: code
     description: >-
@@ -34,6 +42,10 @@ fields:
     error_budget: 0.001
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Currency"
+      el: "Νόμισμα"
+      nl: "Valuta"
   - name: incoterm
     type: code
     description: >-
@@ -42,6 +54,10 @@ fields:
     error_budget: 0.002
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Incoterm"
+      el: "Όρος παράδοσης"
+      nl: "Leveringsconditie"
   - name: seller
     type: party
     description: >-
@@ -55,6 +71,10 @@ fields:
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
 
+    anchors:
+      en: "Seller"
+      el: "Πωλητής"
+      nl: "Verkoper"
   - name: buyer
     type: party
     description: >-
@@ -68,6 +88,10 @@ fields:
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
 
+    anchors:
+      en: "Buyer"
+      el: "Αγοραστής"
+      nl: "Koper"
   - name: line_item_count
     type: quantity
     dimension: count
@@ -78,6 +102,10 @@ fields:
       total failing to reconcile against a short list rather than by nothing at all.
     error_budget: 0.01
 
+    anchors:
+      en: "Qty"
+      el: "Ποσότητα"
+      nl: "Aantal"
   - name: invoice_date
     type: date
     description: >-
@@ -85,6 +113,10 @@ fields:
       invoice is not in euro, so it is a duty field and not an administrative one.
     error_budget: 0.002
 
+    anchors:
+      en: "Date"
+      el: "Ημερομηνία"
+      nl: "Datum"
   - name: total_net_weight
     type: quantity
     dimension: mass
@@ -94,3 +126,7 @@ fields:
       which is why it is not required.
     required: false
     error_budget: 0.01
+    anchors:
+      en: "Net weight"
+      el: "Καθαρό βάρος"
+      nl: "Nettogewicht"

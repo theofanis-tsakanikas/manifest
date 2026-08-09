@@ -17,6 +17,10 @@ fields:
     error_budget: 0.002
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "B/L no."
+      el: "Αρ. φορτωτικής"
+      nl: "Vrachtbriefnr."
   - name: container_number
     type: container_number
     description: >-
@@ -28,6 +32,10 @@ fields:
     error_budget: 0.001
     comparison: [unicode, whitespace, case, alphanumeric]
 
+    anchors:
+      en: "Container no."
+      el: "Αρ. εμπορευματοκιβωτίου"
+      nl: "Containernr."
   - name: gross_weight
     type: quantity
     dimension: mass
@@ -37,6 +45,10 @@ fields:
       packing list, which frequently states it in pounds.
     error_budget: 0.005
 
+    anchors:
+      en: "Gross weight"
+      el: "Μικτό βάρος"
+      nl: "Brutogewicht"
   - name: shipper
     type: party
     description: >-
@@ -51,6 +63,10 @@ fields:
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
 
+    anchors:
+      en: "Shipper"
+      el: "Αποστολέας"
+      nl: "Afzender"
   - name: consignee
     type: party
     description: >-
@@ -64,18 +80,30 @@ fields:
       lawful_basis: >-
         Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
 
+    anchors:
+      en: "Consignee"
+      el: "Παραλήπτης"
+      nl: "Geadresseerde"
   - name: port_of_loading
     type: code
     description: UN/LOCODE of the port where the goods were loaded.
     error_budget: 0.005
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Port of loading"
+      el: "Λιμένας φόρτωσης"
+      nl: "Laadhaven"
   - name: port_of_discharge
     type: code
     description: UN/LOCODE of the port where the goods are discharged.
     error_budget: 0.005
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Port of discharge"
+      el: "Λιμένας εκφόρτωσης"
+      nl: "Loshaven"
   - name: vessel_name
     type: text
     description: >-
@@ -86,9 +114,17 @@ fields:
     retention: operational
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Vessel"
+      el: "Πλοίο"
+      nl: "Schip"
   - name: date_of_issue
     type: date
     description: >-
       The date the carrier issued this bill. Decides which retention year the record falls in
       under UCC Art. 51, so a wrong year is a records failure rather than a duty one.
     error_budget: 0.002
+    anchors:
+      en: "Date"
+      el: "Ημερομηνία"
+      nl: "Datum"

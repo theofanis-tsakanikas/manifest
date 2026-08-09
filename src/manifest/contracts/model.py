@@ -122,6 +122,16 @@ class FieldContract(Strict):
     dimension: Dimension | None = None
     unit: Unit | None = None
 
+    #: The caption this field is printed under, per language. **One source of truth, used from
+    #: both ends**: the corpus renders the caption from here, and extraction looks for it here.
+    #:
+    #: That shared use is deliberate and it is not a tautology. The anchor is how a field is
+    #: *found*; what claims 1 and 2 measure is whether the value beside it was read correctly
+    #: and located correctly, and ground truth for the value is recorded independently at the
+    #: moment it is drawn. Duplicating the caption into the generator instead would give two
+    #: descriptions of one label, and they would diverge on the first busy afternoon.
+    anchors: dict[str, str] = Field(default_factory=dict)
+
     @model_validator(mode="after")
     def _budget_or_always_review(self) -> Self:
         if self.always_review and self.error_budget is not None:

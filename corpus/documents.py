@@ -29,6 +29,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
+from corpus.anchors import anchor
 from corpus.labels import label
 from corpus.plant import INJECTION_STRINGS, Planted
 from corpus.sheet import BOLD, PAGE_HEIGHT, PAGE_WIDTH, Placed, Sheet, money, plain_money
@@ -75,32 +76,46 @@ def bill_of_lading(shipment: Shipment, planted: Planted, generator: random.Rando
         "bill_of_lading_number",
         _MARGIN,
         y,
-        label("bl_number", language),
+        anchor("bill_of_lading", "bill_of_lading_number", language),
         shipment.bill_of_lading_number,
     )
     sheet.labelled(
         "date_of_issue",
         PAGE_WIDTH / 2,
         y,
-        label("date", language),
+        anchor("bill_of_lading", "date_of_issue", language),
         shipment.sailed_on.strftime("%d/%m/%Y"),
     )
 
     y -= 46
     sheet.labelled(
-        "shipper", _MARGIN, y, label("shipper", language), shipment.seller.form(generator)
+        "shipper",
+        _MARGIN,
+        y,
+        anchor("bill_of_lading", "shipper", language),
+        shipment.seller.form(generator),
     )
     sheet.labelled(
-        "consignee", PAGE_WIDTH / 2, y, label("consignee", language), shipment.buyer.form(generator)
+        "consignee",
+        PAGE_WIDTH / 2,
+        y,
+        anchor("bill_of_lading", "consignee", language),
+        shipment.buyer.form(generator),
     )
 
     y -= 46
-    sheet.labelled("vessel_name", _MARGIN, y, label("vessel", language), shipment.vessel)
+    sheet.labelled(
+        "vessel_name",
+        _MARGIN,
+        y,
+        anchor("bill_of_lading", "vessel_name", language),
+        shipment.vessel,
+    )
     sheet.labelled(
         "port_of_loading",
         PAGE_WIDTH / 2,
         y,
-        label("port_of_loading", language),
+        anchor("bill_of_lading", "port_of_loading", language),
         f"{shipment.port_of_loading[0]} {shipment.port_of_loading[1]}",
     )
 
@@ -109,7 +124,7 @@ def bill_of_lading(shipment: Shipment, planted: Planted, generator: random.Rando
         "port_of_discharge",
         _MARGIN,
         y,
-        label("port_of_discharge", language),
+        anchor("bill_of_lading", "port_of_discharge", language),
         f"{shipment.port_of_discharge[0]} {shipment.port_of_discharge[1]}",
     )
 
@@ -119,7 +134,7 @@ def bill_of_lading(shipment: Shipment, planted: Planted, generator: random.Rando
         "container_number",
         _MARGIN,
         y,
-        label("container", language),
+        anchor("bill_of_lading", "container_number", language),
         shipment.container_number,
         size=11,
     )
@@ -127,7 +142,7 @@ def bill_of_lading(shipment: Shipment, planted: Planted, generator: random.Rando
         "gross_weight",
         PAGE_WIDTH / 2,
         y,
-        label("gross_weight", language),
+        anchor("bill_of_lading", "gross_weight", language),
         f"{shipment.gross_weight_kg} KGS",
         size=11,
     )
@@ -158,28 +173,48 @@ def commercial_invoice(shipment: Shipment, planted: Planted, generator: random.R
         "invoice_number",
         _MARGIN,
         y,
-        label("invoice_number", language),
+        anchor("commercial_invoice", "invoice_number", language),
         f"INV-{shipment.shipment_id[-5:]}",
     )
     sheet.labelled(
         "invoice_date",
         PAGE_WIDTH / 2,
         y,
-        label("date", language),
+        anchor("commercial_invoice", "invoice_date", language),
         shipment.sailed_on.strftime("%d.%m.%Y"),
     )
 
     y -= 46
-    sheet.labelled("seller", _MARGIN, y, label("seller", language), shipment.seller.form(generator))
     sheet.labelled(
-        "buyer", PAGE_WIDTH / 2, y, label("buyer", language), shipment.buyer.form(generator)
+        "seller",
+        _MARGIN,
+        y,
+        anchor("commercial_invoice", "seller", language),
+        shipment.seller.form(generator),
+    )
+    sheet.labelled(
+        "buyer",
+        PAGE_WIDTH / 2,
+        y,
+        anchor("commercial_invoice", "buyer", language),
+        shipment.buyer.form(generator),
     )
 
     y -= 46
     sheet.labelled(
-        "currency", _MARGIN, y, label("currency", language), f"{symbol} {shipment.currency}"
+        "currency",
+        _MARGIN,
+        y,
+        anchor("commercial_invoice", "currency", language),
+        f"{symbol} {shipment.currency}",
     )
-    sheet.labelled("incoterm", PAGE_WIDTH / 2, y, label("incoterm", language), shipment.incoterm)
+    sheet.labelled(
+        "incoterm",
+        PAGE_WIDTH / 2,
+        y,
+        anchor("commercial_invoice", "incoterm", language),
+        shipment.incoterm,
+    )
 
     # ── The line-item table ──────────────────────────────────────────────
     #
@@ -213,7 +248,7 @@ def commercial_invoice(shipment: Shipment, planted: Planted, generator: random.R
         "invoice_total",
         _MARGIN + 310,
         y,
-        label("total", language),
+        anchor("commercial_invoice", "invoice_total", language),
         money(shipment.invoice_total, symbol),
         size=11,
     )
@@ -223,7 +258,7 @@ def commercial_invoice(shipment: Shipment, planted: Planted, generator: random.R
             "total_net_weight",
             _MARGIN,
             y,
-            label("net_weight", language),
+            anchor("commercial_invoice", "total_net_weight", language),
             f"{shipment.net_weight_kg} KG",
         )
 
@@ -285,27 +320,32 @@ def packing_list(shipment: Shipment, planted: Planted, generator: random.Random)
         "packing_list_number",
         _MARGIN,
         y,
-        label("invoice_number", language),
+        anchor("packing_list", "packing_list_number", language),
         f"PL-{shipment.shipment_id[-5:]}",
     )
     sheet.labelled(
         "container_number",
         PAGE_WIDTH / 2,
         y,
-        label("container", language),
+        anchor("packing_list", "container_number", language),
         shipment.container_number,
     )
 
     y -= 48
     sheet.box_outline(_MARGIN - 6, y - 58, PAGE_WIDTH - 2 * _MARGIN + 12, 82)
     sheet.labelled(
-        "gross_weight", _MARGIN, y, label("gross_weight", language), gross_shown, size=11
+        "gross_weight",
+        _MARGIN,
+        y,
+        anchor("packing_list", "gross_weight", language),
+        gross_shown,
+        size=11,
     )
     sheet.labelled(
         "net_weight",
         PAGE_WIDTH / 2,
         y,
-        label("net_weight", language),
+        anchor("packing_list", "net_weight", language),
         f"{shipment.net_weight_kg} KGS",
         size=11,
     )
@@ -314,7 +354,7 @@ def packing_list(shipment: Shipment, planted: Planted, generator: random.Random)
         "package_count",
         _MARGIN,
         y,
-        label("packages", language),
+        anchor("packing_list", "package_count", language),
         f"{shipment.package_count} CTNS",
         size=11,
     )
@@ -322,7 +362,7 @@ def packing_list(shipment: Shipment, planted: Planted, generator: random.Random)
         "volume",
         PAGE_WIDTH / 2,
         y,
-        label("volume", language),
+        anchor("packing_list", "volume", language),
         f"{shipment.volume_m3} M3",
         size=11,
     )
@@ -370,23 +410,31 @@ def certificate_of_origin(
         "certificate_number",
         _MARGIN,
         y,
-        label("certificate_number", language),
+        anchor("certificate_of_origin", "certificate_number", language),
         f"COO/{shipment.sailed_on.year}/{shipment.shipment_id[-5:]}",
     )
     sheet.labelled(
         "issue_date",
         PAGE_WIDTH / 2,
         y,
-        label("date", language),
+        anchor("certificate_of_origin", "issue_date", language),
         shipment.sailed_on.strftime("%d/%m/%Y"),
     )
 
     y -= 50
     sheet.labelled(
-        "consignee", _MARGIN, y, label("consignee", language), shipment.buyer.form(generator)
+        "consignee",
+        _MARGIN,
+        y,
+        anchor("certificate_of_origin", "consignee", language),
+        shipment.buyer.form(generator),
     )
     sheet.labelled(
-        "issuing_chamber", PAGE_WIDTH / 2, y, label("issuing_chamber", language), chamber[:30]
+        "issuing_chamber",
+        PAGE_WIDTH / 2,
+        y,
+        anchor("certificate_of_origin", "issuing_chamber", language),
+        chamber[:30],
     )
 
     # The country field, given its own boxed area — and, roughly eight times in a hundred, the
@@ -398,7 +446,7 @@ def certificate_of_origin(
         "country_of_origin",
         _MARGIN,
         y,
-        label("country_of_origin", language),
+        anchor("certificate_of_origin", "country_of_origin", language),
         shipment.country_of_origin,
         size=15,
     )
@@ -441,26 +489,30 @@ def customs_declaration(shipment: Shipment, planted: Planted, generator: random.
         "declaration_reference",
         _MARGIN,
         y,
-        label("declaration_reference", language),
+        anchor("customs_declaration", "declaration_reference", language),
         f"NL{shipment.sailed_on.year}{shipment.shipment_id[-5:]}",
     )
     sheet.labelled(
         "declaration_date",
         PAGE_WIDTH / 2,
         y,
-        label("date", language),
+        anchor("customs_declaration", "declaration_date", language),
         shipment.arrives_on.strftime("%Y-%m-%d"),
     )
 
     y -= 46
     sheet.labelled(
-        "declarant", _MARGIN, y, label("declarant", language), "Northbridge Forwarding B.V."
+        "declarant",
+        _MARGIN,
+        y,
+        anchor("customs_declaration", "declarant", language),
+        "Northbridge Forwarding B.V.",
     )
     sheet.labelled(
         "procedure_code",
         PAGE_WIDTH / 2,
         y,
-        label("procedure_code", language),
+        anchor("customs_declaration", "procedure_code", language),
         generator.choice(("4000", "4200", "7100", "5100")),
     )
 
@@ -470,20 +522,35 @@ def customs_declaration(shipment: Shipment, planted: Planted, generator: random.
         "declared_value",
         _MARGIN,
         y,
-        label("declared_value", language),
+        anchor("customs_declaration", "declared_value", language),
         plain_money(Decimal(value)),
         size=11,
     )
     sheet.labelled(
-        "currency", PAGE_WIDTH / 2 - 40, y, label("currency", language), shipment.currency, size=11
+        "currency",
+        PAGE_WIDTH / 2 - 40,
+        y,
+        anchor("customs_declaration", "currency", language),
+        shipment.currency,
+        size=11,
     )
     sheet.labelled(
-        "duty_amount", PAGE_WIDTH / 2 + 90, y, label("duty", language), plain_money(duty), size=11
+        "duty_amount",
+        PAGE_WIDTH / 2 + 90,
+        y,
+        anchor("customs_declaration", "duty_amount", language),
+        plain_money(duty),
+        size=11,
     )
 
     y -= 52
     sheet.labelled(
-        "country_of_origin", _MARGIN, y, label("country_of_origin", language), origin, size=11
+        "country_of_origin",
+        _MARGIN,
+        y,
+        anchor("customs_declaration", "country_of_origin", language),
+        origin,
+        size=11,
     )
 
     # The classification. `always_review` in the contract, because HS classification is
@@ -494,7 +561,7 @@ def customs_declaration(shipment: Shipment, planted: Planted, generator: random.
         "hs_code",
         PAGE_WIDTH / 2,
         y,
-        label("hs_code", language),
+        anchor("customs_declaration", "hs_code", language),
         shipment.lines[0].hs_code,
         size=11,
     )
@@ -531,24 +598,31 @@ def arrival_notice(shipment: Shipment, planted: Planted, generator: random.Rando
         "notice_reference",
         _MARGIN,
         y,
-        label("notice_reference", language),
+        anchor("arrival_notice", "notice_reference", language),
         f"AN{shipment.shipment_id[-6:]}",
     )
     sheet.labelled(
         "bill_of_lading_number",
         PAGE_WIDTH / 2,
         y,
-        label("bl_number", language),
+        anchor("arrival_notice", "bill_of_lading_number", language),
         shipment.bill_of_lading_number,
     )
 
     y -= 48
-    sheet.labelled("container_number", _MARGIN, y, label("container", language), container, size=11)
+    sheet.labelled(
+        "container_number",
+        _MARGIN,
+        y,
+        anchor("arrival_notice", "container_number", language),
+        container,
+        size=11,
+    )
     sheet.labelled(
         "estimated_arrival",
         PAGE_WIDTH / 2,
         y,
-        label("estimated_arrival", language),
+        anchor("arrival_notice", "estimated_arrival", language),
         shipment.arrives_on.strftime("%d %b %Y").upper(),
     )
 
@@ -557,11 +631,15 @@ def arrival_notice(shipment: Shipment, planted: Planted, generator: random.Rando
         "terminal",
         _MARGIN,
         y,
-        label("terminal", language),
+        anchor("arrival_notice", "terminal", language),
         f"{shipment.port_of_discharge[1]} Terminal {generator.randint(1, 9)}",
     )
     sheet.labelled(
-        "package_count", PAGE_WIDTH / 2, y, label("packages", language), f"{packages} CTNS"
+        "package_count",
+        PAGE_WIDTH / 2,
+        y,
+        anchor("arrival_notice", "package_count", language),
+        f"{packages} CTNS",
     )
 
     _footer(sheet, shipment, language)

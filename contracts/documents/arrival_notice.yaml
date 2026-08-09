@@ -16,6 +16,10 @@ fields:
     error_budget: 0.002
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "Notice ref."
+      el: "Αρ. ειδοποίησης"
+      nl: "Berichtnr."
   - name: bill_of_lading_number
     type: code
     description: >-
@@ -25,6 +29,10 @@ fields:
     error_budget: 0.001
     comparison: [unicode, whitespace, case, separators]
 
+    anchors:
+      en: "B/L no."
+      el: "Αρ. φορτωτικής"
+      nl: "Vrachtbriefnr."
   - name: container_number
     type: container_number
     description: >-
@@ -33,6 +41,10 @@ fields:
     error_budget: 0.001
     comparison: [unicode, whitespace, case, alphanumeric]
 
+    anchors:
+      en: "Container no."
+      el: "Αρ. εμπορευματοκιβωτίου"
+      nl: "Containernr."
   - name: estimated_arrival
     type: date
     description: >-
@@ -41,6 +53,10 @@ fields:
     error_budget: 0.005
     retention: operational
 
+    anchors:
+      en: "Estimated arrival"
+      el: "Εκτιμώμενη άφιξη"
+      nl: "Verwachte aankomst"
   - name: terminal
     type: text
     description: The terminal at which the goods will be available.
@@ -49,6 +65,10 @@ fields:
     retention: operational
     comparison: [unicode, whitespace, case]
 
+    anchors:
+      en: "Terminal"
+      el: "Τερματικός σταθμός"
+      nl: "Terminal"
   - name: package_count
     type: quantity
     dimension: count
@@ -59,3 +79,7 @@ fields:
       worth a person's attention.
     required: false
     error_budget: 0.005
+    anchors:
+      en: "Packages"
+      el: "Δέματα"
+      nl: "Colli"
