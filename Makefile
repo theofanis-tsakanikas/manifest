@@ -82,7 +82,8 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 #   claim 7  bulk reprocessing is idempotent, cost modelled      — phase 4
 
 .PHONY: claims
-claims: core-pure planting-blind contracts-validate corpus-check envelope claim-1 claim-2 ## Every claim gate that exists today
+claims: core-pure planting-blind contracts-validate corpus-check envelope \
+	claim-1 claim-2 claim-3 claim-4 claim-6 ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
@@ -111,6 +112,18 @@ claim-2: ## CLAIM 2 — every published field traces to a box, checked against t
 .PHONY: claim-2
 claim-2: ## CLAIM 2 — every published field traces to a box, checked against the page
 	$(PY) -m evals.provenance
+
+.PHONY: claim-3
+claim-3: ## CLAIM 3 — re-extraction is reproducible and versioned
+	$(PY) -m evals.reprocessing
+
+.PHONY: claim-4
+claim-4: ## CLAIM 4 — cross-document disagreement is surfaced, never smoothed
+	$(PY) -m evals.reconciliation
+
+.PHONY: claim-6
+claim-6: ## CLAIM 6 — entity resolution is reversible
+	$(PY) -m evals.entities
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason

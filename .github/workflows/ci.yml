@@ -50,8 +50,8 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -e ".[dev]"
-      - run: ruff check src tests scripts
-      - run: ruff format --check src tests scripts
+      - run: ruff check src tests scripts corpus evals
+      - run: ruff format --check src tests scripts corpus evals
       # No engine binary, no corpus render, no network. Under a second, which is what makes it
       # a thing people run rather than a thing people wait for.
       - run: pytest -q
@@ -87,11 +87,23 @@ jobs:
         # changed would make this check the first thing somebody deletes. See ADR-0005.
         run: python -m evals.calibration
 
+      - name: "claim 3 — re-extraction is reproducible and versioned"
+        run: python -m evals.reprocessing
+
+      - name: "claim 4 — cross-document disagreement is surfaced"
+        # Two numbers: the reconciliation logic on the values that were printed, which must be
+        # exactly right, and the system end to end on the values the reader extracted, which is
+        # worse and is the honest one. Reporting only the first would be the overclaim.
+        run: python -m evals.reconciliation
+
+      - name: "claim 6 — entity resolution is reversible"
+        run: python -m evals.entities
+
       # Claim 2 needs the rendered corpus, which is git-ignored and reproducible from a seed;
-      # it runs in `make preflight` on a machine that has generated it. Claims 3, 4 and 6
-      # arrive with phase 3, claims 5 and 7 with phase 4. A step here for a claim that is not
-      # yet provable would be a green tick over work that has not happened, and it is worse
-      # than an absent step because it looks like coverage.
+      # it runs in `make preflight` on a machine that has generated it. Claims 5 and 7 arrive
+      # with phase 4. A step here for a claim that is not yet provable would be a green tick
+      # over work that has not happened, and it is worse than an absent step because it looks
+      # like coverage.
 
   gate-proof:
     name: attack our own gates

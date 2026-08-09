@@ -129,6 +129,32 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "claim 3 · versioning",
+        [PYTHON, "-m", "evals.reprocessing"],
+        "The same input publishes an identical record; a reader change publishes a new version "
+        "with a diff, and a human decision on a field that moved is re-queued rather than "
+        "carried across a value that no longer exists.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "claim 4 · reconciliation",
+        [PYTHON, "-m", "evals.reconciliation"],
+        "Exactly the planted disagreements, and nothing else, on the values that were printed. "
+        "The planting is blind to the contract and the expectation comes from ground truth by "
+        "a separate path — without both, this claim is one function agreeing with itself.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "claim 6 · entities",
+        [PYTHON, "-m", "evals.entities"],
+        "A merge can be undone with lineage intact and every downstream record re-pointed. "
+        "The half nobody builds is the re-pointing: a dangling pointer is invisible until "
+        "somebody follows it.",
+    ),
+    Check(
+        "correctness",
         "corpus envelope",
         [PYTHON, "scripts/check_corpus_envelope.py"],
         "The generator sits inside its declared operating range. Degraded too gently, every "

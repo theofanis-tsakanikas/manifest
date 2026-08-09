@@ -40,7 +40,11 @@ fields:
       between the yen and the letter Y, is in the corpus on purpose — a currency read wrong is
       a duty base wrong by whatever the exchange rate happens to be.
     error_budget: 0.001
-    comparison: [unicode, whitespace, case]
+    # `alphanumeric`, because an invoice prints its currency as `€ EUR` and a declaration as
+    # `EUR`. Both name the same currency; the symbol is typography. Claim 4's harness reported
+    # every one of those pairs as a disagreement until this was declared, which is the contract
+    # layer doing its job — the rule was wrong, and it was wrong in a file rather than in code.
+    comparison: [unicode, whitespace, case, alphanumeric]
 
     anchors:
       en: "Currency"

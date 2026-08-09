@@ -8,7 +8,15 @@
 # actually demonstrate.
 version: 1
 
-merge_threshold: 0.85
+# Below the weakest rule that is meant to be able to fire. It was 0.85, which is above three
+# of the four weights below — so only `exact_after_case_and_whitespace` could ever produce a
+# merge, and the register resolved 21 surface forms into 18 entities while every check stayed
+# green. The loader now refuses a contract in that state; this is the value that satisfies it.
+#
+# Still **chosen**, and the schema refuses any contract claiming otherwise. What makes a chosen
+# threshold survivable is that every merge above it can be undone with lineage intact, which is
+# what claim 6 measures.
+merge_threshold: 0.65
 merge_threshold_is_derived: false
 
 rules:

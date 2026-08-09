@@ -131,6 +131,32 @@ def _parse[T](path: Path, model: type[T]) -> T:
 def _cross_check(contracts: ContractSet) -> None:
     for rule in contracts.reconciliation.rules:
         _check_rule(contracts, rule)
+    _check_match_rules_can_fire(contracts)
+
+
+def _check_match_rules_can_fire(contracts: ContractSet) -> None:
+    """A match rule weighted below the merge threshold can never produce a merge.
+
+    It is dead code in a data file, which is worse than dead code in a module: nothing compiles
+    it, nothing greys it out, and it reads to a reviewer as a rule that is running. This was
+    real — the entity contract declared a threshold of 0.85 and three of its four rules at 0.9,
+    0.8 and 0.7, so only one of them could ever fire and the register resolved 21 surface forms
+    into 18 entities while reporting no failure at all.
+    """
+    dead = [
+        rule
+        for rule in contracts.entities.rules
+        if rule.weight < contracts.entities.merge_threshold
+    ]
+    if dead:
+        raise ContractError(
+            "match rule(s) "
+            + ", ".join(f"{rule.id!r} (weight {rule.weight})" for rule in dead)
+            + f" are weighted below the merge threshold of {contracts.entities.merge_threshold}, "
+            f"so they can never produce a merge. A rule that cannot fire is dead code in a data "
+            f"file: nothing compiles it and it reads as a rule that is running. Lower the "
+            f"threshold or raise the weight, deliberately"
+        )
 
 
 def _check_rule(contracts: ContractSet, rule: ReconciliationRule) -> None:
