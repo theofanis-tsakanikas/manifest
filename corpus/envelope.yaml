@@ -1,0 +1,99 @@
+# The corpus's declared operating range. `docs/DECISIONS.md` 20.
+#
+# The generator decides whether any number in this repository means anything. Degrade too
+# gently and every confidence sits at the top of the range: the reliability curve is a flat
+# line, ECE measures nothing, and every threshold is trivially satisfiable. Degrade too hard and
+# everything abstains, the queue is 100% and claims 1, 2, 4 and 5 are all scored against a
+# corpus nobody could read. **Both failures report green.**
+#
+# So the target range is declared here, as data, and a test computes the actual figures from the
+# committed recording and goes red when the generator leaves the band. Without it the
+# degradation parameters get tuned — not dishonestly, just gradually — until the claims pass.
+#
+# **Read the direction of each bound before changing one.** These are not fitted to what the
+# generator currently produces; each one is a statement about what has to be true for a claim to
+# mean something, and the current figures are recorded beside them so a reader can see the
+# margin. Widening a band to accommodate a generator change is the move this file exists to make
+# visible.
+
+version: 1
+
+# ── The whole corpus ─────────────────────────────────────────────────────────
+overall:
+  # The reliability curve needs mass across the range. A median above the upper bound means the
+  # reader is confident about nearly everything and the curve has one occupied bin; below the
+  # lower bound it is confident about nothing and the abstention rate follows.
+  median_confidence: { min: 0.75, max: 0.96 }
+
+  # The low-confidence tail is what a threshold is *for*. Too small and no threshold separates
+  # anything; too large and the review queue is the system.
+  fraction_below_half: { min: 0.04, max: 0.30 }
+
+  # Fields the extractor could not locate at all. An abstention is the safe outcome, and a
+  # corpus where it never happens has not exercised abstention.
+  abstention_rate: { min: 0.002, max: 0.20 }
+
+  # Of the fields that were located, how many were read wrong. The band that matters most: at
+  # zero the corpus is clean and claim 1 is a formality; above the ceiling the corpus is
+  # unreadable and every claim is about noise.
+  error_rate_of_located: { min: 0.05, max: 0.40 }
+
+# ── Per document type ────────────────────────────────────────────────────────
+#
+# Per type because the pathologies are not evenly spread, and a corpus-wide average hides a
+# document that has become unreadable. The bands are wide where the document type is meant to be
+# hard and narrow where it is meant to be clean — a customs declaration is typed and structured,
+# a certificate of origin has a rubber stamp across its most consequential field.
+documents:
+  customs_declaration:
+    # The clean end of the range. Structured, typed, and the reference point for what the reader
+    # does when the page is not fighting it. If this one degrades, the degradation is global.
+    abstention_rate: { min: 0.0, max: 0.10 }
+    error_rate_of_located: { min: 0.0, max: 0.15 }
+
+  bill_of_lading:
+    abstention_rate: { min: 0.0, max: 0.12 }
+    error_rate_of_located: { min: 0.01, max: 0.25 }
+
+  arrival_notice:
+    abstention_rate: { min: 0.0, max: 0.12 }
+    error_rate_of_located: { min: 0.01, max: 0.30 }
+
+  packing_list:
+    # Weights in pounds on a metric page, and handwritten corrections. Harder than the bill of
+    # lading it is reconciled against, which is what makes that reconciliation worth doing.
+    abstention_rate: { min: 0.0, max: 0.15 }
+    error_rate_of_located: { min: 0.05, max: 0.45 }
+
+  certificate_of_origin:
+    # The stamp lands on the country field about 8% of the time. This is the document where
+    # abstention has to work rather than be described, so its floor is above zero: a run where
+    # nothing here abstains is a run where the stamps stopped landing.
+    abstention_rate: { min: 0.005, max: 0.20 }
+    error_rate_of_located: { min: 0.10, max: 0.55 }
+
+  commercial_invoice:
+    # The hardest of the six: multilingual party names, currency symbols a reader confuses, and
+    # a line-item table that breaks across a page boundary.
+    abstention_rate: { min: 0.0, max: 0.15 }
+    error_rate_of_located: { min: 0.15, max: 0.60 }
+
+# ── What the committed corpus actually produces ──────────────────────────────
+#
+# Recorded so the margin is visible, and so a change that moves a figure to the edge of its band
+# is legible in a diff. **These are observations, not targets.** A band adjusted to bracket them
+# more tightly would be a band fitted to the generator rather than to what a claim needs.
+observed:
+  measured_on: "recordings/ocr, tesseract 5.5.2, corpus seed 20260809, 120 shipments"
+  overall:
+    median_confidence: 0.918
+    fraction_below_half: 0.140
+    abstention_rate: 0.011
+    error_rate_of_located: 0.205
+  documents:
+    customs_declaration: { abstention_rate: 0.024, error_rate_of_located: 0.024 }
+    bill_of_lading: { abstention_rate: 0.001, error_rate_of_located: 0.081 }
+    arrival_notice: { abstention_rate: 0.007, error_rate_of_located: 0.119 }
+    packing_list: { abstention_rate: 0.001, error_rate_of_located: 0.261 }
+    certificate_of_origin: { abstention_rate: 0.030, error_rate_of_located: 0.378 }
+    commercial_invoice: { abstention_rate: 0.007, error_rate_of_located: 0.443 }

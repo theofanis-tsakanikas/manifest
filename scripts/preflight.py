@@ -102,6 +102,24 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "claim 1 · thresholds",
+        [PYTHON, "-m", "evals.calibration"],
+        "No field publishes below a threshold derived from its declared error budget, and "
+        "where no threshold fits, the harness says whether the limit is evidence or quality — "
+        "two problems with the same symptom and opposite fixes.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "corpus envelope",
+        [PYTHON, "scripts/check_corpus_envelope.py"],
+        "The generator sits inside its declared operating range. Degraded too gently, every "
+        "confidence is at the top and no threshold means anything; too hard, and every claim "
+        "is scored on pages nobody could read. Both report green without this.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
         "gate-proof",
         [PYTHON, "scripts/gate_proof.py"],
         "Each gate refuses a real violation, for the right reason. Slow, and the most "
