@@ -1,0 +1,102 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "manifest"
+version = "0.1.0"
+description = "Document intelligence for cross-border trade — every field traces to a pixel"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Theofanis Tsakanikas" }]
+keywords = [
+    "document-ai",
+    "ocr",
+    "confidence-calibration",
+    "human-in-the-loop",
+    "entity-resolution",
+    "customs",
+    "aws",
+]
+
+# Short, and it stays short. **`src/manifest/core/` imports none of these** — the core is the
+# standard library and nothing else, which is what makes claims 1 to 6 checkable on a laptop
+# with no account and no engine. `scripts/check_core_is_pure.py` enforces it.
+#
+# These two serve the contract layer, which sits outside the core: contracts are YAML data,
+# and a contract that loads with a wrong shape is worse than one that fails to load.
+dependencies = [
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# The corpus generator and the tier-0 engine adapter. Not needed to import the package, and
+# needed to reproduce any number on the scoreboard — so `dev` pulls them in. The tier-0 OCR
+# engine itself is a *binary* (`tesseract`), not a wheel; see ADR-0005 for why the adapter
+# shells out rather than depending on a Python wrapper.
+corpus = [
+    "pillow>=10.4",
+    "numpy>=2.0",
+    "reportlab>=4.2",
+    "pypdfium2>=4.30",
+]
+# Cloud clients are NOT a hard dependency, and nothing in this repository ever calls one.
+# The AWS adapters are written against the documented response schema and are exercised
+# against authored fixtures; this extra exists so that `import boto3` type-checks in the
+# adapter module, and for the day the author decides to deploy.
+cloud = [
+    "boto3>=1.40",
+]
+dev = [
+    "manifest[corpus]",
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "ruff>=0.7",
+    # checkov is deliberately absent: it pins boto3 exactly, and a scanner is a tool while
+    # boto3 is the application. `make iac-scan` builds it its own venv on demand; CI installs
+    # it separately. The scan gates every push either way.
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/manifest"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "PL", "S"]
+ignore = [
+    "PLR0913", # an extraction record legitimately takes many explicit inputs
+    "S101",    # assert is how tests assert
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S311: the corpus generator degrades pages with a *seeded* generator. Determinism is the
+# requirement, not cryptographic strength — and the seed is what makes a failure reproducible
+# by the person reading it.
+"corpus/**" = ["PLR2004", "S311"]
+"tests/**" = ["PLR2004", "S105", "S106", "S311"]
+"evals/**" = ["PLR2004", "S311"]
+# These scripts shell out to `terraform`, `make`, `git` and `tesseract` by name. A hardcoded
+# absolute path would be wrong on every machine but the one that wrote it, and the commands
+# are fixed literals with no user input anywhere near them.
+"scripts/preflight.py" = ["S607"]
+"scripts/tf_validate.py" = ["S607"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "gate: exercises a CI-enforced acceptance gate",
+    "eval: scores a labelled scenario (credential-free)",
+    "engine: needs the tier-0 OCR binary on PATH",
+    "slow: takes more than a second",
+]
+
+[tool.coverage.run]
+source = ["src/manifest"]
+branch = true
