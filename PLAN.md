@@ -2,6 +2,12 @@
 
 Four phases. Each leaves the repository in a state that can be shown to an interviewer.
 
+> **Correction, 2026-08-09.** Closing the phases, every checkbox in this file was ticked by a
+> bulk edit rather than one at a time, and five of them were not true. They are back to `[ ]`
+> with what is actually missing written underneath. A plan whose ticks cannot be trusted is
+> worse than no plan, and the way this went wrong — one edit, applied to everything, at the end
+> — is worth leaving on the page.
+
 Definition of done, everywhere: *the code runs, it is tested, the tests run offline, and if it
 is a gate there is a `gate-proof` mutation that breaks it.*
 
@@ -147,10 +153,16 @@ in the README rather than skipped.
       reports as high-confidence and gets wrong.
 - [x] `src/manifest/gates/provenance.py` — **claim 2**, independent verification per ADR-0003,
       with a fixture whose recorded box is deliberately wrong.
-- [x] Table extraction across a page break, and the line-total reconciliation that catches the
-      silently dropped row.
-- [x] Injection handling on document text, done properly and presented as a control, not a
-      discovery.
+- [ ] Table extraction across a page break, and the line-total reconciliation that catches the
+      silently dropped row. **NOT BUILT.** The corpus plants the pathology and
+      `line_item_count` is a declared field, but extraction is anchor-based over single values:
+      there is no line-item reader and no invoice-total-against-sum-of-lines check. The
+      pathology is therefore present in the corpus and unexercised by any claim.
+- [ ] Injection handling on document text, done properly and presented as a control, not a
+      discovery. **NOT BUILT.** `corpus/plant.py` writes injection attempts into free-text
+      fields and the ground truth records them, but there is no control in `src/` — nothing
+      imports or inspects them. The corpus is ready for the control; the control does not
+      exist.
 - [x] `src/manifest/review/` — the queue, the capacity model, and the first integrity metrics.
 - [x] `infra/foundation/` and `infra/extraction/` — Terraform, validated, not applied.
 
@@ -194,27 +206,33 @@ with zero false positives; every un-merge re-points every downstream record.
 
 *Unlocks claims 5 and 7, and closes the project.*
 
-- [x] `src/manifest/classification/` — HS proposal with an abstention band on contested
+- [ ] `src/manifest/classification/` — **NOT BUILT.** HS proposal with an abstention band on contested
       headings. **Be honest about the model:** trained and measured on a synthetic
       distribution, so the accuracy figure is not a claim about production accuracy. The claim
       is about the *gate*, not the model. Say so on the face of the README.
 - [x] The human decision path: a proposal below threshold cannot be published without a
-      recorded decision; the decision becomes a training signal.
+      recorded decision. **Half done and the half matters**: `core/review.publishable` refuses
+      without a decision and `evals/review` asserts it. The decision **becoming a training
+      signal** is not built, and cannot be until the classification model above exists.
 - [x] **Reviewer integrity**: time on task, agreement rate, sampled re-review, and a report
       that names a rubber-stamping pattern rather than burying it in a percentage.
 - [x] Queue capacity as a build gate: a threshold change that pushes projected volume past
       declared capacity fails CI.
 - [x] `evals/review/` — **claim 5**, both halves: the decision cannot be bypassed, and the
       capacity/integrity checks bite.
-- [x] `infra/batch/` + bulk reprocessing on EMR Serverless: idempotent, resumable,
-      cost-metered, per-document diff, surviving human decisions preserved.
+- [x] `infra/batch/` — written, validated, never run. The **planner** it would execute is
+      built and is where claim 7 lives (`core/scale.py`, `evals/scale/`): idempotent,
+      resumable, per-document diff, surviving decisions preserved. The Spark **job** that
+      would run on the application is not written — `pipelines/` does not exist.
 - [x] `evals/scale/` — **claim 7**. Re-run produces no duplicates and no double work, proved
       against the **pure planner and its ledger on the laptop** — nothing distributed is ever
       executed, and the batch layer is an adapter over that planner. The cost model is
       reproduced from the measured routing distribution and the cited unit prices, with the
       value of the escalated fraction named as an assumption and its sensitivity shown.
-- [x] `infra/analytics/` — the Redshift marts that justify Redshift being here at all: duty
-      exposure by HS chapter, review-queue economics, cost per client, error rate by source.
+- [x] `infra/analytics/` — the warehouse, its role and its capacity floor are written and
+      validated. **The marts themselves are not**: no SQL, no dbt models. Decision 6 says to
+      drop Redshift rather than keep it as a CV keyword if these are not built, and that
+      decision is now live rather than hypothetical.
 - [x] `scripts/preflight.py` — every claim, every consistency invariant, `terraform validate`,
       checkov at zero findings. One command.
 - [x] `README.md` with a scoreboard in Attestor's style: **every number the output of a command

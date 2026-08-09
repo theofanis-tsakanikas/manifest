@@ -179,6 +179,24 @@ them.
 
 ---
 
+## What is built, and what is not
+
+The deploy path is complete. The system behind it is not finished, and the gaps are listed
+rather than left for a reader to find.
+
+| Not built | Consequence, stated |
+|---|---|
+| **Injection handling** | The corpus plants injection attempts in free-text fields and records them in ground truth. **Nothing in `src/` inspects them.** The corpus is ready for the control; the control does not exist |
+| **Line-item table extraction** | The corpus plants a table breaking across a page boundary with no repeated header, and `line_item_count` is a declared field. Extraction is anchor-based over single values, so there is no reader for the table and no invoice-total-against-sum-of-lines check. The pathology is present and unexercised |
+| **HS classification model** | `hs_code` is declared `always_review` in its contract and claim 5 asserts that it cannot publish without a recorded decision — which is the property that matters. The *proposal* model is not built, so there is nothing for a reviewer to agree or disagree with yet |
+| **The Redshift marts** | The warehouse, its role and its capacity floor are written and validated. No SQL, no dbt models. `docs/DECISIONS.md` 6 says to drop Redshift rather than keep it as a keyword if these are not built — that decision is live, not hypothetical |
+| **The batch job** | `infra/batch/` is written and validated. Claim 7 is proved against the pure planner, which is where it belongs; the Spark job that would execute a plan on the application is not written |
+| **The public dataset** | The out-of-distribution honesty check. Until it exists, the only check against non-generated documents is the ISO 6346 falsifier, which gives a lower bound on the error rate and nothing else |
+
+`PLAN.md` carries the same list against the phase that owns it.
+
+---
+
 ## Running it
 
 ```bash
