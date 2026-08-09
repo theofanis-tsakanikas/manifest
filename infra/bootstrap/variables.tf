@@ -84,3 +84,20 @@ variable "state_retention_days" {
     error_message = "Keep at least 30 days of state history; a shorter window loses the record of the apply that caused the incident."
   }
 }
+
+variable "budget_notification_email" {
+  description = <<-EOT
+    Where the budget alarm and the expiry notice go.
+
+    Taken here rather than in `foundation` because it is the one input the deploy cannot derive
+    from anything, and publishing it as a SecureString is what stops it becoming a fifth
+    transcribed repository variable. A guard nobody is told about is a guard that fires into a
+    log.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_notification_email))
+    error_message = "Give an address the alarm can actually reach."
+  }
+}

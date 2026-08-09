@@ -371,6 +371,58 @@ def _require_a_header_on_every_page(root: Path) -> bool:
     )
 
 
+def _transcribe_a_value_bootstrap_already_published(root: Path) -> bool:
+    """Put the state bucket back into a repository variable.
+
+    The shape the deploy actually had, and it is always framed as simpler: a value in a settings
+    page is one fewer moving part than a parameter store. What it costs is that renaming the
+    state bucket in `infra/bootstrap` produces a deploy that fails on a backend nobody can find,
+    with the fix in a settings page rather than in a diff — and nothing in the repository can
+    see the mismatch.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        '-backend-config="bucket=$TF_STATE_BUCKET"',
+        '-backend-config="bucket=${{ vars.STATE_BUCKET }}"',
+    )
+
+
+def _write_the_grants_and_never_attach_them(root: Path) -> bool:
+    """Leave every permission in the file and none of them on the role.
+
+    The purest form of "written but not wired": every grant visible in a diff, a reviewer reads
+    them, and the role has none of them. The first version of the gate read the policy document
+    and stopped there, so this mutation was **accepted** — which is how the gate learned to
+    check the attachment rather than the text.
+    """
+    return _replace(
+        root / "infra/bootstrap/deploy_permissions.tf",
+        'resource "aws_iam_role_policy" "deploy_estate" {',
+        'resource "aws_iam_role_policy" "deploy_estate_unattached" {\n  count = 0\n',
+    )
+
+
+def _take_away_the_deploy_roles_permission_to_build_the_network(root: Path) -> bool:
+    """Drop the EC2 grants and leave the rest.
+
+    **This was the repository's actual state**, generalised: six Terraform layers written and a
+    role that could read and write state and create nothing. `terraform validate` knows nothing
+    about IAM and checkov scans what a policy *grants* rather than what an apply *needs*, so
+    nothing caught it — the deploy would have failed on `ec2:CreateVpc` four minutes in, with
+    the environment approval already spent.
+    """
+    path = root / "infra/bootstrap/deploy_permissions.tf"
+    text = path.read_text(encoding="utf-8")
+    if '"ec2:' not in text:
+        return False
+    # Every one of them. Removing a single action leaves the others and the gate — which checks
+    # that a grant for the service exists at all — correctly reports nothing, because a role
+    # with most of its EC2 actions is a role the gate cannot judge offline. What it can judge
+    # is a service with no grant whatsoever, which is what this plants.
+    path.write_text(text.replace('"ec2:', '"ec2NOTHING:'), encoding="utf-8")
+    return True
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -549,6 +601,33 @@ MUTATIONS: tuple[Mutation, ...] = (
         _require_a_header_on_every_page,
         "The naive implementation. Reports a complete table that is short by every row after "
         "the break, with a printed total that still looks plausible.",
+    ),
+    Mutation(
+        "transcribe a value bootstrap already published",
+        "deploy resolution",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "transcribed value looks like an independent setting",
+        _transcribe_a_value_bootstrap_already_published,
+        "Always framed as simpler: one fewer moving part. What it costs is a rename that "
+        "breaks the deploy with the fix in a settings page rather than a diff.",
+    ),
+    Mutation(
+        "write the grants and never attach them",
+        "deploy permissions",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "grants nothing",
+        _write_the_grants_and_never_attach_them,
+        "Every permission visible in the diff, none of them in effect. Accepted on first run, "
+        "which is how the gate learned to check the attachment rather than the text.",
+    ),
+    Mutation(
+        "take away the deploy role's permission to build the network",
+        "deploy permissions",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "no ec2: grant",
+        _take_away_the_deploy_roles_permission_to_build_the_network,
+        "The repository's actual state until this gate was written, generalised: six layers "
+        "and a role that could create nothing. Fails four minutes in, approval already spent.",
     ),
 )
 

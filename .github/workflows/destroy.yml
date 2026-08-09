@@ -70,10 +70,20 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - run: |
-          terraform -chdir=infra/analytics init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/analytics destroy -auto-approve -refresh=false
 
   batch:
@@ -89,10 +99,20 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - run: |
-          terraform -chdir=infra/batch init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/batch destroy -auto-approve -refresh=false
 
   lakehouse:
@@ -110,16 +130,38 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: empty the lake before destroying it
         # A versioned bucket with objects in it refuses to be destroyed, and a teardown that
         # fails on that leaves the bucket, its storage cost and the KMS key it needs. The
         # deletion is explicit rather than `force_destroy = true` on the resource, because
         # `force_destroy` is a property somebody can trip over during a *normal* apply.
-        run: aws s3 rm "s3://${{ vars.LAKE_BUCKET }}" --recursive || true
+        #
+        # The bucket name comes from the layer's own state, not from a repository variable.
+        # A transcribed name here is the worst of the four this workflow used to carry: a
+        # `destroy` pointed at a bucket that does not exist reports success, empties nothing,
+        # and then fails on a bucket that still has objects in it — or, worse, empties a
+        # bucket that does exist and belongs to something else.
+        run: |
+          set -euo pipefail
+          terraform -chdir=infra/lakehouse init \
+            -backend-config="bucket=$TF_STATE_BUCKET" \
+            -backend-config="region=${{ env.AWS_REGION }}"
+          LAKE_BUCKET=$(terraform -chdir=infra/lakehouse output -raw lake_bucket)
+          echo "emptying $LAKE_BUCKET"
+          aws s3 rm "s3://$LAKE_BUCKET" --recursive || true
       - run: |
-          terraform -chdir=infra/lakehouse init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false
 
   extraction:
@@ -135,8 +177,18 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: release deletion protection on the record tables
         # The decision table and the ledger carry `deletion_protection_enabled`, which is right
         # for every day except this one. Released explicitly here so that the protection is a
@@ -146,7 +198,7 @@ jobs:
             aws dynamodb update-table --table-name "$table" --no-deletion-protection-enabled || true
           done
       - run: |
-          terraform -chdir=infra/extraction init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/extraction destroy -auto-approve -refresh=false
 
   foundation:
@@ -162,15 +214,25 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: empty the data zones
         run: |
           for zone in landing records evidence access-logs; do
             aws s3 rm "s3://${PROJECT}-${zone}-$(aws sts get-caller-identity --query Account --output text)" --recursive || true
           done
       - run: |
-          terraform -chdir=infra/foundation init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/foundation init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/foundation destroy -auto-approve -refresh=false
 
   # `infra/bootstrap` is deliberately absent. It holds the state bucket, which has
@@ -187,8 +249,18 @@ jobs:
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
           aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: list anything still tagged for this project
         # The step that makes this a teardown rather than a hope. A destroy that reports success
         # while leaving a tagged resource behind is the exact failure this file exists to

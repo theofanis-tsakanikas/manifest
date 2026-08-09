@@ -28,6 +28,17 @@ output "bucket_names" {
   value       = { for name, bucket in aws_s3_bucket.zone : name => bucket.id }
 }
 
+output "access_logs_bucket" {
+  description = <<-EOT
+    The bucket every zone logs into, and that the lakehouse logs into too.
+
+    An output rather than a name the next layer recomputes. It was neither for a while — the
+    lakehouse took it as a repository variable that had to be hand-typed to match what this
+    layer had already computed, which is a value with two authors and no check.
+  EOT
+  value       = aws_s3_bucket.access_logs.id
+}
+
 output "alerts_topic_arn" {
   description = "Where the budget guard and the expiry rule publish."
   value       = aws_sns_topic.alerts.arn

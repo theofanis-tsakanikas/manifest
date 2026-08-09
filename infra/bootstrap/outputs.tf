@@ -17,6 +17,17 @@ output "deploy_role_arn" {
   value       = aws_iam_role.deploy.arn
 }
 
+output "published_parameters" {
+  description = <<-EOT
+    Where the deploy reads everything else from.
+
+    The deploy needs exactly one repository variable — the account id — and resolves the rest
+    from these. See `published.tf` for why: a transcribed value looks like an independent
+    setting, and the fix for a mismatch ends up in a settings page rather than in a diff.
+  EOT
+  value       = [for parameter in aws_ssm_parameter.published : parameter.name]
+}
+
 output "backend_configuration" {
   description = "Paste into each layer's backend block. Written out because a hand-typed backend key is how two layers end up sharing one state file."
   value       = <<-EOT
