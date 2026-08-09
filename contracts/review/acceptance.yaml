@@ -1,0 +1,51 @@
+# A declared, named, expiring acceptance that the current configuration exceeds review capacity.
+#
+# ADR-0001 enumerates four permitted responses when the capacity gate fires. This file is the
+# fourth one applied honestly: the overage is **accepted deliberately, by a named human, with an
+# expiry**, and doctrine rule 6 says that on expiry the finding returns and CI goes red.
+#
+# It exists because the alternative is worse in both directions. A gate that is permanently red
+# is a gate somebody deletes. A gate that is quietly relaxed until it passes is claim 5 becoming
+# decoration. An acceptance that names the cause, the response being pursued and the date it
+# lapses is the only version that keeps the number visible and the build meaningful.
+#
+# **Reading this file is the point.** The system, configured with tier-0 extraction only and the
+# error budgets currently declared, queues about 91% of extracted fields — roughly 83 times what
+# four reviewers can absorb at the declared peak. That is not a bug in the queue. It is the
+# system saying, correctly, that it cannot staff its own output at these budgets with this
+# reader, which is the finding claims 1 and 5 exist to produce.
+
+version: 1
+
+acceptances:
+  - id: tier_zero_only_extraction
+    accepted_by: "Theofanis Tsakanikas"
+    accepted_on: "2026-08-09"
+    # Six months. Long enough for the cascade's upper tiers to be a real answer, short enough
+    # that nobody inherits it without deciding again.
+    expires_on: "2027-02-09"
+
+    finding: >-
+      The derived thresholds queue about 91% of extracted fields, roughly 83x the declared
+      capacity at the peak multiplier. The dominant term is fields with no derivable threshold:
+      33 of 36 fields cannot support one at their declared error budget on this corpus.
+
+    cause: >-
+      Extraction runs at tier 0 only. `docs/AWS-CONSTRAINTS.md` establishes that Greek and Dutch
+      have no managed reader in the stack at all, and `evals/calibration/` establishes that most
+      fields are evidence-limited rather than quality-limited — the reader is not wrong, there
+      is not enough labelled data to prove it right at budgets between 0.1% and 2%.
+
+    response: >-
+      ADR-0001's second permitted response: escalate more. The cascade's upper tiers are the
+      designed answer and they are never called in this repository, so their effect is an
+      assumption and is labelled one. What is NOT being done is ADR-0001's forbidden move —
+      raising a confidence threshold to reduce queue volume without changing the error budget,
+      which inverts the derivation and turns a derived number into a chosen one.
+
+    # What this acceptance does not do, stated so it cannot drift into doing it:
+    #   - it does not change a single error budget
+    #   - it does not raise a threshold
+    #   - it does not let a field publish below its threshold
+    #   - it does not stop the overage being printed, in full, on every run
+    changes_nothing_about_publication: true

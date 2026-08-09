@@ -96,14 +96,21 @@ jobs:
         # worse and is the honest one. Reporting only the first would be the overclaim.
         run: python -m evals.reconciliation
 
+      - name: "claim 5 — the human loop is real, and measured"
+        # Both halves. The capacity gate fires on the current configuration and passes only on
+        # a named, dated, expiring acceptance — doctrine rule 6. When that acceptance lapses,
+        # this step goes red on its own, which is the whole point of an expiry.
+        run: python -m evals.review
+
       - name: "claim 6 — entity resolution is reversible"
         run: python -m evals.entities
 
-      # Claim 2 needs the rendered corpus, which is git-ignored and reproducible from a seed;
-      # it runs in `make preflight` on a machine that has generated it. Claims 5 and 7 arrive
-      # with phase 4. A step here for a claim that is not yet provable would be a green tick
-      # over work that has not happened, and it is worse than an absent step because it looks
-      # like coverage.
+      - name: "claim 7 — bulk reprocessing is idempotent, and its cost is modelled"
+        run: python -m evals.scale
+
+      # Claim 2 is the only one absent, and for a reason rather than an omission: it needs the
+      # rendered corpus, which is git-ignored and reproducible from a seed. It runs in
+      # `make preflight` on a machine that has generated it.
 
   gate-proof:
     name: attack our own gates

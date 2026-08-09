@@ -147,6 +147,24 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "claim 5 · the human loop",
+        [PYTHON, "-m", "evals.review"],
+        "Nothing publishes below its threshold without a recorded decision, a field with no "
+        "provenance cannot be approved into existence, and the queue's declared capacity is "
+        "measured against — with any overage accepted by name, with an expiry.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "claim 7 · scale and cost",
+        [PYTHON, "-m", "evals.scale"],
+        "A re-run does no work, a crash resumes at exactly the remainder, and the cost is a "
+        "model built from a measured routing distribution and published prices — labelled a "
+        "model, with its largest assumption swept rather than chosen.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
         "claim 6 · entities",
         [PYTHON, "-m", "evals.entities"],
         "A merge can be undone with lineage intact and every downstream record re-pointed. "

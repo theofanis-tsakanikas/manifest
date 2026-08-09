@@ -350,6 +350,44 @@ class ReviewCapacity(Strict):
         return self.decisions_per_day
 
 
+class CapacityAcceptance(Strict):
+    """A named, dated, expiring acceptance that the review queue is over capacity.
+
+    Doctrine rule 6: exceptions expire, and on expiry the finding returns and CI goes red. This
+    is the only mechanism by which claim 5's capacity gate may pass while the projection exceeds
+    the declared capacity, and it changes nothing about publication — the flag below is asserted
+    rather than merely documented, because an acceptance that could quietly widen into a
+    publication override is an override wearing a different name.
+    """
+
+    id: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
+    accepted_by: Annotated[str, Field(min_length=3)]
+    accepted_on: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+    expires_on: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+    finding: Annotated[str, Field(min_length=40)]
+    cause: Annotated[str, Field(min_length=40)]
+    response: Annotated[str, Field(min_length=40)]
+    changes_nothing_about_publication: bool
+
+    @model_validator(mode="after")
+    def _cannot_touch_publication(self) -> Self:
+        if not self.changes_nothing_about_publication:
+            raise ValueError(
+                f"acceptance {self.id!r} does not assert that it changes nothing about "
+                f"publication. A capacity acceptance is a statement about staffing; the moment "
+                f"it can also let a field publish, it is a publication override with a "
+                f"staffing name on it"
+            )
+        if self.expires_on <= self.accepted_on:
+            raise ValueError(f"acceptance {self.id!r} expires on or before the day it was accepted")
+        return self
+
+
+class ReviewAcceptances(Strict):
+    version: Annotated[int, Field(ge=1)]
+    acceptances: tuple[CapacityAcceptance, ...]
+
+
 class TierEligibility(Strict):
     """Which cascade tiers may read a page in a given language (ADR-0004).
 

@@ -27,6 +27,7 @@ from manifest.contracts.model import (
     FieldType,
     ReconciliationContract,
     ReconciliationRule,
+    ReviewAcceptances,
     ReviewCapacity,
     ToleranceSpec,
 )
@@ -60,6 +61,7 @@ class ContractSet:
     reconciliation: ReconciliationContract
     entities: EntityContract
     review: ReviewCapacity
+    acceptances: ReviewAcceptances
     cascade: CascadeContract
 
     def document(self, document_id: str) -> DocumentContract:
@@ -100,6 +102,7 @@ def load(root: Path) -> ContractSet:
     reconciliation = _parse(root / "reconciliation" / "shipment.yaml", ReconciliationContract)
     entities = _parse(root / "entities" / "parties.yaml", EntityContract)
     review = _parse(root / "review" / "capacity.yaml", ReviewCapacity)
+    acceptances = _parse(root / "review" / "acceptance.yaml", ReviewAcceptances)
     cascade = _parse(root / "cascade" / "routing.yaml", CascadeContract)
 
     contracts = ContractSet(
@@ -107,6 +110,7 @@ def load(root: Path) -> ContractSet:
         reconciliation=reconciliation,
         entities=entities,
         review=review,
+        acceptances=acceptances,
         cascade=cascade,
     )
     _cross_check(contracts)
