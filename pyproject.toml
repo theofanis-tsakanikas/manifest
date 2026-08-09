@@ -110,6 +110,10 @@ ignore = [
 # These scripts shell out to `terraform`, `make`, `git` and `tesseract` by name. A hardcoded
 # absolute path would be wrong on every machine but the one that wrote it, and the commands
 # are fixed literals with no user input anywhere near them.
+# Each of these is a check that says one thing per problem it can find. Splitting the branches
+# into helpers to satisfy a count would separate each refusal from the sentence explaining it,
+# and the sentence is the part a reader acts on.
+"scripts/check_deploy_path.py" = ["PLR0912"]
 "scripts/preflight.py" = ["S607"]
 "scripts/tf_validate.py" = ["S607"]
 

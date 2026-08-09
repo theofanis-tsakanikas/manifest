@@ -1,0 +1,164 @@
+# The deploy path. **Written, gated, and never dispatched.**
+#
+# `docs/DECISIONS.md` 14: nothing in this repository is ever applied to AWS. This file exists
+# because "ready to deploy" is a claim about a path that can be inspected, and a repository
+# that says it is ready without one is asking to be taken at its word.
+#
+# Three properties make it a gate rather than a button.
+#
+# **It re-runs CI against the exact ref being deployed.** Not "CI passed on main last Tuesday"
+# — the same commit, now. Without `workflow_call` in ci.yml this `uses:` is not a reusable
+# workflow at all and the deploy fails before its first step, which is how a repository ends up
+# with a deploy path nobody has ever successfully started.
+#
+# **Every job names a protected environment.** The OIDC trust in `infra/bootstrap` lists
+# `repo:owner/repo:environment:deploy` and nothing else, so a workflow run from any other
+# context cannot assume the role at all — the gate is in the trust policy, not only in this
+# file.
+#
+# **Layers apply in dependency order, one at a time.** Foundation makes the network and the
+# keys every other layer takes as variables; nothing reads another layer's state, so the order
+# here is the whole of the dependency graph and it is legible.
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      expires_at:
+        description: "ISO date after which the reaper may destroy this estate. No default."
+        required: true
+        type: string
+      confirm:
+        description: 'Type "apply" to confirm. Nothing in this repository has ever been applied.'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # OIDC. There is no access key anywhere in this repository.
+
+concurrency:
+  # One deploy at a time, and never cancelled mid-apply: a cancelled apply leaves state that
+  # describes half an estate, and the next plan wants to destroy things nobody created.
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.15.5"
+  AWS_REGION: eu-central-1
+
+jobs:
+  confirm:
+    name: confirm the intent
+    runs-on: ubuntu-latest
+    steps:
+      - name: refuse anything but the word
+        if: inputs.confirm != 'apply'
+        run: |
+          echo "This workflow applies real infrastructure and bills a real account."
+          echo "Type 'apply' in the confirm input to proceed."
+          exit 1
+
+  ci:
+    name: the whole suite, against this ref
+    needs: confirm
+    uses: ./.github/workflows/ci.yml
+
+  foundation:
+    name: "apply · foundation"
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: deploy # The protected environment. Approval happens here.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: init
+        run: terraform -chdir=infra/foundation init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+      - name: plan
+        run: |
+          terraform -chdir=infra/foundation plan -out=tfplan \
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var 'budget_notification_email=${{ vars.BUDGET_EMAIL }}'
+      - name: apply
+        run: terraform -chdir=infra/foundation apply -auto-approve tfplan
+      - name: outputs
+        id: out
+        run: terraform -chdir=infra/foundation output -json > foundation.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: foundation-outputs
+          path: foundation.json
+
+  # Every layer below takes foundation's outputs as *variables*. Never a remote state read:
+  # that makes one layer's internals another layer's contract, and the two can then not be
+  # destroyed separately — which is the property `destroy.yml` depends on.
+  extraction:
+    name: "apply · extraction"
+    needs: foundation
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: foundation-outputs
+      - name: apply
+        run: |
+          terraform -chdir=infra/extraction init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/extraction apply -auto-approve \
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var "vpc_id=$(jq -r .vpc_id.value foundation.json)" \
+            -var "private_subnet_ids=$(jq -c .private_subnet_ids.value foundation.json)" \
+            -var "endpoint_security_group_id=$(jq -r .endpoint_security_group_id.value foundation.json)" \
+            -var "data_key_arn=$(jq -r .data_key_arn.value foundation.json)" \
+            -var "logs_key_arn=$(jq -r .logs_key_arn.value foundation.json)" \
+            -var "landing_bucket=$(jq -r .bucket_names.value.landing foundation.json)" \
+            -var "records_bucket=$(jq -r .bucket_names.value.records foundation.json)" \
+            -var "evidence_bucket=$(jq -r .bucket_names.value.evidence foundation.json)"
+
+  lakehouse:
+    name: "apply · lakehouse"
+    needs: extraction
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: foundation-outputs
+      - name: apply
+        run: |
+          terraform -chdir=infra/lakehouse init -backend-config="bucket=${{ vars.STATE_BUCKET }}" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/lakehouse apply -auto-approve \
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var "data_key_arn=$(jq -r .data_key_arn.value foundation.json)" \
+            -var "logs_key_arn=$(jq -r .logs_key_arn.value foundation.json)" \
+            -var "records_bucket=$(jq -r .bucket_names.value.records foundation.json)" \
+            -var "access_logs_bucket=${{ vars.ACCESS_LOGS_BUCKET }}"
+
+  # `batch` and `analytics` are deliberately NOT applied by default. They are the two most
+  # expensive layers in the estate — EMR Serverless and a Redshift workgroup — and an estate
+  # that stands them up because a deploy ran is an estate whose cost is decided by a default.
+  # They are separate dispatches with their own approval, which is the same discipline as
+  # Attestor's OpenSearch: stand up, use, tear down, never leave standing.

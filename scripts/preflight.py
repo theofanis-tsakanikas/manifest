@@ -219,6 +219,15 @@ CHECKS: list[Check] = [
     # ── Deployability ───────────────────────────────────────────────────────
     Check(
         "deployability",
+        "the deploy path",
+        [PYTHON, "scripts/check_deploy_path.py"],
+        "Every layer the deploy workflow applies is torn down by the destroy workflow, in "
+        "reverse order, and both are human-dispatch only behind a protected environment. A "
+        "repository with a deploy path and no teardown path is how an estate gets left "
+        "standing.",
+    ),
+    Check(
+        "deployability",
         "terraform fmt",
         ["terraform", "fmt", "-check", "-recursive", "infra"],
         "Formatting drift makes a real diff unreadable.",

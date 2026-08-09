@@ -141,6 +141,11 @@ jobs:
         # separate environments is what stops the scanner deciding the application's dependency
         # floor.
         run: pipx install checkov
+      - name: the deploy path tears itself down
+        # Checked in CI rather than only in preflight, because the asymmetry it catches is
+        # acquired in a pull request: somebody adds a layer to deploy.yml and the destroy file
+        # is the one they do not have open.
+        run: python scripts/check_deploy_path.py
       - run: terraform fmt -check -recursive infra
       - name: validate every layer against real provider schemas
         # `-backend=false`: no state, no credentials, nothing reached but the provider registry.

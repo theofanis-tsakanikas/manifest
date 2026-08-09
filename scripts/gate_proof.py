@@ -254,6 +254,53 @@ def _let_a_container_number_skip_its_own_arithmetic(root: Path) -> bool:
     )
 
 
+def _remove_a_layer_from_the_teardown(root: Path) -> bool:
+    """Delete the lakehouse teardown and leave its deploy job in place.
+
+    The asymmetry is acquired one layer at a time, and never on purpose: somebody adds a layer
+    to the deploy workflow, and the destroy file is the one they do not have open. What is left
+    is a repository that reads as complete and an estate that cannot be fully torn down.
+    """
+    path = root / ".github/workflows/destroy.yml"
+    text = path.read_text(encoding="utf-8")
+    start = text.find("  lakehouse:\n")
+    if start < 0:
+        return False
+    end = text.find("\n  extraction:", start)
+    if end < 0:
+        return False
+    path.write_text(text[:start] + text[end + 1 :], encoding="utf-8")
+    return True
+
+
+def _let_the_teardown_stop_at_the_first_failure(root: Path) -> bool:
+    """Drop `always()` from a teardown job.
+
+    Reads as tidier, and it is the failure the whole file exists to prevent: the destroy stops
+    where it broke, reports a failure nobody reads to the end of, and leaves the expensive half
+    running.
+    """
+    return _replace(
+        root / ".github/workflows/destroy.yml",
+        "    needs: lakehouse\n    if: always() && !cancelled()",
+        "    needs: lakehouse",
+    )
+
+
+def _let_a_push_trigger_the_deploy(root: Path) -> bool:
+    """Add a push trigger to the deploy workflow.
+
+    The most plausible mistake in this repository: somebody wants main to deploy itself. It
+    turns a gated, human-dispatched, confirmed apply into something that happens because a pull
+    request merged.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        "on:\n  workflow_dispatch:",
+        "on:\n  push:\n    branches: [main]\n  workflow_dispatch:",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -363,6 +410,32 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_a_container_number_skip_its_own_arithmetic,
         "Looks like removing redundancy. Removes the only check on these documents that can "
         "prove a read wrong without a second opinion.",
+    ),
+    Mutation(
+        "remove a layer from the teardown",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "left standing",
+        _remove_a_layer_from_the_teardown,
+        "Acquired one layer at a time and never on purpose. The repository reads as complete "
+        "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "let the teardown stop at the first failure",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "expensive half",
+        _let_the_teardown_stop_at_the_first_failure,
+        "Reads as tidier. The destroy stops where it broke and leaves the expensive half running.",
+    ),
+    Mutation(
+        "let a push trigger the deploy",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "workflow_dispatch",
+        _let_a_push_trigger_the_deploy,
+        "The most plausible mistake here: somebody wants main to deploy itself. An apply that "
+        "happens because a pull request merged.",
     ),
 )
 

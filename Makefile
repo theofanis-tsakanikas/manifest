@@ -139,6 +139,10 @@ gate-proof: ## Break every gate on purpose; each must be refused, for the right 
 
 # ── Infrastructure (offline validation only — no cloud calls) ────────────────
 
+.PHONY: deploy-path
+deploy-path: ## Every applied layer is torn down, in reverse; both workflows human-only
+	$(PY) scripts/check_deploy_path.py
+
 .PHONY: tf-fmt
 tf-fmt: ## terraform fmt across every layer
 	terraform fmt -recursive infra

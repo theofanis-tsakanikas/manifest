@@ -1,0 +1,30 @@
+{
+  "_note": "AUTHORED from the documented response schema. Never captured — see AUTHORED.md.",
+  "DocumentMetadata": { "Pages": 1 },
+  "Blocks": [
+    { "BlockType": "PAGE", "Id": "page-1", "Page": 1,
+      "Relationships": [{ "Type": "CHILD", "Ids": ["line-1", "line-2"] }] },
+    { "BlockType": "LINE", "Id": "line-1", "Page": 1, "Text": "GROSS WEIGHT",
+      "Confidence": 99.1,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.20, "Width": 0.13, "Height": 0.012 } },
+      "Relationships": [{ "Type": "CHILD", "Ids": ["word-1", "word-2"] }] },
+    { "BlockType": "WORD", "Id": "word-1", "Page": 1, "Text": "GROSS", "Confidence": 99.4,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.20, "Width": 0.06, "Height": 0.012 } } },
+    { "BlockType": "WORD", "Id": "word-2", "Page": 1, "Text": "WEIGHT", "Confidence": 98.8,
+      "Geometry": { "BoundingBox": { "Left": 0.15, "Top": 0.20, "Width": 0.06, "Height": 0.012 } } },
+    { "BlockType": "LINE", "Id": "line-2", "Page": 1, "Text": "27000 KGS", "Confidence": 71.2,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.22, "Width": 0.10, "Height": 0.014 } },
+      "Relationships": [{ "Type": "CHILD", "Ids": ["word-3", "word-4"] }] },
+    { "BlockType": "WORD", "Id": "word-3", "Page": 1, "Text": "27000", "Confidence": 71.2,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.22, "Width": 0.05, "Height": 0.014 } } },
+    { "BlockType": "WORD", "Id": "word-4", "Page": 1, "Text": "KGS", "Confidence": 96.5,
+      "Geometry": { "BoundingBox": { "Left": 0.14, "Top": 0.22, "Width": 0.04, "Height": 0.014 } } },
+    { "BlockType": "KEY_VALUE_SET", "Id": "kv-1", "Page": 1, "EntityTypes": ["KEY"],
+      "Confidence": 88.0,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.20, "Width": 0.13, "Height": 0.012 } },
+      "Relationships": [{ "Type": "VALUE", "Ids": ["kv-2"] }] },
+    { "BlockType": "KEY_VALUE_SET", "Id": "kv-2", "Page": 1, "EntityTypes": ["VALUE"],
+      "Confidence": 71.0,
+      "Geometry": { "BoundingBox": { "Left": 0.08, "Top": 0.22, "Width": 0.10, "Height": 0.014 } } }
+  ]
+}
