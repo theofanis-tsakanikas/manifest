@@ -181,19 +181,27 @@ them.
 
 ## What is built, and what is not
 
-The deploy path is complete. The system behind it is not finished, and the gaps are listed
-rather than left for a reader to find.
+The deploy path is complete and the system behind it is close to it. What remains open is
+listed rather than left for a reader to find.
 
 | Not built | Consequence, stated |
 |---|---|
-| **Injection handling** | The corpus plants injection attempts in free-text fields and records them in ground truth. **Nothing in `src/` inspects them.** The corpus is ready for the control; the control does not exist |
-| **Line-item table extraction** | The corpus plants a table breaking across a page boundary with no repeated header, and `line_item_count` is a declared field. Extraction is anchor-based over single values, so there is no reader for the table and no invoice-total-against-sum-of-lines check. The pathology is present and unexercised |
-| **HS classification model** | `hs_code` is declared `always_review` in its contract and claim 5 asserts that it cannot publish without a recorded decision — which is the property that matters. The *proposal* model is not built, so there is nothing for a reviewer to agree or disagree with yet |
-| **The Redshift marts** | The warehouse, its role and its capacity floor are written and validated. No SQL, no dbt models. `docs/DECISIONS.md` 6 says to drop Redshift rather than keep it as a keyword if these are not built — that decision is live, not hypothetical |
-| **The batch job** | `infra/batch/` is written and validated. Claim 7 is proved against the pure planner, which is where it belongs; the Spark job that would execute a plan on the application is not written |
-| **The public dataset** | The out-of-distribution honesty check. Until it exists, the only check against non-generated documents is the ISO 6346 falsifier, which gives a lower bound on the error rate and nothing else |
+| **The public dataset** | The out-of-distribution honesty check. Every figure on the scoreboard is scored against a corpus this repository generated; until a real public document set is wired in, the only measurement against non-generated paper is the ISO 6346 check digit, which gives a **lower bound** on the error rate and nothing else |
+| **The human decision as a training signal** | A proposal below threshold cannot publish without a recorded decision, and `evals/review` asserts it. The decision *feeding back* is not built: the HS proposer is a similarity ranker over declared headings, not a model that learns, so there is nothing for a decision to train |
 
-`PLAN.md` carries the same list against the phase that owns it.
+Everything else on `PLAN.md` is ticked individually, with a harness behind it and — where it is
+a control — a `gate-proof` mutation that breaks it.
+
+Two smaller honesty notes that are not gaps but are easy to over-read:
+
+**The classification figures are not a claim about production accuracy.** They are measured over
+twelve headings chosen because this repository's own corpus falls under them. A tariff has five
+thousand headings and a real classifier meets goods nobody described in advance. What is proved
+is the *gate*: a contested heading abstains, and no score publishes anything.
+
+**The batch job has never run.** `pipelines/reprocess.py` is written, tested and defaults to a
+dry run; claim 7 is proved against the pure planner it calls. The part that needs a cluster is
+one function, and keeping it that size is what stops the untested region growing.
 
 ---
 

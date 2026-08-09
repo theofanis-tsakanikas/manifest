@@ -195,10 +195,13 @@ def test_a_merge_threshold_may_not_claim_to_be_derived() -> None:
 
 def _set_with_rule(tmp_path: Path, rule: dict[str, Any]) -> None:
     """Copy the real contract set, replace the reconciliation rules, and load it."""
-    for directory in ("documents", "reconciliation", "entities", "review", "cascade"):
-        (tmp_path / directory).mkdir(parents=True)
-        for source in (ROOT / directory).glob("*.yaml"):
-            (tmp_path / directory / source.name).write_text(
+    # Every directory under `contracts/`, discovered rather than listed. A hardcoded list goes
+    # stale the day a contract family is added — and it goes stale silently, as two unrelated
+    # tests failing with "does not exist" while the thing they assert still works.
+    for directory in sorted(path for path in ROOT.iterdir() if path.is_dir()):
+        (tmp_path / directory.name).mkdir(parents=True)
+        for source in directory.glob("*.yaml"):
+            (tmp_path / directory.name / source.name).write_text(
                 source.read_text(encoding="utf-8"), encoding="utf-8"
             )
     target = tmp_path / "reconciliation" / "shipment.yaml"

@@ -57,7 +57,7 @@ RUFF = _tool("ruff")
 #: it another way still runs the scan.
 CHECKOV = str(_CV) if (_CV := ROOT / ".venv-checkov" / "bin" / "checkov").exists() else "checkov"
 
-LINT_PATHS = ["src", "tests", "scripts", "corpus"]
+LINT_PATHS = ["src", "tests", "scripts", "corpus", "evals", "pipelines"]
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -188,6 +188,22 @@ CHECKS: list[Check] = [
         "hide. Without it a dropped row leaves a record that is short and every field in it "
         "looks correct.",
         slow=True,
+    ),
+    Check(
+        "correctness",
+        "classification",
+        [PYTHON, "-m", "evals.classification"],
+        "A contested heading abstains, the band is on the gap between the top two rather than "
+        "on the top score, and no proposal publishes at any score — hs_code is always-review "
+        "and the claim is about the gate rather than the model.",
+    ),
+    Check(
+        "consistency",
+        "analytics marts",
+        [PYTHON, "scripts/check_marts.py"],
+        "Every mart reads only columns analytics/schema.sql declares. A query that invents a "
+        "column fails at minute forty of a deploy, and this is the only place to catch it "
+        "without a warehouse.",
     ),
     Check(
         "correctness",

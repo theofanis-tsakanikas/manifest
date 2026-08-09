@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from manifest.contracts.model import (
     CascadeContract,
+    ClassificationContract,
     DocumentContract,
     EntityContract,
     FieldType,
@@ -63,6 +64,7 @@ class ContractSet:
     review: ReviewCapacity
     acceptances: ReviewAcceptances
     cascade: CascadeContract
+    classification: ClassificationContract
 
     def document(self, document_id: str) -> DocumentContract:
         try:
@@ -104,6 +106,7 @@ def load(root: Path) -> ContractSet:
     review = _parse(root / "review" / "capacity.yaml", ReviewCapacity)
     acceptances = _parse(root / "review" / "acceptance.yaml", ReviewAcceptances)
     cascade = _parse(root / "cascade" / "routing.yaml", CascadeContract)
+    classification = _parse(root / "classification" / "headings.yaml", ClassificationContract)
 
     contracts = ContractSet(
         documents=documents,
@@ -112,6 +115,7 @@ def load(root: Path) -> ContractSet:
         review=review,
         acceptances=acceptances,
         cascade=cascade,
+        classification=classification,
     )
     _cross_check(contracts)
     return contracts

@@ -16,7 +16,7 @@ RUFF := $(if $(wildcard $(VENV)/bin/ruff),$(VENV)/bin/ruff,ruff)
 CHECKOV_VENV := .venv-checkov
 CHECKOV := $(if $(wildcard $(CHECKOV_VENV)/bin/checkov),$(CHECKOV_VENV)/bin/checkov,checkov)
 
-LINT_PATHS := src tests scripts corpus
+LINT_PATHS := src tests scripts corpus evals pipelines
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Everything above the "cloud" section runs with NO AWS account and NO
@@ -83,7 +83,8 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 
 .PHONY: claims
 claims: core-pure planting-blind contracts-validate corpus-check envelope \
-	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 injection line-items ## Every claim gate that exists today
+	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
+	injection line-items classification marts ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
@@ -140,6 +141,14 @@ injection: ## Untrusted document text is fenced structurally and detected as dep
 .PHONY: line-items
 line-items: ## The line-total check that catches a table truncated at a page break
 	$(PY) -m evals.lineitems
+
+.PHONY: classification
+classification: ## The abstention band on a contested heading, and a field that never publishes
+	$(PY) -m evals.classification
+
+.PHONY: marts
+marts: ## Every analytics mart reads only columns the warehouse declares
+	$(PY) scripts/check_marts.py
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason

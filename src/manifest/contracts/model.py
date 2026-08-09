@@ -403,6 +403,44 @@ class ReviewCapacity(Strict):
         return self.decisions_per_day
 
 
+class TariffHeading(Strict):
+    code: Annotated[str, Field(pattern=r"^\d{6}$")]
+    description: Annotated[str, Field(min_length=10)]
+    contested_with: tuple[str, ...] = ()
+
+
+class ClassificationContract(Strict):
+    """The headings the system may propose from, and the pairs it must not choose between."""
+
+    version: Annotated[int, Field(ge=1)]
+    minimum_score: Annotated[Decimal, Field(gt=0, lt=1)]
+    margin: Annotated[Decimal, Field(gt=0, lt=1)]
+    headings: Annotated[tuple[TariffHeading, ...], Field(min_length=2)]
+
+    @model_validator(mode="after")
+    def _contests_are_symmetric_and_real(self) -> Self:
+        codes = {heading.code for heading in self.headings}
+        for heading in self.headings:
+            unknown = set(heading.contested_with) - codes
+            if unknown:
+                raise ValueError(
+                    f"heading {heading.code} is contested against {sorted(unknown)}, which this "
+                    f"contract does not declare. A contest with a heading nobody proposes never "
+                    f"fires"
+                )
+            for other_code in heading.contested_with:
+                other = next(h for h in self.headings if h.code == other_code)
+                if heading.code not in other.contested_with:
+                    raise ValueError(
+                        f"{heading.code} declares a contest with {other_code} and "
+                        f"{other_code} does not declare one back. A one-sided contest fires "
+                        f"only when the description happens to match the side that declared "
+                        f"it, which makes the abstention depend on wording rather than on the "
+                        f"disagreement"
+                    )
+        return self
+
+
 class CapacityAcceptance(Strict):
     """A named, dated, expiring acceptance that the review queue is over capacity.
 

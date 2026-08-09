@@ -1,0 +1,69 @@
+# The tariff headings this system may propose from, and the pairs it must not choose between.
+#
+# **Data, and small on purpose.** These are the headings the corpus's goods fall under, not the
+# Harmonised System — that is five thousand headings and importing it would make this file look
+# like a tariff database while proving nothing extra. What is being demonstrated is the *gate*:
+# an abstention band on a contested heading, and a field that does not publish on any score.
+#
+# `contested_with` is the part that matters and it is declared rather than learned. These are
+# pairs argued between competent professionals, where nothing in a goods description resolves
+# the question — so a proposal landing in one is offered as two candidates with no winner. A
+# system that picked between them would be most confident precisely where the trade is least
+# certain.
+version: 1
+
+# A proposal below this is not worth a reviewer's time. Offering the best of a bad set is the
+# unhelpful thing that looks helpful.
+minimum_score: 0.35
+
+# The abstention band, on the **gap between the top two**, not on the top score. A description
+# matching two headings closely scores *higher* at the top than one matching a single heading
+# loosely, so a band on the absolute score would abstain least where professionals disagree
+# most. This is the single most consequential line in the file.
+margin: 0.08
+
+headings:
+  - code: "690722"
+    description: "Ceramic flags and paving, hearth or wall tiles, glazed"
+    # Glazed against unglazed is decided by the surface, which a commercial description
+    # frequently omits — and the duty differs.
+    contested_with: ["690721"]
+
+  - code: "690721"
+    description: "Ceramic flags and paving, hearth or wall tiles, unglazed"
+    contested_with: ["690722"]
+
+  - code: "150910"
+    description: "Olive oil and its fractions, virgin"
+    # Virgin against refined turns on a processing step that appears on no invoice.
+    contested_with: ["150990"]
+
+  - code: "150990"
+    description: "Olive oil and its fractions, other than virgin"
+    contested_with: ["150910"]
+
+  - code: "630221"
+    description: "Bed linen, printed, of cotton"
+    contested_with: ["630231"]
+
+  - code: "630231"
+    description: "Bed linen, of cotton, not printed"
+    contested_with: ["630221"]
+
+  - code: "761010"
+    description: "Aluminium doors, windows and their frames and thresholds"
+
+  - code: "851610"
+    description: "Electric instantaneous or storage water heaters and immersion heaters"
+
+  - code: "681591"
+    description: "Articles of stone, containing magnesite, dolomite or chromite"
+
+  - code: "680221"
+    description: "Marble, travertine and alabaster, monumental or building stone, worked"
+
+  - code: "630533"
+    description: "Sacks and bags for packing goods, of polyethylene or polypropylene strip"
+
+  - code: "731210"
+    description: "Stranded wire, ropes and cables of iron or steel, not electrically insulated"
