@@ -26,39 +26,39 @@ actually runs on the machine**, which is why the cascade's bottom tier is a loca
 
 ## Phase 0 — Foundations
 
-- [ ] `pyproject.toml`, ruff, pytest, `Makefile` (help-target pattern; the venv-or-ambient
+- [x] `pyproject.toml`, ruff, pytest, `Makefile` (help-target pattern; the venv-or-ambient
       interpreter handling from Attestor's Makefile exists because of a real CI failure).
-- [ ] `.github/workflows/ci.yml`: lint, test, gitleaks, `terraform validate`, checkov. CI from
+- [x] `.github/workflows/ci.yml`: lint, test, gitleaks, `terraform validate`, checkov. CI from
       commit one.
-- [ ] `scripts/check_core_is_pure.py` — fails if `core/` imports boto3, an engine SDK, or
+- [x] `scripts/check_core_is_pure.py` — fails if `core/` imports boto3, an engine SDK, or
       mentions an engine by name. Plus its own test.
-- [ ] `scripts/gate_proof.py` — the harness, with its first real mutation.
-- [ ] `docs/AWS-CONSTRAINTS.md`, verified against current documentation and dated: Textract
+- [x] `scripts/gate_proof.py` — the harness, with its first real mutation.
+- [x] `docs/AWS-CONSTRAINTS.md`, verified against current documentation and dated: Textract
       sync vs async, page and size limits, which analyses return geometry · Bedrock Data
       Automation's current capabilities, regions and output shape · **the current status and
       availability of Amazon A2I — do not assume it exists; if it does not, the review queue is
       a small application of our own, which is fine and possibly better** · EMR Serverless
       sizing and cost model · Redshift Serverless minimum capacity · OpenSearch options.
-- [ ] **ADR-0001 — abstention is safe but not free.** The queue-capacity doctrine. The
+- [x] **ADR-0001 — abstention is safe but not free.** The queue-capacity doctrine. The
       defining argument of the project; write it before the code that assumes it.
-- [ ] **ADR-0002 — threshold derivation and calibration.** How the error budget becomes a
+- [x] **ADR-0002 — threshold derivation and calibration.** How the error budget becomes a
       threshold: the **upper confidence bound** rule, N reported everywhere, `always-review`
       as the answer when no threshold fits the budget at the available N, the **declared
       per-field tolerance** that decides when CI goes red, and why the corpus needs a declared
       difficulty band for any of it to mean anything.
-- [ ] **ADR-0003 — provenance verified against the page, not the record.** The three layers of
+- [x] **ADR-0003 — provenance verified against the page, not the record.** The three layers of
       **unequal, declared** strength — ink present in the crop (reader-independent); the crop
       re-read through a *different* recognition path (path-independent, not engine-independent);
       check-digit arithmetic (absolute where it applies) — with what each one catches and what
       it cannot. Plus the fixture family where the recorded box is deliberately wrong in four
       distinct ways, because "wrong box that still contains the value" and "wrong box on
       whitespace" fail differently.
-- [ ] **ADR-0004 — the engine cascade and the normalised representation.** Tiers, escalation
+- [x] **ADR-0004 — the engine cascade and the normalised representation.** Tiers, escalation
       rule, and — per revised decision 9 — the explicit table of what the cascade eval can and
       cannot prove. Routing distribution measured offline, unit prices published and cited,
       product labelled a **model**, the value of the escalated fraction named as an assumption
       with its sensitivity shown.
-- [ ] **ADR-0005 — the local reference engine, and its recording.** Which open-source OCR
+- [x] **ADR-0005 — the local reference engine, and its recording.** Which open-source OCR
       engine sits at tier 0, its licence, what it gives us (real confidence, real geometry,
       zero cost) and what it does not. The **recording**: why every threshold is derived from
       committed normalised output rather than a live run, and the regeneration ceremony that
@@ -66,12 +66,19 @@ actually runs on the machine**, which is why the cascade's bottom tier is a loca
       policy for the AWS adapters: authored from the documented response schema, labelled as
       authored, with a schema-conformance test. Choose the engine here — claims 1 and 2 are
       unprovable without it.
-- [ ] Verify every citation in `docs/REGULATORY.md`; stamp the file. **Expect to conclude that
-      the AI Act does not apply — that conclusion is the deliverable, not a problem.**
-- [ ] `infra/bootstrap/` — state backend + CI OIDC role. Written, validated, **not applied**.
+- [x] Verify every citation in `docs/REGULATORY.md`; stamp the file. **Expect to conclude that
+      no high-risk classification arises — that conclusion is the deliverable, not a problem.**
+      Not the same as "the AI Act does not apply": Art. 4 and Art. 5 bind regardless of risk
+      class, and the difference is the whole discipline.
+- [x] `infra/bootstrap/` — state backend + CI OIDC role. Written, validated, **not applied**.
 
 **Done when:** `make test` and `make lint` are green on a real skeleton, CI runs them on a PR,
-and the four ADRs exist.
+and the five ADRs exist.
+
+**Done, 2026-08-09.** 38 tests · `gate-proof` 7 refused, 0 accepted, 0 stale · `terraform
+validate` 1/1 layers · checkov 0 findings with 9 written exceptions · `preflight` 8/8. Two
+findings changed the design and are recorded in `docs/AWS-CONSTRAINTS.md`: the managed
+extraction services do not read Greek or Dutch, and A2I closed to new customers on 2026-07-30.
 
 ---
 
