@@ -173,6 +173,24 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "injection",
+        [PYTHON, "-m", "evals.injection"],
+        "Document text is fenced in a delimiter it cannot itself contain — refused, not "
+        "escaped — and the detector has zero false positives on 2,963 documents of ordinary "
+        "trade prose. The second number is what decides whether the control survives.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "line-item totals",
+        [PYTHON, "-m", "evals.lineitems"],
+        "A table truncated at a page break is caught by arithmetic the printed total cannot "
+        "hide. Without it a dropped row leaves a record that is short and every field in it "
+        "looks correct.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
         "corpus envelope",
         [PYTHON, "scripts/check_corpus_envelope.py"],
         "The generator sits inside its declared operating range. Degraded too gently, every "

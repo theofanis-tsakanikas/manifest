@@ -301,6 +301,76 @@ def _let_a_push_trigger_the_deploy(root: Path) -> bool:
     )
 
 
+def _widen_an_injection_rule_past_its_object(root: Path) -> bool:
+    """Let an override rule fire on anything "previous" rather than on an instruction.
+
+    Framed as thoroughness every time: the narrow rule "misses" a document that says `ignore the
+    previous`, so somebody drops the noun class. What it then catches is `Please disregard the
+    previous packing list` — an amendment note, on real paperwork, every day.
+
+    This mutation replaced an earlier one that pointed at the *imperative* anchor and was
+    reported **accepted**, because removing that anchor changed nothing the suite could see. The
+    harness was right and the comment beside the rule was wrong: the imperative was not what
+    separated an attack from ordinary prose. The object was.
+    """
+    return _replace(
+        root / "src/manifest/security/injection.py",
+        'r"preceding\\s+)?" + _INSTRUCTION_NOUN,',
+        'r"preceding\\s+)?(?:\\w+)\\b",',
+    )
+
+
+def _escape_the_envelope_instead_of_refusing_it(root: Path) -> bool:
+    """Strip the delimiter out of hostile text rather than refusing the document.
+
+    Reads as robustness and is the weaker of the two designs by a wide margin: escaping is a
+    transformation that has to be right every time, refusing is a property that cannot be got
+    wrong. There is no legitimate document containing this string.
+    """
+    return _replace(
+        root / "src/manifest/security/injection.py",
+        "    if delimiter in text:\n        raise EnvelopeError(",
+        "    if False:\n        raise EnvelopeError(",
+    )
+
+
+def _drop_a_mangled_character_instead_of_refusing_the_number(root: Path) -> bool:
+    """Filter a money value down to digits and separators, discarding the rest.
+
+    This is not hypothetical — it is what the first version of `_amount` did, and it turned
+    `75.812;15` into `75.81215` and then into **75.8**, so an invoice worth seventy-five
+    thousand read as one worth seventy-five. The line-total check then reported a confident
+    answer in the wrong direction, which is the worst shape a number can fail in.
+    """
+    # The *filter*, not the guard. Removing the guard alone changes nothing observable —
+    # `core.quantity.parse` still refuses a stray character downstream, and the first version
+    # of this mutation was ACCEPTED for exactly that reason. What produced the real defect was
+    # discarding the character before parsing ever saw it.
+    return _replace(
+        root / "src/manifest/core/lineitems.py",
+        "    stripped = text.strip()",
+        '    text = "".join(c for c in text if c.isdigit() or c in ".,")\n'
+        "    stripped = text.strip()",
+    )
+
+
+def _require_a_header_on_every_page(root: Path) -> bool:
+    """Stop reading a table once the header is behind you.
+
+    The naive implementation, and the one the corpus exists to punish: a table continuing on the
+    next page prints no header, so a reader that needs one stops at the break and reports a
+    complete table that is short by every row after it — with a printed total that still looks
+    plausible.
+    """
+    return _replace(
+        root / "src/manifest/core/lineitems.py",
+        "            # A continuation page. From the very top, because the table resumes without\n"
+        "            # announcing itself.\n"
+        "            below = 0.0",
+        "            continue",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -436,6 +506,49 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_a_push_trigger_the_deploy,
         "The most plausible mistake here: somebody wants main to deploy itself. An apply that "
         "happens because a pull request merged.",
+    ),
+    Mutation(
+        "widen an injection rule past its object",
+        "injection false positives",
+        # The unit suite, not the corpus eval. The corpus's free-text fields carry the planted
+        # attempts and nothing else, so an unanchored rule scores identically on it — the
+        # sentences that separate a rule from a keyword ("per the shipper's instructions", "any
+        # override of the standard tariff") are in `tests/security`, which is where the
+        # false-positive property actually lives. The first version of this mutation pointed at
+        # the eval and was ACCEPTED, which is the harness saying the eval cannot see this.
+        ["pytest", "-q", "tests/security", "-x"],
+        "test_ordinary_trade_prose_is_not_flagged",
+        _widen_an_injection_rule_past_its_object,
+        "Framed as thoroughness. Catches one more attack and every amendment note that says "
+        "'disregard the previous packing list'. Replaced an earlier mutation the harness "
+        "reported as accepted, which is how the rule's real anchor was found.",
+    ),
+    Mutation(
+        "escape the envelope delimiter instead of refusing it",
+        "injection envelope",
+        ["pytest", "-q", "tests/security", "-x"],
+        "test_a_document_containing_the_delimiter_is_refused_not_escaped",
+        _escape_the_envelope_instead_of_refusing_it,
+        "Escaping is a transformation that has to be right; refusing is a property that cannot "
+        "be got wrong.",
+    ),
+    Mutation(
+        "drop a mangled character instead of refusing the number",
+        "line-value arithmetic",
+        ["pytest", "-q", "tests/core/test_lineitems.py", "-x"],
+        "test_a_number_with_a_mangled_separator_is_refused",
+        _drop_a_mangled_character_instead_of_refusing_the_number,
+        "What the first version did: 75.812;15 became 75.8, and an invoice worth seventy-five "
+        "thousand read as seventy-five.",
+    ),
+    Mutation(
+        "require a table header on every page",
+        "table continuation",
+        ["pytest", "-q", "tests/core/test_lineitems.py", "-x"],
+        "test_a_table_is_followed_past_a_page_break_with_no_repeated_header",
+        _require_a_header_on_every_page,
+        "The naive implementation. Reports a complete table that is short by every row after "
+        "the break, with a printed total that still looks plausible.",
     ),
 )
 

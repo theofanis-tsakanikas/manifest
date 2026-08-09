@@ -108,6 +108,16 @@ jobs:
       - name: "claim 7 — bulk reprocessing is idempotent, and its cost is modelled"
         run: python -m evals.scale
 
+      - name: indirect prompt injection on document text
+        # Not one of the seven: this control already exists in Attestor and is implemented here
+        # properly rather than presented as a discovery. What is scored is that it works on
+        # this corpus — and the false-positive number is the one that decides whether it
+        # survives contact with a real document set.
+        run: python -m evals.injection
+
+      - name: the line-total check catches a truncated table
+        run: python -m evals.lineitems
+
       # Claim 2 is the only one absent, and for a reason rather than an omission: it needs the
       # rendered corpus, which is git-ignored and reproducible from a seed. It runs in
       # `make preflight` on a machine that has generated it.

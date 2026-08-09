@@ -83,7 +83,7 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 
 .PHONY: claims
 claims: core-pure planting-blind contracts-validate corpus-check envelope \
-	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 ## Every claim gate that exists today
+	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 injection line-items ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
@@ -132,6 +132,14 @@ claim-6: ## CLAIM 6 — entity resolution is reversible
 .PHONY: claim-7
 claim-7: ## CLAIM 7 — bulk reprocessing is idempotent, and its cost is modelled
 	$(PY) -m evals.scale
+
+.PHONY: injection
+injection: ## Untrusted document text is fenced structurally and detected as depth
+	$(PY) -m evals.injection
+
+.PHONY: line-items
+line-items: ## The line-total check that catches a table truncated at a page break
+	$(PY) -m evals.lineitems
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason

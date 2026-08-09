@@ -134,3 +134,47 @@ fields:
       en: "Net weight"
       el: "Καθαρό βάρος"
       nl: "Nettogewicht"
+
+# ── The line-item table ──────────────────────────────────────────────────────
+#
+# `docs/SCENARIO.md`: a table continuing on page 3 with no repeated header is where naive
+# extraction silently loses rows — and the total still looks plausible, because it was printed
+# rather than summed. That is the pathology, and the check below is the only thing in the
+# system that can see it: the sum of the line values must agree with the printed total, so a
+# lost row makes the two disagree by exactly the row that was lost.
+#
+# The columns are declared here for the same reason a field's anchors are: the corpus prints
+# these captions and the extractor looks for them, one description rather than two.
+table:
+  total_field: invoice_total
+  count_field: line_item_count
+  # A cent. Line values are printed to two places and summed exactly in Decimal, so anything
+  # beyond rounding is a row that is not there.
+  tolerance: 0.01
+  columns:
+    - name: description
+      anchors:
+        en: "Description of goods"
+        el: "Περιγραφή εμπορευμάτων"
+        nl: "Omschrijving goederen"
+    - name: hs_code
+      anchors:
+        en: "HS code"
+        el: "Κωδικός Σ.Ο."
+        nl: "GS-code"
+    - name: quantity
+      anchors:
+        en: "Qty"
+        el: "Ποσότητα"
+        nl: "Aantal"
+    - name: unit_price
+      anchors:
+        en: "Unit price"
+        el: "Τιμή μονάδας"
+        nl: "Prijs p/st"
+    - name: amount
+      is_line_value: true
+      anchors:
+        en: "Amount"
+        el: "Αξία"
+        nl: "Bedrag"

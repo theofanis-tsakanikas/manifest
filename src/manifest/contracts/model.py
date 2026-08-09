@@ -188,6 +188,44 @@ class FieldContract(Strict):
         return self
 
 
+class TableColumn(Strict):
+    """One column of a line-item table, and what it is captioned in each language.
+
+    Declared for the same reason a field's `anchors` are: the renderer prints these and the
+    extractor looks for them, and two descriptions of one caption diverge on the first busy
+    afternoon.
+    """
+
+    name: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
+    anchors: dict[str, str]
+    #: Whether this column carries the money that must sum to the document's declared total.
+    is_line_value: bool = False
+
+
+class TableContract(Strict):
+    """A line-item table on a document.
+
+    `total_field` names the field the summed line values must agree with, and `tolerance` is how
+    far apart they may be. Both are required: a table with no total to check against is a table
+    whose dropped row nothing notices, which is the pathology this contract exists for.
+    """
+
+    columns: Annotated[tuple[TableColumn, ...], Field(min_length=2)]
+    total_field: str
+    count_field: str
+    tolerance: Decimal
+
+    @model_validator(mode="after")
+    def _exactly_one_line_value(self) -> Self:
+        values = [column for column in self.columns if column.is_line_value]
+        if len(values) != 1:
+            raise ValueError(
+                f"a line-item table declares exactly one line-value column; this one declares "
+                f"{len(values)}. Summing two of them or none is not a check anybody can read"
+            )
+        return self
+
+
 class DocumentContract(Strict):
     """One document type: what is extracted from it, and under what budget."""
 
@@ -196,6 +234,8 @@ class DocumentContract(Strict):
     description: Annotated[str, Field(min_length=20)]
     version: Annotated[int, Field(ge=1)]
     fields: Annotated[tuple[FieldContract, ...], Field(min_length=1)]
+    #: A line-item table, where the document has one.
+    table: TableContract | None = None
 
     @model_validator(mode="after")
     def _field_names_are_unique(self) -> Self:
@@ -203,6 +243,19 @@ class DocumentContract(Strict):
         duplicated = {name for name in names if names.count(name) > 1}
         if duplicated:
             raise ValueError(f"{self.id}: duplicate field names {sorted(duplicated)}")
+        return self
+
+    @model_validator(mode="after")
+    def _table_names_fields_that_exist(self) -> Self:
+        if self.table is None:
+            return self
+        declared = {field.name for field in self.fields}
+        missing = {self.table.total_field, self.table.count_field} - declared
+        if missing:
+            raise ValueError(
+                f"{self.id}: the line-item table names {sorted(missing)}, which this document "
+                f"does not declare. A sum with nothing to check it against is a sum nobody reads"
+            )
         return self
 
     def field(self, name: str) -> FieldContract:
