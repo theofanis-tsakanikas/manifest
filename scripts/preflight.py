@@ -111,6 +111,24 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "claim 2 · provenance",
+        [PYTHON, "-m", "evals.provenance", "--sample", "40"],
+        "The gate passes honest records and refuses corrupted ones, by the right layer. A "
+        "corrupted box that verifies is claim 2 reporting green over a record nothing checked.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "claim 2 · provenance",
+        [PYTHON, "-m", "evals.provenance", "--sample", "40"],
+        "The recorded box is checked against the page: ink where the record says a value is, "
+        "and a different recognition path reading the same value from that crop. Needs the "
+        "rendered corpus, which is why CI cannot run it and this can.",
+        slow=True,
+        needs=str(ROOT / "corpus" / "rendered"),
+    ),
+    Check(
+        "correctness",
         "corpus envelope",
         [PYTHON, "scripts/check_corpus_envelope.py"],
         "The generator sits inside its declared operating range. Degraded too gently, every "

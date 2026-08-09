@@ -74,7 +74,7 @@ def ground_truth() -> dict:
 
 
 @cache
-def _recorded_pages() -> dict[tuple[str, str], tuple[Page, ...]]:
+def recorded_pages() -> dict[tuple[str, str], tuple[Page, ...]]:
     grouped: dict[tuple[str, str], list[Page]] = {}
     for shipment, document, page in read_pages():
         grouped.setdefault((shipment, document), []).append(page)
@@ -90,7 +90,7 @@ def score_all() -> list[Scored]:
     what stops them describing different systems.
     """
     contract_set = contracts()
-    pages_by_document = _recorded_pages()
+    pages_by_document = recorded_pages()
     scored: list[Scored] = []
 
     for document in ground_truth()["documents"]:

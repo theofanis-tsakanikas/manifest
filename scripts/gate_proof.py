@@ -176,6 +176,84 @@ def _clamp_a_coordinate_that_left_the_page(root: Path) -> bool:
     )
 
 
+def _let_a_blank_crop_verify(root: Path) -> bool:
+    """Drop the ink floor to zero.
+
+    The plausible version is not a deletion, it is a tuning: somebody sees the gate refuse a
+    faint but correct record, lowers the floor to make it pass, and lowers it to zero because
+    that is where the last complaint stops. What is left is a check that measures ink and never
+    refuses on it, so a box pointing at the margin verifies — and claim 2 keeps reporting green
+    over records that point at nothing.
+    """
+    return _replace(
+        root / "src/manifest/gates/provenance.py",
+        "INK_FLOOR: Final = 0.02",
+        "INK_FLOOR: Final = 0.0",
+    )
+
+
+def _let_a_shorter_reread_verify_a_longer_record(root: Path) -> bool:
+    """Make containment work in both directions.
+
+    Reads as symmetry, and it accepts `89` as verification of `8959`. A padded crop legitimately
+    shows *more* than the record; a crop that shows less is a record claiming a value the page
+    does not carry, and this is the direction where the difference is money.
+    """
+    return _replace(
+        root / "src/manifest/gates/provenance.py",
+        "    return bool(published) and published in read",
+        "    return bool(published) and (published in read or read in published)",
+    )
+
+
+def _stop_re_reading_the_crop(root: Path) -> bool:
+    """Trust the ink and skip the second recognition path.
+
+    The expensive layer, and the first one somebody removes on a busy afternoon: it costs a
+    reader pass per published field. Layer A still runs, so a box on the margin is still
+    refused and most of claim 2 keeps its shape — while the only layer that can tell ink from
+    *the right* ink stops running.
+    """
+    path = root / "src/manifest/gates/provenance.py"
+    text = path.read_text(encoding="utf-8")
+    marker = "    if not agreement.agree and not _is_contained("
+    if marker not in text:
+        return False
+    start = text.index(marker)
+    end = text.index("):", start) + len("):")
+    path.write_text(text[:start] + "    if False:" + text[end:], encoding="utf-8")
+    return True
+
+
+def _report_an_unreadable_page_as_verified(root: Path) -> bool:
+    """Treat a page nothing could open as a page that checked out.
+
+    Attestor's laundering, in this project's costume: "we could not check" becomes "it was
+    fine". A field whose provenance nothing has looked at has not been verified, and a batch
+    that lost its rasters would publish everything.
+    """
+    path = root / "src/manifest/gates/provenance.py"
+    text = path.read_text(encoding="utf-8")
+    marker = "verdict=Verdict.UNCHECKABLE"
+    if text.count(marker) < 1:
+        return False
+    path.write_text(text.replace(marker, "verdict=Verdict.VERIFIED"), encoding="utf-8")
+    return True
+
+
+def _let_a_container_number_skip_its_own_arithmetic(root: Path) -> bool:
+    """Stop checking a self-checking field.
+
+    Free and absolute, so removing it looks like removing redundancy. What it removes is the
+    only check on any of these documents that can prove a read wrong without a second opinion.
+    """
+    return _replace(
+        root / "src/manifest/gates/provenance.py",
+        "    if provenance.self_checking:",
+        "    if False:",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -241,6 +319,51 @@ MUTATIONS: tuple[Mutation, ...] = (
         "of provenance records all pointing at the top-left corner. Accepted on first run — "
         "the gap was in the suite, and only planting the violation showed it.",
     ),
+    Mutation(
+        "let a blank crop verify",
+        "provenance · ink",
+        ["pytest", "-q", "tests/gates/test_provenance.py", "-x"],
+        "test_a_blank_crop_is_refused_by_the_ink_layer",
+        _let_a_blank_crop_verify,
+        "Not a deletion — a tuning. Lowered once to stop a complaint, and again, until it "
+        "measures ink and never refuses on it.",
+    ),
+    Mutation(
+        "let a shorter re-read verify a longer record",
+        "provenance · containment",
+        ["pytest", "-q", "tests/gates/test_provenance.py", "-x"],
+        "test_a_reread_carrying_less_than_the_record_is_refused",
+        _let_a_shorter_reread_verify_a_longer_record,
+        "Reads as symmetry. Accepts `89` as verification of `8959`, which is the direction "
+        "where the difference is money.",
+    ),
+    Mutation(
+        "stop re-reading the crop",
+        "provenance · second path",
+        ["pytest", "-q", "tests/gates/test_provenance.py", "-x"],
+        "test_ink_present_but_the_wrong_ink_is_refused_by_the_reread_layer",
+        _stop_re_reading_the_crop,
+        "The expensive layer. Layer A still runs, so most of claim 2 keeps its shape while the "
+        "only layer that can tell ink from the *right* ink stops running.",
+    ),
+    Mutation(
+        "report an unreadable page as verified",
+        "provenance · uncheckable",
+        ["pytest", "-q", "tests/gates/test_provenance.py", "-x"],
+        "test_a_page_that_cannot_be_read_is_uncheckable_rather_than_verified",
+        _report_an_unreadable_page_as_verified,
+        "'We could not check' becoming 'it was fine'. A batch that lost its rasters would "
+        "publish everything.",
+    ),
+    Mutation(
+        "let a container number skip its own arithmetic",
+        "provenance · arithmetic",
+        ["pytest", "-q", "tests/gates/test_provenance.py", "-x"],
+        "test_a_self_checking_field_is_refused_by_its_own_arithmetic_first",
+        _let_a_container_number_skip_its_own_arithmetic,
+        "Looks like removing redundancy. Removes the only check on these documents that can "
+        "prove a read wrong without a second opinion.",
+    ),
 )
 
 
@@ -277,6 +400,9 @@ def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
 
 def main() -> int:
     print("gate-proof: establishing the baseline")
+    # `tests/` only, and deliberately not the slow eval harnesses: the baseline exists to prove
+    # the repository is green before a violation is planted, and a baseline that took four
+    # minutes would be a gate-proof nobody ran while changing a gate.
     baseline = _run([sys.executable, "-m", "pytest", "-q"], ROOT)
     if baseline.returncode != 0:
         print("the suite is not green; every mutation below would be meaningless", file=sys.stderr)
@@ -302,6 +428,10 @@ def main() -> int:
                     ".pytest_cache",
                     ".ruff_cache",
                     "out",
+                    # The rendered corpus is gigabytes and no mutation touches it. Copying it
+                    # per mutation would make this take an hour, and a proof nobody has time
+                    # to run is a proof that stops being run.
+                    "rendered",
                 ),
             )
             try:

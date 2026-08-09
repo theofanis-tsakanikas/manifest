@@ -72,10 +72,26 @@ jobs:
         # stops being runnable by a stranger, and that was the whole of the evidence.
         run: python scripts/check_core_is_pure.py
 
-      # Claims 1 and 2 arrive with phase 2, claims 3, 4 and 6 with phase 3, claims 5 and 7 with
-      # phase 4. A step here for a claim that is not yet provable would be a green tick over
-      # work that has not happened, and it is worse than an absent step because it looks like
-      # coverage.
+      - name: the contract set loads and cross-checks
+        run: python scripts/check_contracts.py
+
+      - name: the corpus plants mismatches blind to the rules that will find them
+        # Claim 4's independence, read off the import graph. A planter that knows the
+        # reconciliation contract is a planter that can be tuned to it, and the harness would
+        # keep reporting green afterwards.
+        run: python scripts/check_planting_is_blind.py
+
+      - name: "claim 1 — no field publishes below a derived threshold"
+        # Derived from the committed recording, never from a live reader run: the binary's
+        # confidences differ across versions, and a threshold that moved because a runner image
+        # changed would make this check the first thing somebody deletes. See ADR-0005.
+        run: python -m evals.calibration
+
+      # Claim 2 needs the rendered corpus, which is git-ignored and reproducible from a seed;
+      # it runs in `make preflight` on a machine that has generated it. Claims 3, 4 and 6
+      # arrive with phase 3, claims 5 and 7 with phase 4. A step here for a claim that is not
+      # yet provable would be a green tick over work that has not happened, and it is worse
+      # than an absent step because it looks like coverage.
 
   gate-proof:
     name: attack our own gates

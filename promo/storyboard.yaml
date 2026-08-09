@@ -1,0 +1,69 @@
+# The storyboard for this project's promotional output. Rendered by promo-kit:
+#
+#   promokit validate .    check every claim in here against this repository
+#   promokit stills .      write the PNGs, from the same renders the video uses
+#   promokit video .       both canvases, composed from the same masters
+#
+# Like Watermark, this project has no `clip` scene: there is no console for a human to
+# navigate. Every beat is a gate this repository already runs, recorded with nothing live.
+
+version: 1
+title: Manifest
+subtitle: every field traces to a pixel
+
+outputs:
+  - youtube
+  - linkedin
+
+defaults:
+  duration: 4.0
+  fit: contain
+  transition: fade
+  transition_duration: 0.4
+
+scenes:
+  - id: title
+    type: card
+    eyebrow: document intelligence
+    headline: Every field traces to a pixel
+    sub: A trade document, and the word for made evident. Both meanings are the project.
+    duration: 4.0
+    still: promo/out/stills/title.png
+
+  - id: core-pure
+    type: terminal
+    command: make core-pure
+    assert: the core imports no cloud SDK and no engine
+    caption: The core names no engine, and reads no ambient state
+    columns: 110
+    still: promo/out/stills/core-pure.png
+
+  # The number in this caption is asserted against the line the check really prints, so a
+  # contract added next month fails the build rather than quietly ageing the caption.
+  - id: contracts
+    type: terminal
+    command: make contracts-validate
+    assert: 6 document types, 44 fields, 8 agreement rules, 4 match rules
+    caption: 6 document types, 44 fields, every rule declared
+    columns: 110
+    still: promo/out/stills/contracts.png
+    per_output:
+      linkedin:
+        caption: 6 document types, 44 fields
+
+  - id: blind
+    type: terminal
+    command: make planting-blind
+    assert: knows nothing about the rules that will find them
+    caption: The corpus plants its own mistakes, blind to what will catch them
+    columns: 110
+    per_output:
+      linkedin:
+        caption: The corpus plants mistakes blind
+
+  - id: end
+    type: card
+    headline: Made evident
+    sub: a field with no pixel behind it is a build failure
+    duration: 3.5
+    still: promo/out/stills/end.png

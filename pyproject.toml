@@ -84,6 +84,11 @@ ignore = [
     # silently break a comparison. Deliberate cases there carry a `noqa` with a reason.
     "RUF002",
     "RUF003",
+    # PLR0911 counts return statements. The provenance gate has one per refusal on purpose:
+    # a single exit collecting a reason variable would make *which layer refused* a matter of
+    # reading backwards through the function, and the layer is the most useful thing the
+    # refusal carries.
+    "PLR0911",
 ]
 
 [tool.ruff.lint.per-file-ignores]

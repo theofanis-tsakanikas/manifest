@@ -82,7 +82,7 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 #   claim 7  bulk reprocessing is idempotent, cost modelled      — phase 4
 
 .PHONY: claims
-claims: core-pure planting-blind contracts-validate corpus-check envelope claim-1 ## Every claim gate that exists today
+claims: core-pure planting-blind contracts-validate corpus-check envelope claim-1 claim-2 ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
@@ -103,6 +103,14 @@ envelope: ## The generator stays inside its declared operating range (decision 2
 .PHONY: claim-1
 claim-1: ## CLAIM 1 — no field publishes below a threshold derived from its error budget
 	$(PY) -m evals.calibration
+
+.PHONY: claim-2
+claim-2: ## CLAIM 2 — every published field traces to a box, checked against the page
+	$(PY) -m evals.provenance
+
+.PHONY: claim-2
+claim-2: ## CLAIM 2 — every published field traces to a box, checked against the page
+	$(PY) -m evals.provenance
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason

@@ -177,7 +177,11 @@ def read_page(
     )
 
 
-def read_crop(image_path: Path, language: str) -> tuple[str, float]:
+def read_crop(
+    image_path: Path,
+    language: str,
+    segmentation: Segmentation = Segmentation.SINGLE_LINE,
+) -> tuple[str, float]:
     """Re-read one crop through the single-line path. ADR-0003, Layer B.
 
     Returns the text and the lowest word confidence in it. The lowest, not the mean: a crop

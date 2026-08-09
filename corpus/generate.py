@@ -47,7 +47,13 @@ RENDERED = ROOT / "corpus" / "rendered"
 DPI = 300
 
 DEFAULT_SEED = 20260809
-DEFAULT_SHIPMENTS = 120
+# 500, not 120. The first corpus was large enough to *find* the shape of claim 1 and too small
+# to derive a threshold from: `procedure_code` read 117 of 117 correctly and its 95% upper bound
+# was still 2.5% against a 0.1% budget, because 120 observations cannot prove a rate that low.
+# Deriving a threshold at all needs hundreds to thousands of labelled instances per field, and
+# that is a property of the arithmetic rather than of this generator — ADR-0002 says so and this
+# number is what taking it seriously costs.
+DEFAULT_SHIPMENTS = 500
 
 
 @dataclass(frozen=True, slots=True)

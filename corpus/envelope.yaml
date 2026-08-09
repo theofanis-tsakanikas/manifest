@@ -84,16 +84,16 @@ documents:
 # is legible in a diff. **These are observations, not targets.** A band adjusted to bracket them
 # more tightly would be a band fitted to the generator rather than to what a claim needs.
 observed:
-  measured_on: "recordings/ocr, tesseract 5.5.2, corpus seed 20260809, 120 shipments"
+  measured_on: "recordings/ocr, tesseract 5.5.2, corpus seed 20260809, 500 shipments"
   overall:
     median_confidence: 0.918
-    fraction_below_half: 0.140
-    abstention_rate: 0.011
-    error_rate_of_located: 0.205
+    fraction_below_half: 0.131
+    abstention_rate: 0.012
+    error_rate_of_located: 0.194
   documents:
-    customs_declaration: { abstention_rate: 0.024, error_rate_of_located: 0.024 }
-    bill_of_lading: { abstention_rate: 0.001, error_rate_of_located: 0.081 }
-    arrival_notice: { abstention_rate: 0.007, error_rate_of_located: 0.119 }
-    packing_list: { abstention_rate: 0.001, error_rate_of_located: 0.261 }
-    certificate_of_origin: { abstention_rate: 0.030, error_rate_of_located: 0.378 }
-    commercial_invoice: { abstention_rate: 0.007, error_rate_of_located: 0.443 }
+    customs_declaration: { abstention_rate: 0.024, error_rate_of_located: 0.028 }
+    bill_of_lading: { abstention_rate: 0.004, error_rate_of_located: 0.073 }
+    arrival_notice: { abstention_rate: 0.003, error_rate_of_located: 0.074 }
+    packing_list: { abstention_rate: 0.002, error_rate_of_located: 0.243 }
+    commercial_invoice: { abstention_rate: 0.007, error_rate_of_located: 0.407 }
+    certificate_of_origin: { abstention_rate: 0.036, error_rate_of_located: 0.429 }
