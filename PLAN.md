@@ -1,0 +1,216 @@
+# PLAN — building Manifest end to end
+
+Four phases. Each leaves the repository in a state that can be shown to an interviewer.
+
+Definition of done, everywhere: *the code runs, it is tested, the tests run offline, and if it
+is a gate there is a `gate-proof` mutation that breaks it.*
+
+Two lessons carried over from Watermark — read them before Phase 0:
+
+- **Design the anti-tautology cases before the code they test.** Watermark nearly shipped a
+  parity harness comparing one function with itself. Here the same trap sits under claim 2
+  (provenance recorded and checked by the same code) and claim 4 (mismatches planted and found
+  by the same code). Both get their independence designed in Phase 0.
+- **Verify service constraints early, write Terraform per phase.** `docs/AWS-CONSTRAINTS.md`
+  is Phase 0; the Terraform for each layer is written in the phase that uses it, because
+  parallelism, batch sizes and schemas are decided by the code.
+
+**And the rule that shapes every phase: nothing is ever applied to AWS.** Everything up to and
+including the deploy path gets built — all code, all local tests, all Terraform, `ci.yml`,
+`deploy.yml`, `destroy.yml`, validated and scanned and gated — and then it stops. The author
+deploys, if he chooses. The corollary is that **every claim must be provable by something that
+actually runs on the machine**, which is why the cascade's bottom tier is a local OCR engine
+(decision 16) rather than a mock. See `docs/DECISIONS.md` 14–16.
+
+---
+
+## Phase 0 — Foundations
+
+- [ ] `pyproject.toml`, ruff, pytest, `Makefile` (help-target pattern; the venv-or-ambient
+      interpreter handling from Attestor's Makefile exists because of a real CI failure).
+- [ ] `.github/workflows/ci.yml`: lint, test, gitleaks, `terraform validate`, checkov. CI from
+      commit one.
+- [ ] `scripts/check_core_is_pure.py` — fails if `core/` imports boto3, an engine SDK, or
+      mentions an engine by name. Plus its own test.
+- [ ] `scripts/gate_proof.py` — the harness, with its first real mutation.
+- [ ] `docs/AWS-CONSTRAINTS.md`, verified against current documentation and dated: Textract
+      sync vs async, page and size limits, which analyses return geometry · Bedrock Data
+      Automation's current capabilities, regions and output shape · **the current status and
+      availability of Amazon A2I — do not assume it exists; if it does not, the review queue is
+      a small application of our own, which is fine and possibly better** · EMR Serverless
+      sizing and cost model · Redshift Serverless minimum capacity · OpenSearch options.
+- [ ] **ADR-0001 — abstention is safe but not free.** The queue-capacity doctrine. The
+      defining argument of the project; write it before the code that assumes it.
+- [ ] **ADR-0002 — threshold derivation and calibration.** How the error budget becomes a
+      threshold: the **upper confidence bound** rule, N reported everywhere, `always-review`
+      as the answer when no threshold fits the budget at the available N, the **declared
+      per-field tolerance** that decides when CI goes red, and why the corpus needs a declared
+      difficulty band for any of it to mean anything.
+- [ ] **ADR-0003 — provenance verified against the page, not the record.** The three layers of
+      **unequal, declared** strength — ink present in the crop (reader-independent); the crop
+      re-read through a *different* recognition path (path-independent, not engine-independent);
+      check-digit arithmetic (absolute where it applies) — with what each one catches and what
+      it cannot. Plus the fixture family where the recorded box is deliberately wrong in four
+      distinct ways, because "wrong box that still contains the value" and "wrong box on
+      whitespace" fail differently.
+- [ ] **ADR-0004 — the engine cascade and the normalised representation.** Tiers, escalation
+      rule, and — per revised decision 9 — the explicit table of what the cascade eval can and
+      cannot prove. Routing distribution measured offline, unit prices published and cited,
+      product labelled a **model**, the value of the escalated fraction named as an assumption
+      with its sensitivity shown.
+- [ ] **ADR-0005 — the local reference engine, and its recording.** Which open-source OCR
+      engine sits at tier 0, its licence, what it gives us (real confidence, real geometry,
+      zero cost) and what it does not. The **recording**: why every threshold is derived from
+      committed normalised output rather than a live run, and the regeneration ceremony that
+      prints each threshold's movement and refuses to overwrite unaccepted. Plus the fixture
+      policy for the AWS adapters: authored from the documented response schema, labelled as
+      authored, with a schema-conformance test. Choose the engine here — claims 1 and 2 are
+      unprovable without it.
+- [ ] Verify every citation in `docs/REGULATORY.md`; stamp the file. **Expect to conclude that
+      the AI Act does not apply — that conclusion is the deliverable, not a problem.**
+- [ ] `infra/bootstrap/` — state backend + CI OIDC role. Written, validated, **not applied**.
+
+**Done when:** `make test` and `make lint` are green on a real skeleton, CI runs them on a PR,
+and the four ADRs exist.
+
+---
+
+## Phase 1 — The corpus and the contracts
+
+*The foundation everything else is measured against. Nothing here needs AWS.*
+
+- [ ] `corpus/` — the generator: realistic layouts rendered to PDF, then degraded (skew, noise,
+      JPEG recompression, stamps over fields, bleed-through, handwritten-style corrections).
+      Seeded, deterministic, with exact ground truth. Every pathology in `docs/SCENARIO.md`.
+- [ ] `corpus/envelope.yaml` — the **declared operating range**, per document type: the
+      intended confidence distribution and the acceptable band for the abstention rate. Plus
+      the test that computes the actual figures and **goes red when the generator drifts out**.
+      Without it the degradation parameters get tuned, gradually and in good faith, until the
+      claims pass.
+- [ ] The real public dataset: licence checked and recorded, wired in as the out-of-distribution
+      baseline.
+- [ ] `contracts/documents/` — the six document types: fields, types, required-ness, **error
+      budget**, retention class, personal-data flag. A field with no error budget must fail to
+      load, with a test asserting it.
+- [ ] `contracts/reconciliation/` — which fields must agree across which types, with tolerance
+      and unit. Unit handling is not optional: kg against lb on the same page is in the corpus.
+- [ ] `contracts/entities/` — party model, matching rules including transliteration, merge and
+      un-merge semantics.
+- [ ] `src/manifest/core/` — the normalised document representation, and the pure logic over it.
+- [ ] Container-number check-digit validation (ISO 6346). It is a **falsifier, not ground
+      truth**: a failing digit proves the read is wrong, a passing one proves nothing, and
+      roughly one corruption in eleven passes. Used to refuse values, never to confirm them.
+      Its real weight is on the public dataset, where no field labels exist and "this many
+      reads are provably wrong" is a lower bound on the error rate — reported as one.
+      See `docs/SCENARIO.md`.
+
+**Done when:** the corpus generates deterministically, ground truth is exact, contracts load
+and refuse to load when incomplete, and `check_core_is_pure` passes.
+
+---
+
+## Phase 2 — Extraction that knows what it does not know
+
+*Unlocks claims 1 and 2. Publishable on its own.*
+
+- [ ] `src/manifest/extraction/local/` — the tier-0 open-source engine, **running**, over the
+      real degraded corpus. This is where claims 1 and 2 get their real numbers.
+- [ ] `src/manifest/extraction/aws/` — Textract / BDA / LLM adapters mapping to the same
+      normalised representation, tested against the documented response schema with authored
+      fixtures labelled as authored. Written, never called.
+- [ ] `src/manifest/cascade/` — tiered routing with the escalation rule from ADR-0004, the
+      measured routing distribution, and the modelled cost that follows from it.
+- [ ] `recordings/ocr/` and `make ocr-record` — the engine's normalised output over the
+      corpus, committed with its version and fingerprint, and the **ceremony**: printing every
+      threshold's movement per field, old against new, with N, and refusing to overwrite until
+      the shift is accepted and the acceptance recorded.
+- [ ] Calibration: reliability curve and ECE per field type on the labelled set, with N beside
+      every figure; **threshold derived from the error budget** by the upper-confidence-bound
+      rule, `always-review` where none fits, recomputed in CI from the recording, failing when
+      one moves outside its declared tolerance.
+- [ ] `evals/calibration/` — **claim 1**. Includes the case that matters: a field the engine
+      reports as high-confidence and gets wrong.
+- [ ] `src/manifest/gates/provenance.py` — **claim 2**, independent verification per ADR-0003,
+      with a fixture whose recorded box is deliberately wrong.
+- [ ] Table extraction across a page break, and the line-total reconciliation that catches the
+      silently dropped row.
+- [ ] Injection handling on document text, done properly and presented as a control, not a
+      discovery.
+- [ ] `src/manifest/review/` — the queue, the capacity model, and the first integrity metrics.
+- [ ] `infra/foundation/` and `infra/extraction/` — Terraform, validated, not applied.
+
+**Done when:** claims 1 and 2 pass offline, `gate-proof` breaks both, and no field can be
+published without a verified box.
+
+---
+
+## Phase 3 — Agreement, identity, versions
+
+*Unlocks claims 3, 4 and 6.*
+
+- [ ] `src/manifest/versioning/` — document versions, supersession, re-extraction diff. A new
+      engine version produces a new record version and a diff; the prior stays retrievable.
+- [ ] `evals/reprocessing/` — **claim 3**. Same document, same version, identical record;
+      version change produces a diff and never a silent overwrite.
+- [ ] Reconciliation across document types, tolerance-aware and unit-aware.
+- [ ] `evals/reconciliation/` — **claim 4**. Exactly N planted mismatches found; zero false
+      positives on the agreeing set. The planting is the **generator perturbing a value in a
+      document, blind to the reconciliation contract**; the expected findings come from ground
+      truth by a separate path. A planter that reads the contract to decide what to break and
+      a detector that reads it to find the break is one function agreeing with itself.
+- [ ] `src/manifest/entities/` — resolution across scripts and surface forms, with an
+      explainable match reason, and **un-merge with lineage intact**.
+- [ ] `evals/entities/` — **claim 6**. Merge, verify downstream, un-merge, verify everything is
+      correctly re-pointed.
+- [ ] `infra/lakehouse/` — Iceberg, Glue Catalog, Athena, OpenSearch. Validated.
+
+**Done when:** claims 3, 4 and 6 pass offline and an un-merge leaves nothing dangling.
+
+---
+
+## Phase 4 — Classification, the human loop, scale, and the deploy path
+
+*Unlocks claims 5 and 7, and closes the project.*
+
+- [ ] `src/manifest/classification/` — HS proposal with an abstention band on contested
+      headings. **Be honest about the model:** trained and measured on a synthetic
+      distribution, so the accuracy figure is not a claim about production accuracy. The claim
+      is about the *gate*, not the model. Say so on the face of the README.
+- [ ] The human decision path: a proposal below threshold cannot be published without a
+      recorded decision; the decision becomes a training signal.
+- [ ] **Reviewer integrity**: time on task, agreement rate, sampled re-review, and a report
+      that names a rubber-stamping pattern rather than burying it in a percentage.
+- [ ] Queue capacity as a build gate: a threshold change that pushes projected volume past
+      declared capacity fails CI.
+- [ ] `evals/review/` — **claim 5**, both halves: the decision cannot be bypassed, and the
+      capacity/integrity checks bite.
+- [ ] `infra/batch/` + bulk reprocessing on EMR Serverless: idempotent, resumable,
+      cost-metered, per-document diff, surviving human decisions preserved.
+- [ ] `evals/scale/` — **claim 7**. Re-run produces no duplicates and no double work, proved
+      against the **pure planner and its ledger on the laptop** — nothing distributed is ever
+      executed, and the batch layer is an adapter over that planner. The cost model is
+      reproduced from the measured routing distribution and the cited unit prices, with the
+      value of the escalated fraction named as an assumption and its sensitivity shown.
+- [ ] `infra/analytics/` — the Redshift marts that justify Redshift being here at all: duty
+      exposure by HS chapter, review-queue economics, cost per client, error rate by source.
+- [ ] `scripts/preflight.py` — every claim, every consistency invariant, `terraform validate`,
+      checkov at zero findings. One command.
+- [ ] `README.md` with a scoreboard in Attestor's style: **every number the output of a command
+      in this repository**, run on a laptop. The cost figure appears as *modelled*, with its
+      inputs. A status block at the top, in Attestor's words: **ready to deploy, not deployed** —
+      what `make preflight` checks, and what has deliberately never been run.
+- [ ] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind a
+      protected environment, **neither dispatched**. The destroy workflow is not optional: a
+      repository with a deploy path and no teardown path is how an estate gets left standing,
+      and it is the difference between a portfolio piece and a bill.
+
+**Done when:** `make preflight` is green, `deploy.yml` and `destroy.yml` exist and validate,
+nothing has ever been applied to AWS, and a stranger with no AWS account can reproduce every
+number on the scoreboard.
+
+---
+
+## After Phase 4 — not part of building the system
+
+Per `docs/PORTFOLIO-CONTEXT.md`: the site card, the CV entries, the video walkthrough, the
+long-form article. Do not start them before Phase 4 is done.
