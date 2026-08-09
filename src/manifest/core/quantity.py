@@ -94,6 +94,15 @@ _UNITS: Final[dict[Unit, tuple[Dimension, Decimal]]] = {
 }
 
 
+def dimension_of(unit: Unit) -> Dimension:
+    """What a unit measures.
+
+    Public because the contract loader needs it: a reconciliation tolerance expressed in
+    cartons over a mass comparison must be refused at load, not on the first document.
+    """
+    return _UNITS[unit][0]
+
+
 @dataclass(frozen=True, slots=True)
 class Quantity:
     """A number with a unit, held exactly."""

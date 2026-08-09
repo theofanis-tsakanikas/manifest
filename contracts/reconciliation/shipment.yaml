@@ -1,0 +1,89 @@
+# Which fields must agree across which document types. Claim 4 lives here.
+#
+# The same shipment is described three times by three parties, and the disagreements are what
+# the operator is paid to catch. Every rule below is data: the tolerance, the unit and the
+# severity are declared, not decided in code, and a rule with no tolerance cannot load.
+#
+# What is deliberately absent: any rule comparing free text. Two parties writing the same name
+# differently is not an error, so a rule over it would fire constantly — and a rule that fires
+# constantly is a rule somebody mutes. The loader refuses those rather than trusting nobody
+# will write one. Party identity across documents is claim 6's problem, not claim 4's.
+version: 1
+
+rules:
+  - id: gross_weight_bol_against_packing_list
+    description: >-
+      The carrier and the shipper state the same gross weight. Half a percent covers the
+      rounding a carrier applies and the kilogram-to-pound conversion both sides did
+      separately; anything wider stops finding the short-loads.
+    left: { document: bill_of_lading, field: gross_weight }
+    right: { document: packing_list, field: gross_weight }
+    tolerance: { kind: relative, amount: 0.005 }
+    severity: blocking
+
+  - id: net_weight_invoice_against_packing_list
+    description: >-
+      Net weight on the invoice against the packing list. Wider than gross, because the invoice
+      is written by the seller from an order and the packing list from what was actually packed.
+    left: { document: commercial_invoice, field: total_net_weight }
+    right: { document: packing_list, field: net_weight }
+    tolerance: { kind: relative, amount: 0.01 }
+    severity: advisory
+
+  - id: declared_value_against_invoice_total
+    description: >-
+      The customs value declared must be the invoice total. This is the duty base, so the rule
+      is exact — a tolerance here would be a tolerance on how much duty may be wrong.
+    left: { document: customs_declaration, field: declared_value }
+    right: { document: commercial_invoice, field: invoice_total }
+    tolerance: { kind: exact }
+    severity: blocking
+
+  - id: currency_declaration_against_invoice
+    description: >-
+      The declared currency must be the invoice currency. A disagreement here is the euro/E and
+      yen/Y reader confusion arriving with a duty consequence attached.
+    left: { document: customs_declaration, field: currency }
+    right: { document: commercial_invoice, field: currency }
+    tolerance: { kind: exact }
+    severity: blocking
+
+  - id: origin_declaration_against_certificate
+    description: >-
+      The country of origin declared must be the country the chamber certified. This is the
+      rule the stamped-over certificate exists in the corpus to exercise, and the one where a
+      disagreement is most clearly the signal rather than the noise.
+    left: { document: customs_declaration, field: country_of_origin }
+    right: { document: certificate_of_origin, field: country_of_origin }
+    tolerance: { kind: exact }
+    severity: blocking
+
+  - id: container_bol_against_packing_list
+    description: >-
+      The same container on the carrier's document and the shipper's. Exact, and both sides are
+      independently checkable by their own arithmetic, which makes this the one rule where a
+      disagreement can usually be attributed to a side.
+    left: { document: bill_of_lading, field: container_number }
+    right: { document: packing_list, field: container_number }
+    tolerance: { kind: exact }
+    severity: blocking
+
+  - id: container_bol_against_arrival_notice
+    description: >-
+      The container the carrier says is arriving against the one on the bill of lading. A
+      disagreement is a document attached to the wrong shipment, which is worse than a wrong
+      value because it is wrong about two shipments at once.
+    left: { document: bill_of_lading, field: container_number }
+    right: { document: arrival_notice, field: container_number }
+    tolerance: { kind: exact }
+    severity: blocking
+
+  - id: package_count_packing_list_against_arrival_notice
+    description: >-
+      How many packages were packed against how many are being discharged. Absolute, in
+      cartons, because half a percent of three cartons is not a rule. One carton of tolerance
+      covers the pallet a carrier counts differently; two would cover a theft.
+    left: { document: packing_list, field: package_count }
+    right: { document: arrival_notice, field: package_count }
+    tolerance: { kind: absolute, amount: 1, unit: ctn }
+    severity: blocking

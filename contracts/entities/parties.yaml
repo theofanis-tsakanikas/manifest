@@ -1,0 +1,44 @@
+# The party model. Claim 6 is about a merge being *reversible*, not about it being right.
+#
+# `merge_threshold` is chosen, and the schema refuses any contract that claims it was derived.
+# There is no labelled set of same-party judgements large enough to derive one honestly, and
+# claiming otherwise would be the exact fabrication ADR-0002 exists to refuse. What makes a
+# chosen threshold defensible here is that every merge above it can be un-merged with lineage
+# intact and every downstream record correctly re-pointed — which is a property the system can
+# actually demonstrate.
+version: 1
+
+merge_threshold: 0.85
+merge_threshold_is_derived: false
+
+rules:
+  - id: exact_after_case_and_whitespace
+    explanation: >-
+      The same string, differing only in case and spacing. The safest signal there is, and the
+      one that carries the most weight because it cannot be wrong about which characters were
+      on the page.
+    rules: [unicode, whitespace, case]
+    weight: 1.0
+
+  - id: same_after_dropping_separators
+    explanation: >-
+      Differs only in punctuation and spacing — `N. Bridge Forwarding` against `N Bridge
+      Forwarding`. Common between a scanning desk and an EDI feed describing one party.
+    rules: [unicode, whitespace, case, separators]
+    weight: 0.9
+
+  - id: same_ignoring_legal_form
+    explanation: >-
+      `NORTHBRIDGE FWD BV` and `NORTHBRIDGE FWD` are the same company written with and without
+      its legal form. One suffix is stripped, never several: greedy stripping turns SHIPPING CO
+      into SHIPPING and two different companies into one.
+    rules: [unicode, whitespace, case, legal_form]
+    weight: 0.8
+
+  - id: same_ignoring_legal_form_and_separators
+    explanation: >-
+      Both of the above at once, which is what a scanned letterhead and a typed manifest
+      actually differ by. Weighted lower because two normalisations have been applied and each
+      one is a chance to have discarded a real difference.
+    rules: [unicode, whitespace, case, legal_form, separators]
+    weight: 0.7

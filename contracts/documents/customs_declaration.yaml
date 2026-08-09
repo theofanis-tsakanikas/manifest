@@ -1,0 +1,87 @@
+# The document with the most consequential errors on it, and the only one carrying a field
+# this system will never publish automatically.
+id: customs_declaration
+title: Customs declaration
+description: >-
+  Structured, and authored by a human under time pressure. Carries the tariff classification,
+  the declared value, the duty and the procedure codes. Under UCC Art. 15 the declarant is
+  responsible for the accuracy of every figure on it, and automation does not move that
+  responsibility — which is why the classification field here is the one that cannot publish
+  without a recorded human decision.
+version: 1
+
+fields:
+  - name: declaration_reference
+    type: code
+    description: The broker's reference for this declaration.
+    error_budget: 0.002
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: hs_code
+    type: hs_code
+    description: >-
+      Harmonised System tariff classification. Genuinely contested — the same goods are argued
+      into different headings by competent professionals — so a model reporting high confidence
+      on a contested item is worse than one that abstains. This field never publishes without a
+      recorded human decision, whatever its confidence, and that is a property of the
+      consequence rather than of the model.
+    always_review: true
+
+  - name: declared_value
+    type: money
+    dimension: money
+    description: >-
+      The customs value declared. Reconciled against the commercial invoice total; a wrong
+      value is a wrong duty, in both directions.
+    error_budget: 0.002
+
+  - name: currency
+    type: code
+    description: ISO 4217 currency of the declared value.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case]
+
+  - name: duty_amount
+    type: money
+    dimension: money
+    description: >-
+      The duty calculated on this declaration. Extracted for the analytics marts — duty
+      exposure by HS chapter is one of the questions a single document cannot answer.
+    required: false
+    error_budget: 0.005
+
+  - name: procedure_code
+    type: code
+    description: >-
+      The customs procedure requested. A wrong procedure code is not a rounding error; it is a
+      different legal treatment of the goods.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: country_of_origin
+    type: country
+    description: >-
+      Country of origin as declared. Reconciled against the certificate of origin, which is
+      exactly where a disagreement is the signal rather than the noise.
+    error_budget: 0.001
+
+  - name: declarant
+    type: party
+    description: >-
+      The party lodging the declaration, responsible under UCC Art. 15 for its accuracy. Almost
+      always the broker, but may be a natural person.
+    error_budget: 0.005
+    comparison: [unicode, whitespace, case]
+    personal_data:
+      purpose: >-
+        The declarant is legally responsible for the declaration under Reg. (EU) 952/2013 Art.
+        15, so the record of who lodged it is part of the record the obligation is about.
+      lawful_basis: >-
+        Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
+
+  - name: declaration_date
+    type: date
+    description: >-
+      The date of acceptance. UCC Art. 51 counts the retention period from the end of the year
+      this date falls in, so a wrong year is a records failure with a legal consequence.
+    error_budget: 0.001

@@ -1,0 +1,94 @@
+# The carrier's document. Where the container number lives, which makes it the one document
+# with a field that can prove itself misread — see `docs/SCENARIO.md` on ISO 6346 being a
+# falsifier rather than ground truth.
+id: bill_of_lading
+title: Bill of lading
+description: >-
+  Issued by the carrier. Names the shipper and consignee, the vessel and voyage, the ports of
+  loading and discharge, the containers and the gross weight of the shipment. Carrier-specific
+  layouts vary enormously, so field position carries no information and every value has to be
+  found rather than looked up.
+version: 1
+
+fields:
+  - name: bill_of_lading_number
+    type: code
+    description: The carrier's own reference for this bill of lading.
+    error_budget: 0.002
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: container_number
+    type: container_number
+    description: >-
+      ISO 6346 container identifier. The only field on any of these documents that can say it
+      was misread, and it says so in one direction only.
+    # The tightest budget in the set, and it is affordable *because* of the check digit: a
+    # provably wrong read is refused before it is ever published, so the budget covers only
+    # the corruptions mod-11 cannot see — roughly one in eleven of them.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case, alphanumeric]
+
+  - name: gross_weight
+    type: quantity
+    dimension: mass
+    unit: kg
+    description: >-
+      Total gross weight of the shipment as the carrier states it. Reconciled against the
+      packing list, which frequently states it in pounds.
+    error_budget: 0.005
+
+  - name: shipper
+    type: party
+    description: >-
+      The party tendering the goods. Frequently a sole trader, so never a natural person is
+      not assumable here.
+    error_budget: 0.01
+    comparison: [unicode, whitespace, case]
+    personal_data:
+      purpose: >-
+        Identifying the parties to a shipment is required to lodge a customs declaration and to
+        answer a customs authority's question about it afterwards.
+      lawful_basis: >-
+        Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
+
+  - name: consignee
+    type: party
+    description: >-
+      The party to whom the goods are consigned. As with the shipper, may be a natural person.
+    error_budget: 0.01
+    comparison: [unicode, whitespace, case]
+    personal_data:
+      purpose: >-
+        Identifying the parties to a shipment is required to lodge a customs declaration and to
+        answer a customs authority's question about it afterwards.
+      lawful_basis: >-
+        Art. 6(1)(c) GDPR — compliance with a legal obligation under Reg. (EU) 952/2013.
+
+  - name: port_of_loading
+    type: code
+    description: UN/LOCODE of the port where the goods were loaded.
+    error_budget: 0.005
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: port_of_discharge
+    type: code
+    description: UN/LOCODE of the port where the goods are discharged.
+    error_budget: 0.005
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: vessel_name
+    type: text
+    description: >-
+      Name of the vessel carrying the shipment. Extracted for the arrival notice to reconcile
+      against; carries no duty consequence of its own.
+    required: false
+    error_budget: 0.02
+    retention: operational
+    comparison: [unicode, whitespace, case]
+
+  - name: date_of_issue
+    type: date
+    description: >-
+      The date the carrier issued this bill. Decides which retention year the record falls in
+      under UCC Art. 51, so a wrong year is a records failure rather than a duty one.
+    error_budget: 0.002

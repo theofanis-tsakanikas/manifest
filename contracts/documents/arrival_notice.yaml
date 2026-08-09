@@ -1,0 +1,61 @@
+# The amendment problem. This document is superseded more often than any other, and a
+# superseded arrival notice that silently overwrote its predecessor would take claim 3 with it.
+id: arrival_notice
+title: Arrival notice
+description: >-
+  Issued by the carrier or agent as the vessel approaches. States the expected arrival, the
+  terminal and the conditions for release. Frequently amended — a corrected notice arrives
+  after the original was processed, and it supersedes rather than overwrites, which is the
+  pathology this document exists in the corpus to exercise.
+version: 1
+
+fields:
+  - name: notice_reference
+    type: code
+    description: The issuer's reference for this notice, shared across its amendments.
+    error_budget: 0.002
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: bill_of_lading_number
+    type: code
+    description: >-
+      The bill of lading this notice concerns. The join key to the rest of the shipment, so a
+      wrong value does not produce a wrong answer — it produces a shipment with a document
+      missing and another with one too many.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: container_number
+    type: container_number
+    description: >-
+      The container arriving. Checkable by its own arithmetic and reconciled against the bill
+      of lading.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case, alphanumeric]
+
+  - name: estimated_arrival
+    type: date
+    description: >-
+      Expected arrival date. The field most often amended, and the reason this document type
+      carries a supersession chain rather than a single current value.
+    error_budget: 0.005
+    retention: operational
+
+  - name: terminal
+    type: text
+    description: The terminal at which the goods will be available.
+    required: false
+    error_budget: 0.02
+    retention: operational
+    comparison: [unicode, whitespace, case]
+
+  - name: package_count
+    type: quantity
+    dimension: count
+    unit: ctn
+    description: >-
+      How many packages the carrier expects to discharge. Reconciled against the packing list
+      exactly — a count that disagrees is either a short-shipment or a misread, and both are
+      worth a person's attention.
+    required: false
+    error_budget: 0.005

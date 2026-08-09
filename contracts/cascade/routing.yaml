@@ -1,0 +1,66 @@
+# Which reader may read a page, in which language. ADR-0004.
+#
+# This file exists because of a fact verified on 2026-08-09 and recorded in
+# `docs/AWS-CONSTRAINTS.md`: Textract, Bedrock Data Automation and Comprehend all document the
+# same six input languages — English, German, Spanish, French, Italian, Portuguese. Two of the
+# three document languages in this scenario, Greek and Dutch, are outside all of them.
+#
+# Sending a Greek page to a service that does not read Greek does not fail loudly. It returns a
+# confident-looking result over a language the model never saw, and that score then enters a
+# threshold derived on the assumption that it means something. Failing to route is a bug;
+# routing to an ineligible reader is a fabricated result.
+#
+# So eligibility is declared per language, here, as data — and tier 0 is on every line, because
+# it is the only reader that actually runs in this repository.
+version: 1
+
+tiers:
+  0: >-
+    The local reference reader. Runs on the machine, over the real corpus, producing the
+    genuine confidences and genuine geometry claims 1 and 2 are derived from. Every language
+    it has data for. Zero marginal cost.
+  1: >-
+    Managed document extraction, per page. Better on degraded print, tables and forms. Six
+    documented input languages. Written as an adapter, schema-tested, never called.
+  2: >-
+    A multilingual model with document input, per token. The only escalation path for Greek and
+    Dutch. Written as an adapter, schema-tested, never called.
+
+languages:
+  - language: en
+    eligible_tiers: [0, 1, 2]
+
+  # Greek: the language of the Piraeus office, and outside every managed reader in the stack.
+  # Tier 1 is absent from this line on purpose and it is the single most consequential absence
+  # in the contract set.
+  - language: el
+    eligible_tiers: [0, 2]
+
+  # Dutch: the language of the Rotterdam office, and in the same position as Greek.
+  - language: nl
+    eligible_tiers: [0, 2]
+
+  - language: de
+    eligible_tiers: [0, 1, 2]
+
+  - language: fr
+    eligible_tiers: [0, 1, 2]
+
+  - language: es
+    eligible_tiers: [0, 1, 2]
+
+  - language: it
+    eligible_tiers: [0, 1, 2]
+
+  - language: pt
+    eligible_tiers: [0, 1, 2]
+
+  # Chinese and Arabic appear as party names rather than as page text. Neither managed document
+  # reader lists them as an input language, and neither supports vertical text at all, so a
+  # page in either escalates only to the model tier — and the entity work that actually needs
+  # them reads a name, not a page.
+  - language: zh
+    eligible_tiers: [0, 2]
+
+  - language: ar
+    eligible_tiers: [0, 2]

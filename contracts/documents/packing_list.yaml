@@ -1,0 +1,62 @@
+# The document that states the same weight the bill of lading does, in a different unit, and
+# disagrees with it often enough to be worth checking.
+id: packing_list
+title: Packing list
+description: >-
+  Issued by the shipper. States package counts, dimensions, and net and gross weight. Weights
+  appear in kilograms and pounds on the same page, which is why reconciliation is unit-aware
+  and why a comparison that assumed a unit would be wrong roughly half the time.
+version: 1
+
+fields:
+  - name: packing_list_number
+    type: code
+    description: The shipper's own reference for this packing list.
+    required: false
+    error_budget: 0.01
+    comparison: [unicode, whitespace, case, separators]
+
+  - name: gross_weight
+    type: quantity
+    dimension: mass
+    unit: kg
+    description: >-
+      Gross weight of the packed goods. The other half of the reconciliation against the bill
+      of lading, and the field most often stated in pounds on a page that is otherwise metric.
+    error_budget: 0.005
+
+  - name: net_weight
+    type: quantity
+    dimension: mass
+    unit: kg
+    description: >-
+      Net weight, excluding packaging. Must be at most the gross weight, and reconciled against
+      the invoice where the invoice states one.
+    error_budget: 0.005
+
+  - name: package_count
+    type: quantity
+    dimension: count
+    unit: ctn
+    description: >-
+      How many packages. An integer that must agree with the arrival notice exactly — a count
+      takes an absolute tolerance, because half a percent of three cartons is meaningless.
+    error_budget: 0.002
+
+  - name: volume
+    type: quantity
+    dimension: volume
+    unit: m3
+    description: >-
+      Total volume of the shipment. Frequently stated in cubic feet, and frequently absent.
+    required: false
+    error_budget: 0.02
+    retention: operational
+
+  - name: container_number
+    type: container_number
+    description: >-
+      The container these packages are in. Reconciled against the bill of lading, and
+      independently checkable by its own arithmetic.
+    error_budget: 0.001
+    comparison: [unicode, whitespace, case, alphanumeric]

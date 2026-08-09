@@ -1,0 +1,45 @@
+# The declared finite resource claim 5 is about. ADR-0001.
+#
+# **Every figure here is a declared scenario parameter, not a measurement.** Nothing in this
+# repository has observed a reviewer. The projection built from these numbers is a model, it is
+# labelled a model everywhere it appears, and it fails the build when a threshold pushes
+# projected volume past what these numbers can absorb.
+#
+# Four reviewers at six productive hours is 86,400 reviewer-seconds a day. At twenty seconds a
+# decision that is 4,320 decisions, against 18,000 documents at roughly fifteen fields each.
+# The queue absorbs about 1.6% of extracted fields, and about 0.5% on a peak day. That number
+# is the whole argument.
+version: 1
+
+# `docs/SCENARIO.md`: two people per office, two offices.
+reviewers: 4
+productive_hours_per_day: 6
+
+# Time to open a crop, read it, and decide. Six hours of *productive* time already excludes
+# handover, breaks and the rest of the job, so this is the decision itself.
+seconds_per_decision: 20
+
+# Monday mornings and the two days before a quarter end. Capacity does not rise to meet it.
+peak_multiplier: 3
+
+documents_per_day: 18000
+
+# ── Reviewer integrity (ADR-0001) ────────────────────────────────────────────
+#
+# A human decision is evidence only if the human was plausibly looking.
+
+# A decision faster than this is recorded as unexamined. Not punished — recorded. Four seconds
+# is not enough to read a crop, and a reviewer producing many of them is a signal about the
+# queue's design before it is a signal about the reviewer.
+minimum_seconds_on_task: 4
+
+# One decision in twenty goes to a second reviewer. This is the only measurement here that is
+# about the *task* rather than about the person: two humans disagreeing tells you the item was
+# genuinely hard, which is the thing an agreement rate cannot distinguish from inattention.
+sampled_rereview_rate: 0.05
+
+# A reviewer agreeing with the model at or above this rate over a full window is reported as a
+# rubber stamp. Not 1.0: a reviewer at 99% over a thousand decisions has disagreed ten times,
+# and a reviewer at 100% has stopped reading. Both tails are reported — a reviewer who
+# disagrees with everything is the same finding wearing the opposite sign.
+rubber_stamp_agreement_rate: 0.995
