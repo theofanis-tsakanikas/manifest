@@ -806,6 +806,39 @@ data "aws_iam_policy_document" "deploy_references" {
       "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/bootstrap/*"
     ]
   }
+
+  # **Asking what is left, which the teardown could not do.**
+  #
+  # `destroy.yml` ends by sweeping for anything this project created that survived, and every
+  # call it makes is an enumeration: list the buckets, list the functions, list the log groups,
+  # ask the tagging API what still carries `manifest:project`. None of them takes a resource —
+  # an account-wide listing is account-wide by definition — so the boundary is that all of it
+  # is read-only, and the sweep itself refuses to act on anything outside the project's prefix.
+  #
+  # `tag:GetResources` in particular was missing while the old report step already called it.
+  # That step ended in an `echo`, so the failed call did not fail the step, and a teardown
+  # check that could not run reported success for as long as it existed.
+  #checkov:skip=CKV_AWS_356:Every action here is a list or describe with no resource-level scoping available; the sweep is read-only by construction.
+  #checkov:skip=CKV_AWS_111:As above — no write action is granted here.
+  statement {
+    sid    = "SweepForWhatSurvivedTheTeardown"
+    effect = "Allow"
+    actions = [
+      "tag:GetResources",
+      "s3:ListAllMyBuckets",
+      "lambda:ListFunctions",
+      "states:ListStateMachines",
+      "logs:DescribeLogGroups",
+      "ecr:DescribeRepositories",
+      "dynamodb:ListTables",
+      "sqs:ListQueues",
+      "glue:GetDatabases",
+      "iam:ListRoles",
+      "iam:ListPolicies",
+      "ssm:DescribeParameters",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "deploy_references" {

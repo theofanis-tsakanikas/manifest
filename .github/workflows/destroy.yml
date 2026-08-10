@@ -495,12 +495,21 @@ jobs:
             --query 'Parameter.Value' --output text)
           echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
-      - name: list anything still tagged for this project
-        # The step that makes this a teardown rather than a hope. A destroy that reports success
-        # while leaving a tagged resource behind is the exact failure this file exists to
-        # prevent, and the only way to know is to ask afterwards.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: what survived, and whether it was allowed to
+        # **The step that makes this a teardown rather than a hope**, and it used to be neither.
+        # It printed a table of everything tagged for the project, said "anything listed above
+        # still exists and still costs money", and exited zero — every time, whatever was in the
+        # table. It also called the tagging API without `tag:GetResources`, and because the step
+        # ended in an `echo`, that failure did not fail the step either. A check that could not
+        # go red reported success for as long as it existed.
+        #
+        # `scripts/estate_sweep.py` sweeps twice — by tag, which finds resource types nobody
+        # enumerated, and by name, which is the only one that finds an *untagged* leftover. What
+        # may remain is what carries `manifest:layer = bootstrap`, a tag the bootstrap provider
+        # sets on its own resources, so the allowlist is a property of the estate rather than a
+        # list somebody maintains. Anything else is a non-zero exit.
         run: |
-          aws resourcegroupstaggingapi get-resources \
-            --tag-filters "Key=manifest:project,Values=${PROJECT}" \
-            --query 'ResourceTagMappingList[].ResourceARN' --output table
-          echo "Anything listed above still exists and still costs money."
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          python3 scripts/estate_sweep.py --project "${PROJECT}"

@@ -161,6 +161,16 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "reader identity",
+        [PYTHON, "scripts/reader_version_check.py"],
+        "The image's reader and the recording's reader are the same binary, exactly. Every "
+        "threshold here is a statement about one reader, and the deployed handler looks its "
+        "thresholds up by that reader's identity — so a version difference of one patch is a "
+        "deployment that builds, applies, triggers, and then finds no artefact for the reader "
+        "that is actually reading. It cost a green deploy and an IAM error naming nothing.",
+    ),
+    Check(
+        "correctness",
         "planting is blind",
         [PYTHON, "scripts/check_planting_is_blind.py"],
         "The corpus plants mismatches in the vocabulary of shipment facts and knows nothing "
