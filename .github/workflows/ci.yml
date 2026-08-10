@@ -162,6 +162,12 @@ jobs:
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.15.5
+      - name: install what the checks import
+        # `check_deploy_path.py` and `tf_validate.py` read YAML. This job installed checkov and
+        # Terraform and nothing else, so the first check failed on `No module named 'yaml'` —
+        # a job that had never been run, because until today nothing had ever dispatched a
+        # deploy and CI's own runs did not reach it.
+        run: pip install --quiet pyyaml
       - name: install checkov on its own
         # It pins boto3 exactly. A scanner is a tool; boto3 is the application. Keeping them in
         # separate environments is what stops the scanner deciding the application's dependency
