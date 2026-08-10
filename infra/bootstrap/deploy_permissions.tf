@@ -431,6 +431,22 @@ resource "aws_iam_role_policy_attachment" "deploy_identity" {
 }
 
 data "aws_iam_policy_document" "deploy_data" {
+  # **`states:ValidateStateMachineDefinition` takes no resource**, because it validates a
+  # definition that does not exist yet — there is nothing to name. The provider calls it before
+  # every create and update, so without this the layer cannot be applied at all, and the refusal
+  # names the state machine rather than the shape of the grant.
+  #
+  # The fourth API in this estate whose boundary is inexpressible: `ec2:Describe*`,
+  # `ssm:DescribeParameters`, `ecr:GetAuthorizationToken` and now this one.
+  #checkov:skip=CKV_AWS_111:states:ValidateStateMachineDefinition validates a definition that does not exist yet; there is no resource to scope it to.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "ValidateADefinitionBeforeItExists"
+    effect    = "Allow"
+    actions   = ["states:ValidateStateMachineDefinition"]
+    resources = ["*"]
+  }
+
   # ── extraction ────────────────────────────────────────────────────────────
   statement {
     sid    = "TheQueueAndTheRecords"
@@ -466,6 +482,9 @@ data "aws_iam_policy_document" "deploy_data" {
       "states:UpdateStateMachine",
       "states:TagResource",
       "states:ListTagsForResource",
+      "states:UntagResource",
+      "states:DescribeStateMachineAlias",
+      "states:ListStateMachineVersions",
     ]
     resources = [
       "arn:aws:sqs:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
