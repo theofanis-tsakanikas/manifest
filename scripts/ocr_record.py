@@ -144,15 +144,27 @@ def _reader_is_the_deployed_one() -> str:
     )
 
 
-def main() -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept", action="store_true", help="Overwrite the existing recording.")
     parser.add_argument("--workers", type=int, default=0, help="0 chooses by CPU count.")
     parser.add_argument("--limit", type=int, default=0, help="Read only the first N pages.")
+    # **Sharding, because the ceremony did not fit in a job.** Reading 3,255 degraded pages at
+    # 300 DPI takes a runner longer than the six hours a job is allowed; two dispatches died at
+    # their timeout. A shard reads every Nth page of the canonical ordering and writes a
+    # recording of just those, and `--merge` combines them into bytes identical to an unsharded
+    # run. Striding rather than slicing on purpose: a contiguous slice would hand one shard every
+    # Greek document and make each shard's language set a function of where the boundaries fell.
+    parser.add_argument("--shard", type=int, default=0, help="This shard's index, from 0.")
+    parser.add_argument("--of", type=int, default=1, help="How many shards in total.")
     parser.add_argument(
         "--directory", type=Path, default=DEFAULT_DIRECTORY, help="Where the recording lives."
     )
-    arguments = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
 
     if not local.available():
         print(
@@ -167,7 +179,22 @@ def main() -> int:
         print(problem, file=sys.stderr)
         return 1
 
+    if arguments.of < 1 or not 0 <= arguments.shard < arguments.of:
+        print(
+            f"--shard {arguments.shard} of {arguments.of} is not a shard. A run that silently "
+            f"read nothing would write an empty recording and every threshold would be derived "
+            f"from it.",
+            file=sys.stderr,
+        )
+        return 1
+
     jobs = _jobs(arguments.limit or None)
+    if arguments.of > 1:
+        jobs = jobs[arguments.shard :: arguments.of]
+        print(f"shard {arguments.shard} of {arguments.of}: {len(jobs)} pages")
+        if not jobs:
+            print("this shard has no pages, which means --of exceeds the corpus", file=sys.stderr)
+            return 1
     # Fails rather than skips. Dropping a language would quietly reduce the corpus to the ones
     # this machine supports, and every claim scored on it would keep reporting the same green.
     local.require_languages(_languages(jobs))

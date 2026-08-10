@@ -66,20 +66,22 @@ permissions:
   contents: read
 
 jobs:
-  record:
-    name: the reader over the corpus, inside the image
+  # **Sharded, because the unsharded ceremony does not finish.** Two dispatches died at their
+  # job timeout — one at 90 minutes, one at five hours — reading 3,255 degraded pages at 300 DPI
+  # on a two-core runner. A job timeout is reported as `cancelled`, which reads like somebody
+  # pressed a button and cost a while looking for the button.
+  #
+  # Eight shards, each reading every eighth page of the canonical ordering. Striding rather than
+  # slicing: a contiguous slice would hand one shard every Greek document, and a shard's language
+  # set would then depend on where the boundaries happened to fall.
+  read:
+    name: "shard ${{ matrix.shard }} of 8"
     runs-on: ubuntu-latest
-    # **Five hours, and 90 minutes was not enough.** The first dispatch died at 90 minutes and
-    # 16 seconds, which GitHub reports as `cancelled` — a word that reads like a human pressed a
-    # button and cost a few minutes of looking for the human. The breakdown: ~24 minutes to
-    # regenerate 3,255 corpus pages, ~2 to build the image, and the reader still working through
-    # the pages when the clock ran out.
-    #
-    # A ceremony that decides every threshold in the repository is allowed to take an afternoon.
-    # What it is not allowed to do is be quietly truncated — a recording of the pages that fit
-    # inside a timeout would derive thresholds from a subset while reporting N as though it were
-    # the set, which is the one failure this whole file exists to prevent.
-    timeout-minutes: 300
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - name: confirm
         run: |
@@ -98,27 +100,24 @@ jobs:
       - name: install
         run: python -m pip install --quiet -e ".[dev]"
 
-      # The corpus is 2.5 GB of rendered pages and none of it is committed — it regenerates
-      # from a seed, and `--check` proves the regeneration reproduces the committed ground
-      # truth exactly. A recording made over a corpus that drifted is a recording of a
-      # different set of documents wearing the same fingerprint.
+      # Every shard regenerates the whole corpus, which is duplicated work and is the right
+      # trade: the alternative is passing 2.5 GB between jobs through an artefact, and a shard
+      # that read a corpus it did not verify is a shard whose pages nobody can vouch for.
+      # `--check` proves the regeneration reproduces the committed ground truth exactly.
       - name: regenerate the corpus and prove it reproduces
         run: |
           set -euo pipefail
           python -m corpus.generate
           python -m corpus.generate --check
 
-      # Built here rather than pulled from the registry, so that the recording is tied to the
-      # committed Dockerfile rather than to whatever was last pushed. Same file the deploy
-      # builds; if the two ever diverge, this is a build of the file in the tree.
       - name: build the reader image
         run: docker build --tag manifest-reader:ceremony .
 
       # **The reader that runs here is the reader the estate runs.** The workspace is mounted so
-      # the recording lands in the tree; `PYTHONPATH` points at the mounted source rather than
-      # the copy baked into the image, so the ceremony runs this commit's code against this
+      # the shard's recording lands in the tree; `PYTHONPATH` points at the mounted source rather
+      # than the copy baked into the image, so the ceremony runs this commit's code against this
       # image's binary.
-      - name: run the reader over the corpus, inside the image
+      - name: read this shard, inside the image
         run: |
           set -euo pipefail
           docker run --rm \
@@ -127,7 +126,56 @@ jobs:
             --env PYTHONPATH=/work/src \
             --entrypoint /usr/local/bin/python \
             manifest-reader:ceremony \
-            scripts/ocr_record.py --accept ${{ inputs.pages && format('--limit {0}', inputs.pages) || '' }}
+            scripts/ocr_record.py --accept \
+              --shard ${{ matrix.shard }} --of 8 \
+              --directory /work/shard \
+              ${{ inputs.pages && format('--limit {0}', inputs.pages) || '' }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: shard-${{ matrix.shard }}
+          path: shard/
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: merge, derive, and print the movement
+    needs: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: install
+        run: python -m pip install --quiet -e ".[dev]"
+
+      # The ground truth is what the merge checks the shards against — the corpus fingerprint,
+      # the seed, and the page count that proves no shard came back short. Regenerated rather
+      # than carried, for the same reason each shard regenerates it.
+      - name: regenerate the corpus
+        run: |
+          set -euo pipefail
+          python -m corpus.generate
+          python -m corpus.generate --check
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: shard-*
+          path: shards/
+
+      # **Merged so that the result is indistinguishable from an unsharded run.** The page lines
+      # are sorted back into canonical order and re-written through the same serialisation, so a
+      # sharded recording and an unsharded one are the same bytes. If they were not, the shard
+      # count would be inside the digest and changing it would look like the reader moved.
+      #
+      # The merge refuses a page count that does not match the corpus. A shard that failed
+      # quietly would otherwise produce a recording short by a few hundred pages, and every
+      # threshold would be derived from fewer observations while printing its N as though that N
+      # were the corpus — claim 1's central argument, reporting green about a set nobody chose.
+      - name: merge the shards
+        run: python scripts/ocr_merge.py shards/shard-*
 
       # **The movement, which is the output of this workflow.** Run without `--write-baseline`
       # first, so the derivation is compared against the committed thresholds and every field
@@ -149,10 +197,6 @@ jobs:
           echo "the artefact the estate will read:"
           python scripts/thresholds_artefact.py --print-key
 
-      # **The reader's exact version, so the Dockerfile's assertion can be updated in the same
-      # commit as the recording.** `scripts/reader_version_check.py` fails the build when the
-      # two disagree; this prints what the new recording declares, so there is no step where
-      # somebody has to go and look it up.
       - name: what to put in the Dockerfile
         run: |
           set -euo pipefail
