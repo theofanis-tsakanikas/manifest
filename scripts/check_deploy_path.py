@@ -500,6 +500,42 @@ def _check_the_runtime_artefacts_are_deployed() -> list[str]:
     return problems
 
 
+def _check_actions_are_pinned() -> list[str]:
+    """Every third-party action is pinned to a commit SHA, never to a tag.
+
+    **The shortest path from somebody else's compromised account to this AWS estate.** A tag
+    moves: `actions/checkout@v4` is whatever the maintainer last pointed v4 at. `deploy.yml`
+    holds `id-token: write` and assumes a role that can build the entire estate, so an upstream
+    account takeover becomes arbitrary code with those credentials — without this repository
+    having done anything wrong.
+
+    A local `uses: ./.github/...` is exempt: it resolves inside this repository at the commit
+    being run, so there is no third party and nothing to pin.
+    """
+    problems: list[str] = []
+
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped.startswith("- uses:") and not stripped.startswith("uses:"):
+                continue
+            reference = stripped.split("uses:", 1)[1].split("#")[0].strip()
+            if reference.startswith("./") or not reference:
+                continue
+            if "@" not in reference:
+                problems.append(f"{path.name}:{number} uses `{reference}` with no version at all")
+                continue
+            pinned = reference.rsplit("@", 1)[1]
+            if not re.fullmatch(r"[0-9a-f]{40}", pinned):
+                problems.append(
+                    f"{path.name}:{number} pins `{reference}` to a tag rather than a commit. A "
+                    f"tag moves, and this workflow can assume a role that builds the estate — "
+                    f"an upstream account takeover becomes code running with those credentials"
+                )
+
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -524,6 +560,7 @@ def main() -> int:
     problems.extend(_check_nothing_names_what_nothing_creates())
     problems.extend(_check_the_runtime_artefacts_are_deployed())
     problems.extend(_check_a_trigger_can_actually_fire())
+    problems.extend(_check_actions_are_pinned())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

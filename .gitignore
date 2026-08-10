@@ -17,6 +17,21 @@ htmlcov/
 *.tfstate
 *.tfstate.*
 *.tfplan
+
+# **Variable files are never committed**, and this line was missing until 2026-08-10.
+#
+# `infra/bootstrap` takes an alert address — which is a person's email, and therefore personal
+# data under the retention rules this project applies to everything else — and a Bedrock model
+# ARN, which names the account. Neither belongs in a repository, and the failure mode is not a
+# dramatic one: somebody writes a `terraform.tfvars` so they do not have to retype four values,
+# and it is committed with everything else in the same `git add -A`.
+#
+# `.auto.tfvars` is listed separately because Terraform loads it without being asked, which is
+# exactly why somebody would reach for it.
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
 crash.log
 override.tf
 override.tf.json

@@ -663,6 +663,21 @@ def _retrieve_everything_regardless_of_overlap(root: Path) -> bool:
     )
 
 
+def _pin_an_action_to_a_moving_tag(root: Path) -> bool:
+    """Put a tag back where a commit SHA is.
+
+    **This was the repository's actual state until 2026-08-10**, on all five actions. It reads
+    better — `@v4` says what it is and a digest says nothing — and it is the shortest path from
+    an upstream maintainer's stolen credentials to an AWS account that can build this entire
+    estate, because `deploy.yml` holds `id-token: write`.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4",
+        "uses: actions/checkout@v4",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -987,6 +1002,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _retrieve_everything_regardless_of_overlap,
         "Reads as generosity. A context containing the whole nomenclature grounds every "
         "heading in it, which is a gate that has stopped checking anything.",
+    ),
+    Mutation(
+        "pin an action to a moving tag instead of a commit",
+        "supply chain",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "pins `actions/checkout@v4` to a tag rather than a commit",
+        _pin_an_action_to_a_moving_tag,
+        "The repository's actual state on all five actions. A tag moves, and this workflow can "
+        "assume a role that builds the estate.",
     ),
 )
 

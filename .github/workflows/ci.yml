@@ -19,6 +19,16 @@ on:
   # path nobody has ever successfully started.
   workflow_call:
 
+# **Every third-party action is pinned to a commit SHA, never to a tag.**
+#
+# A tag moves. `actions/checkout@v4` is whatever the maintainer last pointed v4 at, and an
+# account compromise upstream becomes code running here — in a workflow that, in `deploy.yml`,
+# holds `id-token: write` and can assume a role that builds the whole estate. That is the
+# shortest path from somebody else's stolen credentials to this AWS account, and it does not
+# involve this repository being wrong about anything.
+#
+# The trailing comment keeps the human-readable version beside the digest, because a wall of
+# hex is a wall nobody reviews. `scripts/check_deploy_path.py` refuses a `uses:` without a SHA.
 permissions:
   contents: read
 
@@ -34,10 +44,10 @@ jobs:
     name: secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -45,8 +55,8 @@ jobs:
     name: lint and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -e ".[dev]"
@@ -60,8 +70,8 @@ jobs:
     name: the claim gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -e ".[dev]"
@@ -132,8 +142,8 @@ jobs:
     name: attack our own gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install -e ".[dev]"
@@ -145,11 +155,11 @@ jobs:
     name: terraform and checkov
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.15.5
       - name: install checkov on its own
@@ -179,8 +189,8 @@ jobs:
     name: the adapter still parses what the binary emits
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: install the reader and the languages the scenario needs
@@ -207,7 +217,7 @@ jobs:
     name: the reader image builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: build it
         # Built on every pull request, pushed by nothing. A Dockerfile is code, and a broken one
         # discovered by the deploy is discovered after the environment approval has been given —
