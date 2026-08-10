@@ -53,3 +53,47 @@ resource "aws_ecr_lifecycle_policy" "reader" {
     }]
   })
 }
+
+# **The registry must let Lambda pull, and it does not by default.**
+#
+# `CreateFunction` returned *"Lambda does not have permission to access the ECR image. Check the
+# ECR permissions."* — a 403 from Lambda rather than from IAM, because the missing grant is on
+# the **repository**, not on the deploy role or on the function's execution role.
+#
+# It is the least discoverable permission in this estate: the deploy role could create the
+# repository, push to it, and create a function pointing at it, and the failure names neither
+# of those things. A container function is the only resource here whose service reads a policy
+# attached to a *different* resource in order to start.
+#
+# Scoped to functions in this account, so the repository is readable by this estate's Lambda
+# service principal and by nothing else.
+data "aws_iam_policy_document" "reader_repository" {
+  statement {
+    sid    = "LambdaMayPullTheReaderImage"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:BatchCheckLayerAvailability",
+    ]
+
+    # Without this the repository trusts the Lambda service globally — any function in any
+    # account could pull this image. The condition binds it to functions in this one.
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_ecr_repository_policy" "reader" {
+  repository = aws_ecr_repository.reader.name
+  policy     = data.aws_iam_policy_document.reader_repository.json
+}

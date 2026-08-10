@@ -624,6 +624,11 @@ data "aws_iam_policy_document" "deploy_compute" {
       "ecr:ListTagsForResource",
       "ecr:PutImageTagMutability",
       "ecr:PutImageScanningConfiguration",
+      # The repository policy that lets Lambda pull. Setting it is part of building the estate,
+      # and without the grant the deploy cannot write the permission the function needs to start.
+      "ecr:SetRepositoryPolicy",
+      "ecr:GetRepositoryPolicy",
+      "ecr:DeleteRepositoryPolicy",
     ]
     resources = ["*"]
   }
