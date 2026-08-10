@@ -161,6 +161,18 @@ data "aws_iam_policy_document" "deploy_storage" {
       # different permissions, and the administrative one reads as the larger.
       "s3:PutObject",
       "s3:DeleteObject",
+      # **A version is not an object, as far as IAM is concerned.** `s3:DeleteObject` on a
+      # versioned bucket writes a delete marker; removing the version underneath it is
+      # `s3:DeleteObjectVersion`, a separate action, and every bucket in this estate is
+      # versioned. Without this the teardown empties nothing, `terraform destroy` fails on
+      # `BucketNotEmpty`, and five buckets are left standing with their storage cost and the
+      # KMS key they need — which is the failure mode `destroy.yml` exists to prevent.
+      #
+      # Third time this distinction has cost a cycle: managing a key is not using it,
+      # administering a bucket is not writing into it, and deleting an object is not deleting
+      # its versions. IAM never merges the pair, and the administrative half always reads as
+      # the larger one.
+      "s3:DeleteObjectVersion",
       "s3:AbortMultipartUpload",
     ]
     resources = [

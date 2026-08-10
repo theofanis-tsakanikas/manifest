@@ -302,14 +302,21 @@ jobs:
         # `destroy` pointed at a bucket that does not exist reports success, empties nothing,
         # and then fails on a bucket that still has objects in it — or, worse, empties a
         # bucket that does exist and belongs to something else.
+        #
+        # **And `aws s3 rm --recursive` is not how you empty one.** On a versioned bucket that
+        # command deletes nothing: it writes a delete marker over each current version and
+        # leaves every noncurrent version in place, so the bucket ends up holding *more* objects
+        # than before. Paired with the `|| true` this line used to carry, the teardown reported
+        # success on the step that mattered and then failed four minutes later on
+        # `BucketNotEmpty`, with the only useful message already discarded.
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet boto3
           terraform -chdir=infra/lakehouse init \
             -backend-config="bucket=$TF_STATE_BUCKET" \
             -backend-config="region=${{ env.AWS_REGION }}"
           LAKE_BUCKET=$(terraform -chdir=infra/lakehouse output -raw lake_bucket)
-          echo "emptying $LAKE_BUCKET"
-          aws s3 rm "s3://$LAKE_BUCKET" --recursive || true
+          python3 scripts/empty_bucket.py "$LAKE_BUCKET" --project "${{ env.PROJECT }}" --missing-ok
       - run: |
           terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
@@ -432,9 +439,24 @@ jobs:
             --with-decryption --query 'Parameter.Value' --output text)
           echo "BUDGET_EMAIL=$BUDGET_EMAIL" >> "$GITHUB_ENV"
       - name: empty the data zones
+        # Every zone is versioned, so `aws s3 rm --recursive` — what this step used to run —
+        # deletes nothing at all. It writes a delete marker over each current version, leaves
+        # the noncurrent versions where they are, and hands `terraform destroy` a bucket with
+        # more objects in it than it started with. The `|| true` then swallowed the one message
+        # that would have said so.
+        #
+        # `scripts/empty_bucket.py` removes versions *and* delete markers, proves the bucket is
+        # empty afterwards rather than assuming it, refuses any bucket outside this project's
+        # prefix, and fails the job when a bucket will not empty. That failure is the teardown's
+        # most valuable output: a bucket that will not empty is a bucket about to be left
+        # standing, and it should be loud here rather than silent four jobs later.
         run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          account=$(aws sts get-caller-identity --query Account --output text)
           for zone in landing records evidence access-logs; do
-            aws s3 rm "s3://${PROJECT}-${zone}-$(aws sts get-caller-identity --query Account --output text)" --recursive || true
+            python3 scripts/empty_bucket.py "${PROJECT}-${zone}-${account}" \
+              --project "${PROJECT}" --missing-ok
           done
       - run: |
           terraform -chdir=infra/foundation init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
