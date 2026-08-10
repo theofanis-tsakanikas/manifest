@@ -1,13 +1,14 @@
 # Day one — the manual work that has no API
 
-**Nothing in this file has been done.** `docs/DECISIONS.md` 14: nothing in this repository is
-ever applied to AWS. Writing this down was always the deliverable; doing it was not — the same
-posture as Attestor and Watermark, and this file exists so that the manual work is *recorded*
-rather than performed silently by whoever deploys and remembered by nobody afterwards.
+**Day one happened on 2026-08-10**, and this file was written before it. Everything below the
+line was a *prediction* about what a first deploy would need; the section at the end records
+what actually happened, including the part no item on this list saw coming.
 
-If the author ever does deploy, this is the list. Every item here is manual because it has no
-Terraform resource or no API, not because it was inconvenient to automate — and each says
-which.
+The list held up better than the reason for keeping it. Every item here is manual because it
+has no Terraform resource or no API, not because automating it was inconvenient — and each says
+which. What the day proved is the narrower and more useful point: **a written-down manual step
+is a step somebody performs; an unwritten one is a step somebody performs and forgets, and the
+next person spends four minutes of a deploy discovering it.**
 
 ---
 
@@ -54,7 +55,7 @@ stops an older Terraform applying with no lock at all.
 | # | Step | Why |
 |---|---|---|
 | 7 | **Install the tier-0 reader's language data** on whatever runs it — Greek and Dutch at minimum | The corpus and the scenario are in three languages and no managed reader in the stack reads two of them. A run without the data quietly reduces the system to English and every claim scored on it keeps reporting the same green; `scripts/ocr_record.py` fails rather than skips for this reason |
-| 7a | **Check the reader version in the `Dockerfile` matches the one that produced `recordings/ocr/`** | The image asserts it at build time and refuses to build otherwise, so this is a heads-up rather than a manual check: if the base image's publisher moved the binary, the build fails by name. Accept the movement with `make ocr-record`, which prints every threshold's shift, and update `EXPECTED_READER_VERSION` in the same commit. A reader that moved silently moves every number on the scoreboard |
+| 7a | **Nothing. This one is automated now, and the reason is the day-one finding below** | It used to read "check the reader version in the `Dockerfile` matches the one that produced `recordings/ocr/`" — a manual check, on a list, in a file. It was not done, the versions did not match, and the deploy went green. `scripts/reader_version_check.py` now runs in CI on every push, and `make ocr-record` refuses to record with a reader the estate cannot run. A manual step that decides every threshold in the repository was the wrong kind of manual step |
 | 8 | **Dispatch `deploy` with `include_expensive_layers` off first** | EMR Serverless and the Redshift workgroup are the estate's cost, and they are opt-in for that reason. The first run should stand up foundation, extraction and lakehouse and stop; the two expensive layers are a second, deliberate dispatch with their own approval, used and then torn down |
 | 9 | **Set `expires_at` on every layer** | Every layer above `bootstrap` requires it and there is no default meaning "never". The reaper is the only thing between a portfolio estate and a monthly bill |
 
@@ -63,19 +64,119 @@ stops an older Terraform applying with no lock at all.
 **No console click that a resource could have made.** If an item appears on this list because
 automating it was tedious, it is in the wrong place — it belongs in Terraform.
 
-**No screenshot, no timing, no euro figure.** There is no estate to capture one from.
+**No screenshot, no timing, no euro figure.** Still none, and now for a better reason than
+"there is no estate": every claim in this repository is scored offline and stays that way, so a
+console capture would be decoration next to a command anybody can run. The wall-clock figures
+that do exist from the first deploy are stated as what they are — one run, one day, one
+account — and no cost figure has changed category. See `docs/DECISIONS.md` 14 and 15.
 
-**No "run it once to see".** `infra/bootstrap/` is the one layer whose design permits a laptop
-apply and it is not applied either, because applying it "just to check" would put an exception
-into every other sentence in this repository about not deploying.
+**No "run it once to see".** The first apply was deliberate, dispatched by hand, with an
+expiry, and torn down. That is not the same as running it to check.
 
 ## Tearing it down
 
-`destroy.yml` exists, is scoped to its own environment, and has never been
-dispatched. It is not optional and it is not a follow-up: a repository with a deploy path and
-no teardown path is how an estate gets left standing, and it is the difference between a
-portfolio piece and a bill.
+`destroy.yml` exists, is scoped to its own environment, and has now been dispatched. It is not
+optional and it is not a follow-up: a repository with a deploy path and no teardown path is how
+an estate gets left standing, and it is the difference between a portfolio piece and a bill.
+
+Running it is what proved that writing it was not enough. See the day-one record below: it
+would have emptied nothing and reported success.
 
 The state bucket carries `prevent_destroy` and outlives the estate on purpose — it is the
 record of what existed. Removing it is a deliberate, separate act, and `infra/bootstrap/`'s
 README says what the two honest options are.
+
+---
+
+## What day one was actually like — 2026-08-10
+
+Recorded because the list above is a prediction, and a prediction is only worth keeping if
+somebody says afterwards how it did.
+
+### What the list got right
+
+Every item on it was real. Items 5a and 5a2 — the numeric GitHub ids and the named model ARN —
+were the two that would have been quietly wrong rather than loudly broken, and having them
+written down is why they were not. Item 8's `include_expensive_layers` default did its job: the
+estate that stood up was foundation, extraction and lakehouse, and the two expensive layers were
+never asked for.
+
+### What it did not see at all
+
+**Twenty-four cycles of the deploy failed before one went green.** Not one of them was on this
+list, and they fall into three families.
+
+**Fourteen missing IAM grants.** The deploy role could create a thing and not use it, administer
+a thing and not write into it, delete an object and not its versions. `scripts/check_deploy_path.py`
+proves a grant exists for every service a layer declares; it cannot prove any grant is
+*sufficient*, and only a real apply says. That limit was written down in
+`contracts/deploy/acceptance.yaml` before the first dispatch, and it was the accurate part of
+that file. The three that cost most were `kms:GenerateDataKey` (managing a key is not using
+it), `s3:PutObject` (administering a bucket is not writing into it), and `s3:DeleteObjectVersion`
+(deleting an object is not deleting its versions). It is one distinction, three times.
+
+**Two limits nothing in the documentation mentions.** IAM's 10,240-byte cap on inline role
+policies is an *aggregate* across a role, not per policy — the fix was six managed policies.
+And Glue's Iceberg tables keep the partition spec in their own metadata rather than in the
+catalogue, so `table_type` and `metadata_location` are reserved and a partition change there
+would have dropped a column.
+
+**One packet that was never refused.** The first four documents to reach the deployed pipeline
+each hung for the full ten-minute Lambda timeout at 106 MB — no work, no log line past `START`.
+The route table sent the packet to the S3 gateway endpoint correctly; the security group then
+dropped it, because a gateway endpoint answers on a *public* prefix and egress was allowed only
+to the VPC CIDR. Nothing errors in that arrangement. A dropped packet is not a refusal: no RST,
+no 403, no message naming a permission — just a socket that never answers.
+
+### The finding that mattered more than all of them
+
+**The recording was made by a binary the estate cannot run.**
+
+`recordings/ocr/` was produced on the author's laptop by Homebrew's `tesseract 5.5.2`. The image
+is Debian, which carries `5.5.0` — as does Debian sid, as does every Ubuntu including the
+unreleased one. No Linux distribution ships 5.5.2. Every threshold in this repository was a
+statement about a reader the deployed pipeline could never be.
+
+The image asserted only the reader's *series*, on the written argument that a patch release does
+not move confidences — an assertion about a distribution nobody here had measured. Every offline
+check reads `recordings/` directly and so never met the deployed binary. The deploy went green.
+The first document that cleared the network failed on `s3:ListBucket`, four layers from the
+cause, in a message containing no word about readers.
+
+The refusal itself was correct: the extraction handler looks its thresholds up by the reader's
+exact identity, because two readers' 0.8 are different events. It arrived late and unreadable
+because the check that belonged offline did not exist.
+
+Three things changed, and the first is the one that matters:
+
+- **The ceremony moved into the image.** `.github/workflows/record.yml` builds `Dockerfile` and
+  runs the reader inside it, so the recording's reader and the estate's reader are the same
+  binary by construction. `Dockerfile` had claimed exactly this since it was written, and the
+  sentence was false.
+- The image asserts the **exact** version, and `scripts/reader_version_check.py` proves it
+  agrees with the recording, offline, on every push.
+- `make ocr-record` refuses to record with a reader the estate cannot run, because running it on
+  a laptop is how this happened.
+
+### And the teardown would have left everything standing
+
+Found by reading `destroy.yml` against the account rather than by running it. It emptied its
+buckets with `aws s3 rm --recursive || true`. All five are versioned, and on a versioned bucket
+that command deletes nothing — it writes a delete marker over each current version and leaves
+the noncurrent ones in place, so the bucket ends up holding more than it started with.
+`terraform destroy` then fails on `BucketNotEmpty`, and the `|| true` has already discarded the
+only message that would have explained it.
+
+Its final step had the same shape: it printed everything still tagged for the project, said
+"anything listed above still exists and still costs money", and exited zero — and called the
+tagging API without `tag:GetResources`, a failure that did not fail the step because the step
+ended in an `echo`. The report on whether an estate was left standing could not go red, and
+could not run.
+
+### The lesson worth keeping
+
+Every one of these was invisible to `terraform validate`, to checkov at zero findings, and to a
+suite of offline claims that all passed. They were not caught by being careful. They were caught
+by applying the estate once, deliberately, with an expiry on it — and the cheapest of them was
+caught by reading a workflow against the account it would run in, which cost nothing and should
+have happened first.
