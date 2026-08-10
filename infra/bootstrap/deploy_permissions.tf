@@ -515,6 +515,15 @@ data "aws_iam_policy_document" "deploy_data" {
       "glue:GetTable",
       "glue:UpdateTable",
       "glue:TagResource",
+      "glue:UntagResource",
+      # Glue spells its tag read `GetTags`, not `ListTagsForResource` — and Terraform calls it
+      # on every refresh. The fifth service today whose read surface had to be discovered by
+      # being refused: the plan fails, not the apply, so the symptom is a catalogue that can be
+      # created once and then never changed.
+      "glue:GetTags",
+      "glue:GetDatabases",
+      "glue:GetTables",
+      "glue:GetPartitions",
       "athena:CreateWorkGroup",
       "athena:DeleteWorkGroup",
       "athena:GetWorkGroup",
