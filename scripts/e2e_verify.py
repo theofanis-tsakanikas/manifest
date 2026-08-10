@@ -218,7 +218,7 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
         "4 · the provenance gate ran per field, not per document",
         len(per_field) > 0 and all(v in vocabulary for v in verdicts),
         f"{len(per_field)} field verdict(s): "
-        + ", ".join(f"{v}×{verdicts.count(v)}" for v in sorted(set(verdicts), key=str))
+        + ", ".join(f"{v} x{verdicts.count(v)}" for v in sorted(set(verdicts), key=str))
         + ". One boolean for a whole document is a gate that cannot say which field it refused, "
         "and claim 2 is a statement about fields",
     )
