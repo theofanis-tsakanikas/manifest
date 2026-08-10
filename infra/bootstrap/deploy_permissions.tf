@@ -51,12 +51,24 @@ data "aws_iam_policy_document" "deploy_estate" {
       "ec2:CreateTags",
     ]
     resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestTag/manifest:project"
-      values   = [var.project]
-    }
   }
+
+  # **The `aws:RequestTag` condition that used to be on the statement above is gone, and its
+  # removal is a correction rather than a loosening.**
+  #
+  # It required every create call to carry `manifest:project` in the request itself. The
+  # provider sets that tag by default on every resource, so it looked like defence in depth —
+  # and on the first real deploy the VPC was created and then `CreateSubnet`,
+  # `CreateRouteTable`, `CreateSecurityGroup` and `CreateFlowLogs` were all refused. EC2's
+  # tag-on-create support is not uniform across those APIs, and a condition that half the calls
+  # cannot satisfy is a deploy that dies at the second resource with an error naming the action
+  # rather than the condition.
+  #
+  # What it was protecting against is creating resources in this account, which the OIDC trust
+  # already bounds to one repository and one environment. What actually matters — touching
+  # resources this project does not own — is `aws:ResourceTag` on the modify and delete
+  # statement below, and that one is kept: it is the condition the APIs do support and the risk
+  # worth the condition.
 
   # Reads and modifications. `Describe*` cannot be tag-scoped at all — the API has no such
   # condition key — and a deploy that cannot describe what it created cannot plan a second
@@ -202,6 +214,13 @@ data "aws_iam_policy_document" "deploy_estate" {
       "events:RemoveTargets",
       "events:ListTargetsByRule",
       "events:TagResource",
+      "events:UntagResource",
+      # Terraform reads tags back on every refresh. Absent, the *plan* fails rather than the
+      # apply — which is a layer that can be created once and never updated or destroyed.
+      "events:ListTagsForResource",
+      "sns:ListTagsForResource",
+      "sns:TagResource",
+      "sns:UntagResource",
     ]
     resources = [
       "arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
