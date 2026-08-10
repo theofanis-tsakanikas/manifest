@@ -627,6 +627,52 @@ def _check_every_env_reference_is_defined() -> list[str]:
     return problems
 
 
+def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
+    """A `$VAR` passed to `-var` is assigned somewhere in the same job.
+
+    **This cost a cycle after the image had already been built and pushed.** The extraction job
+    passed `-var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]"` and never assigned that
+    variable: the resolve step existed in three other jobs and had never been added to this one.
+    Terraform received `[""]`, and the variable's own validation refused it — correctly, which
+    is the only reason this failed loudly instead of deploying a role that could invoke every
+    model in the account.
+
+    An unset shell variable expands to the empty string. Nothing warns, and the value it
+    produces is usually *almost* right, which is the shape that gets deployed.
+    """
+    problems: list[str] = []
+
+    for name in ("deploy.yml", "destroy.yml"):
+        workflow = _load(name)
+        for job_name, job in workflow["jobs"].items():
+            steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            if not steps:
+                continue
+            # Line by line, and every `$VAR` on a line that passes `-var`. The first version
+            # of this matched from `-var` up to the first quote — which is the character
+            # immediately after it — so it found nothing and reported green over the very bug
+            # it was written for. A gate that cannot bite is worse than no gate.
+            used: set[str] = set()
+            for line in steps.splitlines():
+                if "-var" in line:
+                    used |= set(re.findall(r"\$\{?(\w+)", line))
+            used -= {"GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_WORKSPACE"}
+            for variable in sorted(used):
+                assigned = (
+                    re.search(rf"^\s*{variable}=", steps, re.M)
+                    or f'echo "{variable}=' in steps
+                    or f"TF_VAR_{variable}" in steps
+                )
+                if not assigned:
+                    problems.append(
+                        f"{name}:{job_name} passes `${variable}` to terraform and never assigns "
+                        f"it. An unset shell variable expands to the empty string — nothing "
+                        f"warns, and the value it produces is usually almost right"
+                    )
+
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -653,6 +699,7 @@ def main() -> int:
     problems.extend(_check_a_trigger_can_actually_fire())
     problems.extend(_check_actions_are_pinned())
     problems.extend(_check_every_env_reference_is_defined())
+    problems.extend(_check_shell_variables_are_assigned_in_their_job())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

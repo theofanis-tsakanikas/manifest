@@ -127,9 +127,16 @@ jobs:
           # successful command that writes an empty value.
           TF_STATE_BUCKET=$(read_param state_bucket)
           BUDGET_EMAIL=$(read_param budget_notification_email)
+          # The escalation model, read here rather than in a step of its own. It is a value
+          # `infra/bootstrap` published like the others, and a separate step is a step that can
+          # be added to one job and forgotten in another — which is exactly what happened: the
+          # extraction job passed an empty `escalation_model_arns` and the variable's own
+          # validation refused it, after the image had been built and pushed.
+          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
+            echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: init
@@ -186,9 +193,16 @@ jobs:
           # successful command that writes an empty value.
           TF_STATE_BUCKET=$(read_param state_bucket)
           BUDGET_EMAIL=$(read_param budget_notification_email)
+          # The escalation model, read here rather than in a step of its own. It is a value
+          # `infra/bootstrap` published like the others, and a separate step is a step that can
+          # be added to one job and forgotten in another — which is exactly what happened: the
+          # extraction job passed an empty `escalation_model_arns` and the variable's own
+          # validation refused it, after the image had been built and pushed.
+          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
+            echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
@@ -333,9 +347,16 @@ jobs:
           # successful command that writes an empty value.
           TF_STATE_BUCKET=$(read_param state_bucket)
           BUDGET_EMAIL=$(read_param budget_notification_email)
+          # The escalation model, read here rather than in a step of its own. It is a value
+          # `infra/bootstrap` published like the others, and a separate step is a step that can
+          # be added to one job and forgotten in another — which is exactly what happened: the
+          # extraction job passed an empty `escalation_model_arns` and the variable's own
+          # validation refused it, after the image had been built and pushed.
+          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
+            echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published

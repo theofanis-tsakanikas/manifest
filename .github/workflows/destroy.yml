@@ -341,6 +341,17 @@ jobs:
             --query 'Parameter.Value' --output text)
           echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve the escalation model
+        # The teardown evaluates the configuration, so a variable with a validation rule still
+        # has to satisfy it. Without this the destroy passes `[""]`, the rule refuses it, and
+        # the estate cannot be torn down from CI — the failure the destroy path exists to
+        # prevent, reached through the variable rather than the permission.
+        run: |
+          set -euo pipefail
+          ESCALATION_MODEL_ARN=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/escalation_model_arn" \
+            --query 'Parameter.Value' --output text)
+          echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN" >> "$GITHUB_ENV"
       - name: resolve what foundation published
         run: |
           set -euo pipefail

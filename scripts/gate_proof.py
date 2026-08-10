@@ -732,6 +732,26 @@ def _use_an_env_variable_that_is_not_defined(root: Path) -> bool:
     )
 
 
+def _pass_a_shell_variable_nothing_assigns(root: Path) -> bool:
+    """Remove the assignment and leave the use.
+
+    **This was the repository's actual state in two places.** The extraction job passed
+    `-var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]"` and never assigned it, so
+    Terraform received `[""]`. The teardown had the same gap, which would have made the estate
+    undeleteable from CI.
+
+    An unset shell variable expands to the empty string. Nothing warns, and the value it
+    produces is usually *almost* right — here it was refused only because the variable carries
+    its own validation rule, which is the one reason it failed loudly rather than deploying a
+    role that could invoke every model in the account.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        "          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)\n",
+        "",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -1093,6 +1113,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _use_an_env_variable_that_is_not_defined,
         "The repository's actual state, and it cost the first real deploy: an empty string in "
         "a role ARN, reported as a trust-policy failure.",
+    ),
+    Mutation(
+        "pass a shell variable nothing assigns",
+        "workflow variables",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "and never assigns it",
+        _pass_a_shell_variable_nothing_assigns,
+        "The repository's actual state in two places, including the teardown. An unset shell "
+        "variable expands to the empty string and nothing warns.",
     ),
 )
 
