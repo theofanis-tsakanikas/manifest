@@ -678,6 +678,40 @@ def _pin_an_action_to_a_moving_tag(root: Path) -> bool:
     )
 
 
+def _let_the_approval_removal_run_without_an_acceptance(root: Path) -> bool:
+    """Delete the record of a control that was deliberately switched off.
+
+    The reviewer requirement on the deploy environments was taken off for a defensible reason:
+    the first deploy is expected to fail on a missing permission several times, and approving
+    each attempt teaches somebody to approve without reading.
+
+    What must not happen is the *record* going away. The repository claimed "gated behind a
+    protected environment" in eight places; removing the reviewer and leaving those sentences
+    standing is a control named in the documentation and absent from the system, which is the
+    failure this repository exists to argue against. Doctrine rule 6 supplies the rest: the
+    acceptance expires, and on expiry the finding returns.
+    """
+    path = root / "contracts/deploy/acceptance.yaml"
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+def _let_the_acceptance_outlive_its_expiry(root: Path) -> bool:
+    """Backdate the expiry and leave the acceptance in place.
+
+    The quieter half of the same failure. An acceptance nobody revisits is a permanent decision
+    wearing a temporary one's clothes, and the way it happens is not deletion — it is a date
+    going past while everything stays green.
+    """
+    return _replace(
+        root / "contracts/deploy/acceptance.yaml",
+        'expires_on: "2026-11-10"',
+        'expires_on: "2020-01-01"',
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -1011,6 +1045,25 @@ MUTATIONS: tuple[Mutation, ...] = (
         _pin_an_action_to_a_moving_tag,
         "The repository's actual state on all five actions. A tag moves, and this workflow can "
         "assume a role that builds the estate.",
+    ),
+    Mutation(
+        "remove a switched-off control's record",
+        "deploy acceptance",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "nothing records that as a decision",
+        _let_the_approval_removal_run_without_an_acceptance,
+        "The reviewer requirement is off for a defensible reason. The record of it going off "
+        "is what keeps eight sentences in this repository from describing a control that is "
+        "not there.",
+    ),
+    Mutation(
+        "let the acceptance outlive its expiry",
+        "deploy acceptance",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "expired on",
+        _let_the_acceptance_outlive_its_expiry,
+        "An acceptance nobody revisits is a permanent decision in temporary clothes, and it "
+        "happens by a date passing while everything stays green.",
     ),
 )
 

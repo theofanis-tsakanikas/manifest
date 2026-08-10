@@ -71,7 +71,7 @@ into every other sentence in this repository about not deploying.
 
 ## Tearing it down
 
-`destroy.yml` exists, is gated behind its own protected environment, and has never been
+`destroy.yml` exists, is scoped to its own environment, and has never been
 dispatched. It is not optional and it is not a follow-up: a repository with a deploy path and
 no teardown path is how an estate gets left standing, and it is the difference between a
 portfolio piece and a bill.

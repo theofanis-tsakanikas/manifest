@@ -143,7 +143,15 @@ job rather than to be listed. What is deferred is the *timing* of the first appl
 apply: the estate is written, formatted, validated against real provider schemas and scanned
 to zero findings, and it stays unapplied — including `infra/bootstrap/` — until the author
 dispatches it deliberately. The `deploy` and `destroy` workflows are written and gated behind
-a protected environment, and **have not been dispatched**.
+the environment their OIDC trust is scoped to, and **have not been dispatched**.
+
+**Required reviewers on those environments are currently off**, under a dated acceptance that
+expires (`contracts/deploy/acceptance.yaml`). The reason is doctrine rule 2 turned on this
+repository rather than on its reviewers: the first deploy is expected to fail on a missing
+permission, be corrected and be run again, and an approval prompt on each iteration is a person
+clicking to approve a run whose purpose is to find out what is broken. What is *not* given up:
+the environment itself, which the trust names and without which no credentials are issued;
+`workflow_dispatch` as the only trigger; the teardown path; and the budget brake.
 
 Until that day, and only until then: no screenshot from a real console, no wall-clock figure,
 no euro figure stated as measured. Every claim in this repository is scored offline, and stays
@@ -269,7 +277,7 @@ manifest/
 ├── scripts/                    # gate_proof.py, preflight.py, check_core_is_pure.py, tf_validate.py
 ├── docs/                       # adr/ · SCENARIO · REGULATORY · DECISIONS · PORTFOLIO-CONTEXT · AWS-CONSTRAINTS · DAY-ONE
 └── .github/workflows/          # ci.yml (every PR) · deploy.yml · destroy.yml
-                                #   deploy and destroy are gated behind a protected environment
+                                #   deploy and destroy name the environment their OIDC trust
                                 #   and have not been dispatched yet. Both must exist and both
                                 #   must be validated — a repository with a deploy path and no
                                 #   destroy path is how an estate gets left standing.

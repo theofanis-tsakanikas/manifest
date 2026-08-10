@@ -1,0 +1,63 @@
+# The approval that was deliberately taken off, by whom, why, and when it comes back.
+#
+# This file exists because the alternative was worse. The workflows said "gated behind a
+# protected environment" in four places and `scripts/check_deploy_path.py` printed it as a
+# result. Turning the reviewer requirement off and leaving those sentences standing would have
+# been the exact overclaim this repository has spent its life removing — a control named in the
+# documentation and absent from the system.
+#
+# It follows `contracts/review/acceptance.yaml`, which does the same job for a different
+# weakening: a named person, a dated reason, a stated scope, and an **expiry**. An acceptance
+# without an expiry is not an acceptance; it is a decision nobody will revisit.
+version: 1
+
+acceptance:
+  what: >-
+    The `deploy` and `destroy` GitHub environments carry no required-reviewer protection rule.
+    A dispatch proceeds without a second human approving it.
+
+  accepted_by: "Theofanis Tsakanikas"
+  accepted_on: "2026-08-10"
+  expires_on: "2026-11-10"
+
+  why: >-
+    The first deploy of this estate has never been run, and the deploy role has never been
+    exercised. `scripts/check_deploy_path.py` can prove that a grant exists for every service the
+    layers declare; it cannot prove any of them is sufficient, and only a real apply will say.
+    That first apply is expected to fail on a missing permission, be corrected, and be run again
+    — several times. An approval prompt on each iteration is a person clicking a button to
+    approve a run whose purpose is to discover what is broken, which is the shape of an approval
+    that teaches somebody to approve without reading. Doctrine rule 2, applied to this repository
+    rather than to its reviewers.
+
+  # What is deliberately NOT given up. Removing a reviewer is not removing the gate; the gate
+  # has four parts and this takes one of them.
+  still_holds:
+    - >-
+      **The environment still exists and is still load-bearing.** The OIDC trust names
+      `repo:owner@id/repo@id:environment:deploy` and nothing else, so a run outside that
+      environment cannot obtain credentials at all. This is not a policy that can be forgotten —
+      remove the environment and the deploy stops working.
+    - >-
+      **`workflow_dispatch` only.** No push, no schedule, no pull request can start a deploy. A
+      human still has to go and start it deliberately.
+    - >-
+      **The teardown path is unchanged**, and `destroy.yml` still exists for every layer the
+      deploy applies, in reverse order.
+    - >-
+      **The budget brake is unchanged.** An AWS Budget action removes the deploy role's ability
+      to create anything at the declared ceiling, and it is written so that `terraform destroy`
+      still works after it fires.
+
+  # The condition for it ending, stated as an event rather than only as a date, because the date
+  # is a backstop and the event is the actual reason.
+  ends_when: >-
+    The first full deploy and teardown have completed and the deploy role's permission set is
+    known to be sufficient. At that point the iteration this acceptance exists for is over, the
+    reviewer requirement goes back on, and this file is deleted rather than renewed.
+
+  # What this acceptance does not do, stated so it cannot drift into doing it:
+  #   - it does not remove the environment, which would break the OIDC trust
+  #   - it does not add a trigger other than workflow_dispatch
+  #   - it does not touch the budget guard or the destroy path
+  #   - it does not permit the repository to describe the environment as "protected"

@@ -271,7 +271,7 @@ with zero false positives; every un-merge re-points every downstream record.
       inputs. A status block at the top, in Attestor's words: **ready to deploy, not deployed** —
       what `make preflight` checks, and what has deliberately never been run.
 - [x] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind a
-      protected environment, **neither dispatched**. The destroy workflow is not optional: a
+      the environment their trust names, **neither dispatched**. The destroy workflow is not optional: a
       repository with a deploy path and no teardown path is how an estate gets left standing,
       and it is the difference between a portfolio piece and a bill.
 
@@ -281,7 +281,7 @@ number on the scoreboard.
 
 **Done, 2026-08-09.** `make preflight`: 26 passed, 0 failed, 0 skipped. Six Terraform layers,
 6/6 validating, checkov at zero across all of them. `deploy.yml` and `destroy.yml` both exist,
-both are human-dispatch-only behind protected environments, and `scripts/check_deploy_path.py`
+both are human-dispatch-only and scoped to the environments their trust names, and `scripts/check_deploy_path.py`
 is the gate that keeps them matched — with six mutations attacking it. **Neither has ever
 been dispatched, and nothing has been applied to AWS.**
 

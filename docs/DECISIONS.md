@@ -132,7 +132,7 @@ because how it went wrong is the useful part.)*
 
 The order is: build everything up to and including the deploy path — all code, all local
 tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.yml` and
-`destroy.yml`, validated and scanned and gated behind a protected environment — and **then**
+`destroy.yml`, validated and scanned and scoped to the environment their trust names — and **then**
 deploy, deliberately, as a separate act. `infra/bootstrap/` applies from a laptop first;
 everything above it applies from CI.
 

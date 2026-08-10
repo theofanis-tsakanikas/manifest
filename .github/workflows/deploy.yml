@@ -11,7 +11,8 @@
 # workflow at all and the deploy fails before its first step, which is how a repository ends up
 # with a deploy path nobody has ever successfully started.
 #
-# **Every job names a protected environment.** The OIDC trust in `infra/bootstrap` lists
+# **Every job names its environment, and that is load-bearing rather than a policy.** The
+# OIDC trust in `infra/bootstrap` lists
 # `repo:owner/repo:environment:deploy` and nothing else, so a workflow run from any other
 # context cannot assume the role at all — the gate is in the trust policy, not only in this
 # file.
@@ -76,7 +77,14 @@ jobs:
     name: "apply · foundation"
     needs: ci
     runs-on: ubuntu-latest
-    environment: deploy # The protected environment. Approval happens here.
+    # The environment the OIDC trust is scoped to. A run outside it cannot obtain
+    # credentials at all — which is why this line cannot be forgotten, unlike a policy.
+    #
+    # **Required reviewers are currently OFF**, deliberately, so that a first deploy can be
+    # iterated on without a person approving each attempt to discover what is broken. That is
+    # recorded with a name, a reason and an expiry in `contracts/deploy/acceptance.yaml`, and
+    # `scripts/check_deploy_path.py` refuses a missing or expired one.
+    environment: deploy
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3

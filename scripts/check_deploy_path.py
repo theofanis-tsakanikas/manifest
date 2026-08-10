@@ -536,6 +536,69 @@ def _check_actions_are_pinned() -> list[str]:
     return problems
 
 
+def _acceptance() -> dict:
+    import datetime  # noqa: PLC0415
+
+    path = ROOT / "contracts" / "deploy" / "acceptance.yaml"
+    if not path.exists():
+        return {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entry = dict(loaded.get("acceptance") or {})
+    entry["_today"] = datetime.date.today()
+    return entry
+
+
+def _approval_expiry() -> str:
+    return str(_acceptance().get("expires_on", "no expiry recorded"))
+
+
+def _check_the_approval_removal_is_accepted() -> list[str]:
+    """Taking the reviewer off is allowed. Doing it silently, or forever, is not.
+
+    This repository claimed "gated behind a protected environment" in four places. The reviewer
+    requirement was then deliberately removed so that a first deploy could be iterated on
+    without a person approving each attempt to discover what is broken — which is a defensible
+    reason and is exactly how an approval becomes a reflex.
+
+    What is not defensible is the sentence staying. So the removal is recorded as an acceptance
+    with a name, a date, a reason and an **expiry**, in the same shape as
+    `contracts/review/acceptance.yaml` — and this check refuses a missing one and refuses an
+    expired one. An acceptance with no end is a decision nobody will revisit.
+    """
+    import datetime  # noqa: PLC0415
+
+    entry = _acceptance()
+    if not entry:
+        return [
+            "the deploy environments carry no required reviewer and nothing records that as a "
+            "decision. `contracts/deploy/acceptance.yaml` is where it goes: who accepted it, "
+            "why, and when it ends. A control removed without a record is a control the "
+            "documentation still claims"
+        ]
+
+    missing = [
+        field
+        for field in ("accepted_by", "accepted_on", "expires_on", "why", "ends_when")
+        if not entry.get(field)
+    ]
+    if missing:
+        return [f"contracts/deploy/acceptance.yaml is missing {missing}"]
+
+    expires = entry["expires_on"]
+    expires = (
+        expires if isinstance(expires, datetime.date) else datetime.date.fromisoformat(str(expires))
+    )
+    if expires < entry["_today"]:
+        return [
+            f"the acceptance for removing the deploy approval expired on {expires}. Doctrine "
+            f"rule 6: exceptions expire, and on expiry the finding returns. Either the first "
+            f"deploy is done and the reviewer requirement goes back on, or somebody accepts it "
+            f"again, by name, with a new date"
+        ]
+
+    return []
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -608,12 +671,32 @@ def main() -> int:
                 f"`always()` is for surviving a failed teardown, not for ignoring a refused one"
             )
 
+    # **The environment is named, and that is a load-bearing statement rather than a policy.**
+    #
+    # The OIDC trust in `infra/bootstrap/oidc.tf` names
+    # `repo:owner@id/repo@id:environment:deploy` and nothing else, so a run outside the
+    # environment cannot obtain credentials at all. This is the part that cannot be forgotten:
+    # remove the environment and the deploy stops working, loudly, at STS.
+    #
+    # What this check no longer claims is that the environment carries a **required reviewer**.
+    # That protection was deliberately taken off — see `contracts/deploy/acceptance.yaml`, which
+    # names who accepted it, why, and when it ends — and a check that went on printing
+    # "protected" would be describing a control that is not there. Which is the whole failure
+    # this repository exists to argue against.
     for name in applied:
         if deploy["jobs"][name].get("environment") != "deploy":
-            problems.append(f"deploy.yml job {name!r} does not name the protected environment")
+            problems.append(
+                f"deploy.yml job {name!r} does not name the `deploy` environment. The OIDC "
+                f"trust is scoped to it, so this job could not obtain credentials at all"
+            )
     for name in destroyed:
         if destroy["jobs"][name].get("environment") != "destroy":
-            problems.append(f"destroy.yml job {name!r} does not name the protected environment")
+            problems.append(
+                f"destroy.yml job {name!r} does not name the `destroy` environment. Same "
+                f"reason: the trust is scoped to it"
+            )
+
+    problems.extend(_check_the_approval_removal_is_accepted())
 
     if problems:
         print(f"deploy-path: {len(problems)} problem(s)\n", file=sys.stderr)
@@ -623,8 +706,9 @@ def main() -> int:
 
     print(
         f"deploy-path: {len(applied)} layer(s) applied, all torn down in reverse order, both "
-        f"workflows human-dispatch only and gated behind a protected environment. "
-        f"**Neither has ever been dispatched.**"
+        f"workflows human-dispatch only, and every job scoped to the environment the OIDC trust "
+        f"names. Required reviewers are OFF under a dated acceptance that expires "
+        f"({_approval_expiry()}). **Neither workflow has ever been dispatched.**"
     )
     return 0
 
