@@ -69,7 +69,17 @@ jobs:
   record:
     name: the reader over the corpus, inside the image
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # **Five hours, and 90 minutes was not enough.** The first dispatch died at 90 minutes and
+    # 16 seconds, which GitHub reports as `cancelled` — a word that reads like a human pressed a
+    # button and cost a few minutes of looking for the human. The breakdown: ~24 minutes to
+    # regenerate 3,255 corpus pages, ~2 to build the image, and the reader still working through
+    # the pages when the clock ran out.
+    #
+    # A ceremony that decides every threshold in the repository is allowed to take an afternoon.
+    # What it is not allowed to do is be quietly truncated — a recording of the pages that fit
+    # inside a timeout would derive thresholds from a subset while reporting N as though it were
+    # the set, which is the one failure this whole file exists to prevent.
+    timeout-minutes: 300
     steps:
       - name: confirm
         run: |
