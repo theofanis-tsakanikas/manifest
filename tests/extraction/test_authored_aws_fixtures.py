@@ -95,10 +95,25 @@ def test_a_page_with_no_declared_size_is_refused() -> None:
         _document(response)
 
 
-def test_these_fixtures_declare_that_they_were_authored() -> None:
-    """The claim this directory is allowed to make, asserted rather than assumed. If somebody
-    ever does capture a real response, this test is where the label has to change."""
-    assert "AUTHORED" in _response()["_note"]
+def test_every_fixture_in_this_directory_declares_how_it_was_obtained() -> None:
+    """The claim this directory is allowed to make, asserted over **every** file in it.
+
+    Written as a sweep rather than as an assertion about one known fixture, because the failure
+    it guards against is a *new* fixture arriving without the label — which is exactly what a
+    file-by-file version would miss. If somebody does capture a real response one day, this is
+    where the label has to change, and decision 14 permits that in one direction only: the note
+    must match how the file was actually obtained.
+    """
+    fixtures = sorted(FIXTURES.glob("*.json"))
+    assert len(fixtures) >= 3, "the three documented shapes each have a fixture"
+    for fixture in fixtures:
+        note = json.loads(fixture.read_text(encoding="utf-8")).get("_note", "")
+        assert "AUTHORED" in note, f"{fixture.name} does not say how it was obtained"
+        assert "read 20" in note, (
+            f"{fixture.name} does not say *when* its source documentation was read. "
+            f"Documentation moves; a fixture with no date cannot be checked against a later "
+            f"version of the schema it claims to follow"
+        )
     assert "no response has ever been captured" in (
         (FIXTURES / "AUTHORED.md").read_text(encoding="utf-8").lower()
     )

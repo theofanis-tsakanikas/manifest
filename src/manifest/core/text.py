@@ -81,6 +81,19 @@ class Rule(StrEnum):
     ALPHANUMERIC = "alphanumeric"
     #: Strip a trailing legal form. **Entity resolution only.** Never on a field comparison.
     LEGAL_FORM = "legal_form"
+    #: Drop combining marks — accents, diaereses, cedillas.
+    #:
+    #: Greek is why this exists and Greek is why it is not in `DEFAULT_RULES`. Greek drops its
+    #: accents in upper case as a matter of orthography, so a page printing `ΠΕΙΡΑΙΑΣ` and a
+    #: person writing `Πειραιάς` are recording the same port, and case-folding alone does not
+    #: reconcile them: `ΠΕΙΡΑΙΑΣ`.casefold() is `πειραιασ` while `Πειραιάς`.casefold() keeps
+    #: its `ά`. Any system reading Greek documents that does not handle this has a systematic
+    #: mismatch on every capitalised proper noun on every page.
+    #:
+    #: Destructive where a mark distinguishes two words rather than two renderings of one —
+    #: French `pêcheur` and `pécheur` are a fisherman and a sinner. So it is opt-in, declared
+    #: per field, and it belongs on ports, countries and codes rather than on free text.
+    DIACRITICS = "diacritics"
 
 
 #: What a field gets when its contract says nothing. Deliberately the two rules that cannot
@@ -125,6 +138,18 @@ def _alphanumeric(value: str) -> str:
     return _NOT_ALNUM.sub("", value)
 
 
+def _diacritics(value: str) -> str:
+    """Decompose, drop the combining marks, recompose.
+
+    NFD first so that a precomposed `ά` becomes `α` + the combining accent and the accent can
+    be seen; NFC at the end so the result is in the same canonical form as every other rule's
+    output and two paths through this module cannot produce byte-different equal strings.
+    """
+    decomposed = unicodedata.normalize("NFD", value)
+    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return unicodedata.normalize("NFC", stripped)
+
+
 def _legal_form(value: str) -> str:
     """Strip one trailing legal-form token. One, not all — see the test.
 
@@ -145,6 +170,7 @@ _APPLY: Final[dict[Rule, object]] = {
     Rule.SEPARATORS: _separators,
     Rule.ALPHANUMERIC: _alphanumeric,
     Rule.LEGAL_FORM: _legal_form,
+    Rule.DIACRITICS: _diacritics,
 }
 
 

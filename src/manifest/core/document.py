@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
@@ -102,7 +102,8 @@ class Word:
     """
 
     text: str
-    confidence: float
+    #: `None` where the reader reports no confidence at all. See `_check_confidence`.
+    confidence: float | None
     box: Box
 
     def __post_init__(self) -> None:
@@ -122,7 +123,8 @@ class Line:
     """
 
     words: tuple[Word, ...]
-    confidence: float
+    #: `None` when any word in the line is unscored — see `weakest`.
+    confidence: float | None
 
     def __post_init__(self) -> None:
         if not self.words:
@@ -248,14 +250,35 @@ class ReadDocument:
                 # document's fingerprint depend on which library assembled the string.
                 text = unicodedata.normalize("NFC", word.text)
                 box = word.box
+                # An unscored word hashes as the word "unscored", not as a number. Formatting
+                # `None` into a float would raise; substituting a number for it would make a
+                # reading that reports no confidence fingerprint identically to one that
+                # reports that number, and claim 3 would call two different readings the same.
+                score = "unscored" if word.confidence is None else f"{word.confidence:.6f}"
                 digest.update(
-                    f"\x1f{text}\x1e{word.confidence:.6f}\x1e"
+                    f"\x1f{text}\x1e{score}\x1e"
                     f"{box.left:.6f},{box.top:.6f},{box.width:.6f},{box.height:.6f}".encode()
                 )
         return digest.hexdigest()
 
 
-def _check_confidence(value: float, what: str) -> None:
+def _check_confidence(value: float | None, what: str) -> None:
+    """A fraction, or `None` meaning the reader does not report one at all.
+
+    `None` is not "unsure" and it is not zero. It is the absence of the measurement, and the
+    difference matters: a zero is a score that lost, and every threshold refuses it for the
+    right reason. `None` is a reader that never offered a score, so no threshold has anything
+    to compare against, and the only correct destination for the value is a human.
+
+    This is not hypothetical. One of the managed readers this system routes to publishes text,
+    reading order and geometry per word and **no confidence field anywhere** — not per word,
+    not per line, not per element. Which one is the adapter's business and is recorded in
+    `docs/AWS-CONSTRAINTS.md`; what the core needs is the shape. Handing it a 1.0 for those
+    words would be a default with a plausible shape — doctrine 3, in its most expensive form,
+    because 1.0 clears every derived threshold in this repository.
+    """
+    if value is None:
+        return
     low, high = _CONFIDENCE_RANGE
     if not isinstance(value, int | float) or not (low <= value <= high):
         raise DocumentError(
@@ -263,6 +286,21 @@ def _check_confidence(value: float, what: str) -> None:
             f"adapter that forgot to divide by its reader's scale lands here — and it has to "
             f"land somewhere, because 87.0 is above every threshold there is"
         )
+
+
+def weakest(confidences: Iterable[float | None]) -> float | None:
+    """The lowest confidence in a group, where one unscored member makes the group unscored.
+
+    Not `min()` with the unscored skipped. A value supported by four scored words and one
+    unscored one is a value one of whose tokens nothing vouched for, and reporting the minimum
+    of the other four would publish it on evidence that does not cover it. Absence dominates.
+    """
+    listed = list(confidences)
+    if not listed:
+        raise DocumentError("no confidences to reduce")
+    if any(confidence is None for confidence in listed):
+        return None
+    return min(confidence for confidence in listed if confidence is not None)
 
 
 def build_line(words: tuple[Word, ...] | list[Word]) -> Line:
@@ -279,7 +317,7 @@ def build_line(words: tuple[Word, ...] | list[Word]) -> Line:
     listed = tuple(words)
     if not listed:
         raise DocumentError("a line with no words is not a line")
-    return Line(words=listed, confidence=min(word.confidence for word in listed))
+    return Line(words=listed, confidence=weakest(word.confidence for word in listed))
 
 
 def merge_readings(primary: ReadDocument, secondary: ReadDocument) -> ReadDocument:

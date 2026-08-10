@@ -20,47 +20,68 @@ tiers:
     genuine confidences and genuine geometry claims 1 and 2 are derived from. Every language
     it has data for. Zero marginal cost.
   1: >-
-    Managed document extraction, per page. Better on degraded print, tables and forms. Six
-    documented input languages. Written as an adapter, schema-tested, never called.
+    Managed per-page OCR. Better on degraded print, tables and forms. Six documented input
+    languages. **Reports a confidence per word**, so a page it reads can publish on its score.
+    Written as an adapter, schema-tested against the documented shape, not yet called.
   2: >-
+    Managed document automation, per page. Best on reading order and table structure, and it
+    measures its own raster. **Reports no confidence anywhere** — not per word, not per line,
+    not per element (verified against the published standard-output schema, 2026-08-10). A page
+    routed here can never publish on a score, because it will not have one. Written as an
+    adapter, schema-tested, not yet called.
+  3: >-
     A multilingual model with document input, per token. The only escalation path for Greek and
-    Dutch. Written as an adapter, schema-tested, never called.
+    Dutch. **Reports no confidence either**, and any it is asked for is refused at the adapter:
+    a self-reported score is a token the prompt made likely, not a measured frequency. Its
+    provenance comes from the tier-0 reading's geometry, so it can choose correctly among what
+    tier 0 saw and cannot rescue what tier 0 missed. Written as an adapter, schema-tested, not
+    yet called.
+
+# What the tier list above means for the queue, stated here because it is the expensive part.
+#
+# Only tier 0 and tier 1 report a confidence. Escalating past tier 1 is therefore a decision to
+# spend a human: the page gets a better reading and no score to publish it on, so it arrives in
+# the queue with `Reason.UNSCORED`. That is not a defect in the routing — it is what these
+# services are — and it is written down here so that the review capacity model in
+# `contracts/review/` is costed against the truth rather than against an assumption that an
+# expensive tier returns something a threshold can compare.
 
 languages:
   - language: en
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
-  # Greek: the language of the Piraeus office, and outside every managed reader in the stack.
-  # Tier 1 is absent from this line on purpose and it is the single most consequential absence
-  # in the contract set.
+  # Greek: the language of the Piraeus office, and outside every managed *reader* in the stack.
+  # Tiers 1 and 2 are absent from this line on purpose and it is the single most consequential
+  # absence in the contract set — both document services publish the same six input languages,
+  # and Greek is in neither. The model tier is the only escalation there is.
   - language: el
-    eligible_tiers: [0, 2]
+    eligible_tiers: [0, 3]
 
   # Dutch: the language of the Rotterdam office, and in the same position as Greek.
   - language: nl
-    eligible_tiers: [0, 2]
+    eligible_tiers: [0, 3]
 
   - language: de
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
   - language: fr
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
   - language: es
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
   - language: it
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
   - language: pt
-    eligible_tiers: [0, 1, 2]
+    eligible_tiers: [0, 1, 2, 3]
 
   # Chinese and Arabic appear as party names rather than as page text. Neither managed document
   # reader lists them as an input language, and neither supports vertical text at all, so a
   # page in either escalates only to the model tier — and the entity work that actually needs
   # them reads a name, not a page.
   - language: zh
-    eligible_tiers: [0, 2]
+    eligible_tiers: [0, 3]
 
   - language: ar
-    eligible_tiers: [0, 2]
+    eligible_tiers: [0, 3]

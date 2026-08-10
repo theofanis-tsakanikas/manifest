@@ -49,7 +49,7 @@ class PublishedField:
 
     field: str
     value: str | None
-    confidence: float
+    confidence: float | None
     page: int | None
     #: `left, top, width, height`, rounded, so a version identifier does not move on a float's
     #: last bit. Six places is a tenth of a pixel on an A4 page at 300 DPI.
@@ -140,9 +140,11 @@ def derive_version(
     digest.update(f"{document_id}\x1f{source_digest}\x1f{reader}\x1f{contract_version}".encode())
     for field in sorted(fields, key=lambda entry: entry.field):
         box = "-" if field.box is None else ",".join(f"{value:.6f}" for value in field.box)
+        # An unscored field hashes as the word, not as a number: a record whose reader reported
+        # no confidence must not fingerprint identically to one that reported some value.
+        score = "unscored" if field.confidence is None else f"{field.confidence:.6f}"
         digest.update(
-            f"\x1e{field.field}\x1f{field.value}\x1f{field.confidence:.6f}"
-            f"\x1f{field.page}\x1f{box}".encode()
+            f"\x1e{field.field}\x1f{field.value}\x1f{score}\x1f{field.page}\x1f{box}".encode()
         )
     return digest.hexdigest()[:32]
 

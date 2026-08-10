@@ -53,6 +53,14 @@ class Reason(StrEnum):
 
     BELOW_THRESHOLD = "below_threshold"
     ALWAYS_REVIEW = "always_review"
+    #: The reader returned no confidence for this value at all — not a low one, none.
+    #:
+    #: Distinct from `BELOW_THRESHOLD` on purpose, and the distinction is operational rather
+    #: than pedantic. A queue full of `BELOW_THRESHOLD` says the thresholds are too tight or the
+    #: scans are too poor, and the fix is calibration or capture. A queue full of `UNSCORED`
+    #: says a *reader* that reports no confidence is handling volume it should not be handling,
+    #: and the fix is routing. Merging them would hide the second behind the first.
+    UNSCORED = "unscored"
     NO_PROVENANCE = "no_provenance"
     PROVENANCE_REFUSED = "provenance_refused"
     DISAGREEMENT = "disagreement"
@@ -107,6 +115,22 @@ class Record:
     #: because the agreement *rate* is meaningless without the denominator, and because both
     #: tails are findings.
     agreed_with_model: bool
+
+
+def reason_for(confidence: float | None, threshold: float | None) -> Reason | None:
+    """Why this value needs a human, or `None` if it may publish on its score alone.
+
+    The order matters. Absence of a score is checked first, because every comparison below it
+    would have to be written as `confidence is not None and ...` and one forgotten conjunct is
+    a value published on a score that does not exist.
+    """
+    if confidence is None:
+        return Reason.UNSCORED
+    if threshold is None:
+        return Reason.ALWAYS_REVIEW
+    if confidence < threshold:
+        return Reason.BELOW_THRESHOLD
+    return None
 
 
 def publishable(item: Item, decision: Record | None) -> tuple[bool, str]:

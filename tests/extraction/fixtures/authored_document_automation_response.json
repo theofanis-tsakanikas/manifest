@@ -1,0 +1,45 @@
+{
+  "_note": "AUTHORED from the documented standard-output schema for documents. Never captured — see AUTHORED.md. Source: https://docs.aws.amazon.com/bedrock/latest/userguide/bda-output-documents.html, read 2026-08-10.",
+  "metadata": {
+    "logical_subdocument_id": "1",
+    "semantic_modality": "DOCUMENT",
+    "number_of_pages": 1,
+    "start_page_index": "1",
+    "end_page_index": 1,
+    "file_type": "PDF"
+  },
+  "document": {
+    "representation": { "text": "GROSS WEIGHT\n27000 KGS" },
+    "statistics": { "element_count": 2, "table_count": 0, "figure_count": 0, "word_count": 4, "line_count": 2 }
+  },
+  "pages": [
+    {
+      "id": "page-0",
+      "page_index": 0,
+      "detected_page_number": 1,
+      "representation": { "text": "GROSS WEIGHT\n27000 KGS" },
+      "statistics": { "element_count": 2, "table_count": 0, "figure_count": 0, "word_count": 4, "line_count": 2 },
+      "asset_metadata": {
+        "rectified_image": "s3://authored/not-a-real-object.png",
+        "rectified_image_width_pixels": 2480,
+        "rectified_image_height_pixels": 3508
+      }
+    }
+  ],
+  "text_lines": [
+    { "id": "line-1", "text": "GROSS WEIGHT", "reading_order": 1, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.08, "top": 0.20, "width": 0.13, "height": 0.012 } } },
+    { "id": "line-2", "text": "27000 KGS", "reading_order": 2, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.08, "top": 0.22, "width": 0.10, "height": 0.014 } } }
+  ],
+  "text_words": [
+    { "id": "word-1", "text": "GROSS", "line_id": "line-1", "reading_order": 1, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.08, "top": 0.20, "width": 0.06, "height": 0.012 } } },
+    { "id": "word-2", "text": "WEIGHT", "line_id": "line-1", "reading_order": 2, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.15, "top": 0.20, "width": 0.06, "height": 0.012 } } },
+    { "id": "word-3", "text": "27000", "line_id": "line-2", "reading_order": 3, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.08, "top": 0.22, "width": 0.05, "height": 0.014 } } },
+    { "id": "word-4", "text": "KGS", "line_id": "line-2", "reading_order": 4, "page_index": 0,
+      "locations": { "page_index": 0, "bounding_box": { "left": 0.14, "top": 0.22, "width": 0.03, "height": 0.014 } } }
+  ]
+}

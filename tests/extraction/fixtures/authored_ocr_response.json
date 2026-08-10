@@ -1,5 +1,5 @@
 {
-  "_note": "AUTHORED from the documented response schema. Never captured — see AUTHORED.md.",
+  "_note": "AUTHORED from the documented response schema. Never captured — see AUTHORED.md. Source: https://docs.aws.amazon.com/textract/latest/dg/API_Block.html, read 2026-08-09.",
   "DocumentMetadata": { "Pages": 1 },
   "Blocks": [
     { "BlockType": "PAGE", "Id": "page-1", "Page": 1,

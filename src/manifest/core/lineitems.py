@@ -35,7 +35,7 @@ from difflib import SequenceMatcher
 from enum import StrEnum
 from typing import Final
 
-from manifest.core.document import Page, Word
+from manifest.core.document import Page, Word, weakest
 from manifest.core.geometry import Box
 from manifest.core.quantity import QuantityError, parse
 from manifest.core.quantity import Unit as _Unit
@@ -93,7 +93,7 @@ class Row:
 
     page: int
     cells: dict[str, str]
-    confidence: float
+    confidence: float | None
     box: Box
 
     @property
@@ -202,7 +202,7 @@ def read_rows(page: Page, columns: tuple[Column, ...], below: float) -> tuple[Ro
             Row(
                 page=page.number,
                 cells=cells,
-                confidence=min(word.confidence for word in line),
+                confidence=weakest(word.confidence for word in line),
                 box=Box.hull([word.box for word in line]),
             )
         )

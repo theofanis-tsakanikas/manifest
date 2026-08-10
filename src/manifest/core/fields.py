@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Final
 
-from manifest.core.document import Page, Word
+from manifest.core.document import Page, Word, weakest
 from manifest.core.geometry import Box
 from manifest.core.text import Rule, normalise
 
@@ -68,7 +68,8 @@ class Extracted:
 
     field: str
     value: str | None
-    confidence: float
+    #: `None` where the reader reports no confidence. Never publishable; see `publishable`.
+    confidence: float | None
     page: int | None
     box: Box | None
     anchor_similarity: float
@@ -115,8 +116,10 @@ def extract(page: Page, field: str, anchor: str) -> Extracted:
     return Extracted(
         field=field,
         value=" ".join(word.text for word in words),
-        # The minimum, never the mean. A field is as trustworthy as its weakest token.
-        confidence=min(word.confidence for word in words),
+        # The minimum, never the mean. A field is as trustworthy as its weakest token — and
+        # `None` if any token is unscored, because a value one of whose tokens nothing vouched
+        # for is not a value four confident tokens can carry.
+        confidence=weakest(word.confidence for word in words),
         page=page.number,
         box=Box.hull([word.box for word in words]),
         anchor_similarity=similarity,

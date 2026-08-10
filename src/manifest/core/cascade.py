@@ -50,7 +50,7 @@ def route(
     *,
     page: str,
     language: str,
-    confidence: float,
+    confidence: float | None,
     threshold: float | None,
     eligible: tuple[int, ...],
     current_tier: int = 0,
@@ -61,10 +61,15 @@ def route(
     never *kept*, because there is no score at which it may publish. Treating `None` as "no
     threshold to clear" and keeping the page is the mistake that would make an always-review
     field publish, and it is a one-character difference from the correct behaviour.
+
+    `confidence` is `None` where the current tier's reader reports none. Such a page is never
+    kept either, and for a sharper reason: there is no evidence that it *should* be. A reader
+    that returns text without a score has not said the reading is good; it has said nothing,
+    and nothing does not clear a threshold.
     """
     higher = tuple(tier for tier in eligible if tier > current_tier)
 
-    if threshold is not None and confidence >= threshold:
+    if threshold is not None and confidence is not None and confidence >= threshold:
         return Decision(
             page=page,
             language=language,
@@ -92,6 +97,10 @@ def route(
             ),
         )
 
+    # Formatted once, here, because `None` has no `.3f` and a bare f-string would raise on the
+    # exact input this branch exists to handle.
+    read = "read with no confidence reported" if confidence is None else f"read at {confidence:.3f}"
+
     return Decision(
         page=page,
         language=language,
@@ -99,11 +108,16 @@ def route(
         route=Route.ESCALATE,
         to_tier=min(higher),
         reason=(
-            f"read at {confidence:.3f}"
+            read
             + (
                 f", below the derived threshold of {threshold:.3f}"
-                if threshold is not None
-                else " on a field with no derivable threshold"
+                if threshold is not None and confidence is not None
+                else (
+                    " on a field with no derivable threshold"
+                    if confidence is not None
+                    else "; a reader that returns text without a score has not said the "
+                    "reading is good, it has said nothing"
+                )
             )
             + f"; escalating to tier {min(higher)}"
         ),

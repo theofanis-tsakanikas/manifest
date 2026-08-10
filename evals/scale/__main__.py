@@ -137,14 +137,28 @@ def main() -> int:
     escalated = sum(1 for decision in decisions if decision.route is Route.ESCALATE)
     kept = sum(1 for decision in decisions if decision.route is Route.KEEP)
 
+    # **This models the first hop only, and that is a limit rather than a simplification.**
+    #
+    # A page is routed from tier 0 on a tier-0 confidence, which this repository has actually
+    # measured. Routing it *onward* — from the per-page OCR tier to the document-automation
+    # tier, say — would need that tier's confidences, and no page has been sent to it. The
+    # honest options were to assume a distribution or to stop, and stopping is the one that
+    # does not put an invented number underneath a cost figure.
+    #
+    # A visible consequence: the document-automation tier shows **no volume at all**, because
+    # nothing reaches it in one hop. That is the model reporting its own boundary rather than
+    # quietly distributing pages across tiers to make the table look complete.
     unpriced = {tier: count for tier, count in routed.items() if tier >= 2}
     cost = model_cost(
         {tier: count for tier, count in routed.items() if tier <= 1},
         PRICES,
         assumption=(
-            "tier 2 is charged per token and this repository has never made a call to count "
-            "tokens with, so it carries no unit price here. Its volume is reported and its cost "
-            "is left as an explicit unknown rather than invented"
+            "the model tier is charged per token and this repository has never made a call to "
+            "count tokens with, so it carries no unit price here. The document-automation tier "
+            "is charged per page and is reachable only by a second escalation, which this model "
+            "does not attempt: it would need per-page-OCR confidences, and no page has been "
+            "sent to that tier. Both volumes are reported and both costs are left as explicit "
+            "unknowns rather than invented"
         ),
     )
 

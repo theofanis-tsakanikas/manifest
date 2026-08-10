@@ -138,11 +138,26 @@ in the README rather than skipped.
 
 - [x] `src/manifest/extraction/local/` — the tier-0 open-source engine, **running**, over the
       real degraded corpus. This is where claims 1 and 2 get their real numbers.
-- [ ] `src/manifest/extraction/aws/` — Textract / BDA / Bedrock adapters mapping to the same
+- [x] `src/manifest/extraction/aws/` — Textract / BDA / Bedrock adapters mapping to the same
       normalised representation, tested against the documented response schema with authored
-      fixtures labelled as authored.
+      fixtures labelled as authored. **All three now exist**, 2026-08-10, and writing the two
+      that were missing turned up the most consequential fact in `docs/AWS-CONSTRAINTS.md`:
 
-      **This box was ticked and only one of the three adapters existed.** `textract.py` was
+      **Neither upper tier reports a confidence.** The document-automation service documents no
+      score anywhere in its standard output — not per word, line, element or page. A model can
+      be asked for one and the number would be a token the prompt made likely rather than a
+      measured frequency. So `Word.confidence` became `float | None`, `Reason.UNSCORED` joined
+      the review queue, and escalating past the per-page OCR tier is now declared for what it
+      is: a decision to spend a human. Mapping either at 1.0 would have cleared every derived
+      threshold in this repository, silently, on every page — doctrine rule 3 in its most
+      expensive form, and it would have reported green.
+
+      The model tier's provenance comes from the tier-0 reading's measured geometry, never from
+      the model: asked for a box it returns a plausible one, and a plausible box is claim 2
+      defeated politely. A proposed value that cannot be located in the tier-0 words gets no
+      provenance and cannot publish.
+
+      **This box was previously ticked while only one of the three adapters existed.** `textract.py` was
       written; BDA and the tier-2 model were not, and the tick said otherwise for a phase and a
       half. It is the same failure as the bulk-tick earlier in this file, and it mattered more:
       `contracts/cascade/` declares tier 2 as "written as an adapter, schema-tested", and the

@@ -54,8 +54,12 @@ Also documented, and relevant to a corpus that contains CJK party names:
 - **Neither Textract nor BDA supports vertical text alignment** (the layout common in Japanese
   and Chinese). Horizontal CJK is a separate question from vertical CJK, and neither service
   lists Chinese as an input language for documents at all.
-- **Comprehend does support `zh` and `ar` for entity detection**, which is the part of the
-  scenario it is actually needed for — party names, not page text. That is where it stays.
+- **Comprehend does support `zh` and `ar` for entity detection**, which would have been the
+  part of the scenario it was needed for — party names, not page text. **It was dropped
+  anyway, 2026-08-10**, by decision 6's rule: entity recognition here has exactly one right
+  answer per rule, so it is deterministic code in `core/entities.py`, and a service that reads
+  neither Greek nor Dutch cannot serve the two languages the escalation tier exists for. A
+  service in a header that cannot be pointed at its work is a CV keyword.
 
 ---
 
@@ -118,6 +122,35 @@ is too degraded for the other, and **escalating from Textract to BDA on a resolu
 character-size failure buys nothing.** The escalation rule must therefore escalate on
 *confidence*, never on a preprocessing rejection.
 
+**No confidence, anywhere in the standard output.** Verified against the published
+[standard output for documents](https://docs.aws.amazon.com/bedrock/latest/userguide/bda-output-documents.html),
+read 2026-08-10. The documented word entity is `{id, text, line_id, reading_order, page_index,
+locations{page_index, bounding_box}}` — no score on the word, none on the line, none on the
+element, none on the page.
+
+This is the most consequential single fact in this file, and it was found late. It means:
+
+| Consequence | Where it is handled |
+|---|---|
+| Nothing this service reads can publish on a score, because it has no score | `core/review.py` `Reason.UNSCORED` |
+| It cannot contribute to claim 1 — a threshold needs a distribution of scores | `evals/calibration/` never sees it |
+| Escalating to it is a decision to spend a human | `contracts/cascade/routing.yaml`, stated on the tier |
+| The representation must carry *absence of a score* as its own state | `Word.confidence: float \| None` |
+
+The alternative — mapping its words at 1.0 — would clear every derived threshold in this
+repository, silently, on every page. Doctrine rule 3, in its most expensive form.
+
+**Word-level granularity is off by default.** Default output reports lines; `text_words`
+appears only when word granularity is requested. Splitting a line into words locally would
+invent a box per word, and an invented box is a provenance record pointing at something nobody
+measured, so the adapter refuses the response instead.
+
+**Two things it gives that the per-page OCR service does not:**
+`pages[].asset_metadata.rectified_image_width_pixels` / `..._height_pixels`, so the raster size
+arrives in the response rather than being passed in by a caller who could pass a wrong one; and
+`detected_page_number`, the number printed on the page, which is what a reviewer means by
+"page 3".
+
 DOCX is converted to PDF internally and "**page number mapping will not work for DOCX files**".
 A document with no reliable page number cannot carry provenance under claim 2, so **DOCX is out
 of scope for this system**, stated here rather than discovered later.
@@ -126,6 +159,35 @@ Blueprint limits that bound the contract layer: 100 leaf fields, 30 list leaf fi
 field names, 600-character field descriptions, 40 blueprints per project. The six document
 contracts sit well inside these; a contract that grew past 100 fields would be a data-minimisation
 problem before it was a service-limit problem.
+
+---
+
+## The model tier — Bedrock `Converse`
+
+Source: [Converse API reference](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html),
+read 2026-08-10.
+
+**A model reports no confidence either, and any it is asked for must be refused.** A model will
+return `{"value": ..., "confidence": 0.97}` if a prompt asks for it. That number is not a
+measured frequency over a labelled distribution; it is a token the prompt made likely, and it
+would enter claim 1's derivation looking identical to a score that means something. The adapter
+raises on it rather than ignoring it, so that a future prompt change fails at the moment it is
+made instead of silently doing nothing.
+
+**A model's coordinates are refused for the same reason.** Asked for a box, it returns a
+plausible one. Provenance therefore comes from the tier-0 reading's measured geometry: the
+proposed value is located among words whose boxes came from a reader that looked at pixels, and
+a value that cannot be located gets no provenance and cannot publish — doctrine rule 7.
+
+Two operational consequences recorded here rather than discovered later:
+
+- `stopReason: "max_tokens"` means the reply is a *prefix*. JSON truncated after a complete
+  field is still valid JSON with fewer fields, so it is refused on the flag, never on the parse.
+- **Greek loses its accents in upper case.** A page printing `ΠΕΙΡΑΙΑΣ` and a model returning
+  `Πειραιάς` are the same port, and case folding alone does not reconcile them —
+  `ΠΕΙΡΑΙΑΣ`.casefold() is `πειραιασ` while `Πειραιάς`.casefold() keeps its `ά`. Locating
+  therefore applies `Rule.DIACRITICS` as well as `Rule.CASE`. Without both, a correct reading
+  arrives with no provenance and is queued: a right answer converted into review volume.
 
 ---
 
