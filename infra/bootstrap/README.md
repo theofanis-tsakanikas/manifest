@@ -1,18 +1,19 @@
-# bootstrap — the layer that *could* be applied from a laptop, and is not
+# bootstrap — the one layer applied from a laptop
 
-It would create the two things CI cannot create for itself: the S3 backend every other layer
-keeps its state in, and the IAM role GitHub Actions assumes. CI cannot create the role it
-needs in order to run, so somebody has to, once — which is why this is the one layer whose
-design permits a laptop apply.
+It creates the two things CI cannot create for itself: the S3 backend every other layer keeps
+its state in, and the IAM role GitHub Actions assumes. CI cannot create the role it needs in
+order to run, so somebody has to, once — which is why this is the one layer whose design
+permits a laptop apply.
 
-**It has not been applied, and neither has anything else.** `docs/DECISIONS.md` 14. This is
-the layer where the posture is easiest to soften by accident: it is small, it is safe, it is
-nearly free, and applying it "just to check" would make every other sentence in this
-repository about not deploying a sentence with an exception in it. There is no exception.
+**Applied on 2026-08-10, 31 resources**, deliberately, by the author. `docs/DECISIONS.md` 14.
+It is also the layer that outlives every teardown: `destroy.yml` does not name it, because it
+holds the state bucket, the lock table and the role the teardown assumes, and a teardown that
+destroyed its own credentials halfway through would leave the rest standing and unreachable.
 
-**Every other layer under `infra/` would be applied only from a gated workflow.** A layer that
-can be applied from a laptop is a layer that will drift, and the drift is discovered by a
-`plan` that wants to destroy something nobody remembers creating.
+**Every other layer under `infra/` is applied only from a gated workflow.** A layer that can be
+applied from a laptop is a layer that will drift, and the drift is discovered by a `plan` that
+wants to destroy something nobody remembers creating. This layer is the exception because
+somebody has to go first, and it is the only one.
 
 ## What it describes
 

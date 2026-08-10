@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The deploy path exists, tears itself down, and has not been dispatched.
+"""The deploy path exists and tears itself down. Whether it has been walked is not asked here.
 
 Three checks, and the third is the one that would be embarrassing to get wrong.
 
