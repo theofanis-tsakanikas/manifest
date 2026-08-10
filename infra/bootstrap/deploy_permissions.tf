@@ -18,18 +18,18 @@
 # are load-bearing, so the policy stays and the deploy role becomes the most powerful identity
 # in the account — held by a workflow anybody can trigger a run of.
 
-data "aws_iam_policy_document" "deploy_estate" {
-  # `iam:CreateServiceLinkedRole` on `*`. AWS defines no resource form for it, and the roles it
-  # creates are AWS's own — their trust policy and their permissions are fixed by the service,
-  # not by this account. The alternative to granting it is an apply that fails partway through
-  # creating an EMR application, with the reviewer's approval already spent, on an IAM error
-  # about a role nobody wrote. Documented at the statement rather than only here.
-  #checkov:skip=CKV_AWS_109:The only unconstrained permissions-management action here is iam:CreateServiceLinkedRole, which AWS requires on "*" and which creates roles AWS itself defines. Every other IAM action in this document is scoped to arn:aws:iam::<account>:role/<project>-*.
-  # Every statement below is scoped by *tag* where the API supports it and by ARN pattern where
-  # it does not. Neither is a perfect boundary and both are better than `Resource: "*"`: a
-  # deploy role that can delete a bucket in another project's account is a role whose blast
-  # radius is the account rather than the estate.
+# **Six managed policies, not one inline one, and IAM decided that rather than taste.**
+#
+# `PutRolePolicy` returned *"Maximum policy size of 10240 bytes exceeded"* — and that ceiling is
+# the **aggregate** across every inline policy on a role, so splitting into two inline documents
+# failed identically. Managed policies are attached rather than embedded and counted separately.
+#
+# The split is by concern, which is the shape this should always have had. A ten-kilobyte grant
+# is unreviewable: nobody reads the statement in the middle, and "the deploy role can do this"
+# stops being a sentence anybody can check. Six policies named for what they build are six
+# questions a reviewer can answer one at a time.
 
+data "aws_iam_policy_document" "deploy_network" {
   # ── foundation: the network ───────────────────────────────────────────────
   #
   # EC2's VPC actions take no resource ARN at create time — the resource does not exist yet, so
@@ -52,23 +52,6 @@ data "aws_iam_policy_document" "deploy_estate" {
     ]
     resources = ["*"]
   }
-
-  # **The `aws:RequestTag` condition that used to be on the statement above is gone, and its
-  # removal is a correction rather than a loosening.**
-  #
-  # It required every create call to carry `manifest:project` in the request itself. The
-  # provider sets that tag by default on every resource, so it looked like defence in depth —
-  # and on the first real deploy the VPC was created and then `CreateSubnet`,
-  # `CreateRouteTable`, `CreateSecurityGroup` and `CreateFlowLogs` were all refused. EC2's
-  # tag-on-create support is not uniform across those APIs, and a condition that half the calls
-  # cannot satisfy is a deploy that dies at the second resource with an error naming the action
-  # rather than the condition.
-  #
-  # What it was protecting against is creating resources in this account, which the OIDC trust
-  # already bounds to one repository and one environment. What actually matters — touching
-  # resources this project does not own — is `aws:ResourceTag` on the modify and delete
-  # statement below, and that one is kept: it is the condition the APIs do support and the risk
-  # worth the condition.
 
   # Reads and modifications. `Describe*` cannot be tag-scoped at all — the API has no such
   # condition key — and a deploy that cannot describe what it created cannot plan a second
@@ -133,7 +116,20 @@ data "aws_iam_policy_document" "deploy_estate" {
       values   = [var.project]
     }
   }
+}
 
+resource "aws_iam_policy" "deploy_network" {
+  name        = "${var.project}-deploy-network"
+  description = "Deploy role: network."
+  policy      = data.aws_iam_policy_document.deploy_network.json
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_network" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_network.arn
+}
+
+data "aws_iam_policy_document" "deploy_storage" {
   # ── foundation: storage and keys ──────────────────────────────────────────
   #
   # Named by prefix rather than by tag: S3 bucket actions are evaluated before the bucket has
@@ -244,63 +240,47 @@ data "aws_iam_policy_document" "deploy_estate" {
     }
   }
 
-  # ── foundation: the guards ────────────────────────────────────────────────
+  # ── Log groups, everywhere ────────────────────────────────────────────────
+  statement {
+    sid    = "LogGroups"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:DeleteLogGroup",
+      "logs:DescribeLogGroups",
+      "logs:PutRetentionPolicy",
+      "logs:AssociateKmsKey",
+      "logs:DisassociateKmsKey",
+      "logs:TagResource",
+      "logs:ListTagsForResource",
+    ]
+    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:*"]
+  }
+}
+
+resource "aws_iam_policy" "deploy_storage" {
+  name        = "${var.project}-deploy-storage"
+  description = "Deploy role: storage."
+  policy      = data.aws_iam_policy_document.deploy_storage.json
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_storage" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_storage.arn
+}
+
+data "aws_iam_policy_document" "deploy_identity" {
+  # This policy is where the estate's service roles are created and where `iam:PassRole` lives.
+  # Permissions management is the whole job of it, and scoping it away would mean a deploy that
+  # cannot create the role a state machine runs as.
   #
-  # The budget action attaches a deny policy to *this role*, which is the only role it may
-  # touch. A grant on `role/*` would let the guard disable any identity in the account.
-  statement {
-    sid    = "TheBudgetGuard"
-    effect = "Allow"
-    actions = [
-      "budgets:CreateBudget",
-      "budgets:DescribeBudget",
-      "budgets:ModifyBudget",
-      "budgets:DeleteBudget",
-      "budgets:CreateBudgetAction",
-      "budgets:DescribeBudgetAction",
-      "budgets:UpdateBudgetAction",
-      "budgets:DeleteBudgetAction",
-    ]
-    resources = ["arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/${var.project}-*"]
-  }
-
-  statement {
-    sid    = "TheAlertTopicAndTheReaperSchedule"
-    effect = "Allow"
-    actions = [
-      "sns:CreateTopic",
-      "sns:DeleteTopic",
-      "sns:GetTopicAttributes",
-      "sns:SetTopicAttributes",
-      "sns:Subscribe",
-      "sns:Unsubscribe",
-      "sns:ListSubscriptionsByTopic",
-      "sns:TagResource",
-      "events:PutRule",
-      "events:DeleteRule",
-      "events:DescribeRule",
-      "events:PutTargets",
-      "events:RemoveTargets",
-      "events:ListTargetsByRule",
-      "events:TagResource",
-      "events:UntagResource",
-      # Terraform reads tags back on every refresh. Absent, the *plan* fails rather than the
-      # apply — which is a layer that can be created once and never updated or destroyed.
-      "events:ListTagsForResource",
-      "sns:ListTagsForResource",
-      "sns:TagResource",
-      "sns:UntagResource",
-      # A subscription's attributes are read back on every refresh too, and the refusal names
-      # the subscription rather than the permission.
-      "sns:GetSubscriptionAttributes",
-      "sns:SetSubscriptionAttributes",
-    ]
-    resources = [
-      "arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
-      "arn:aws:events:*:${data.aws_caller_identity.current.account_id}:rule/${var.project}-*",
-    ]
-  }
-
+  # The constraints that do the work are here and are worth naming: every role name matches
+  # `${var.project}-*`, `iam:PassRole` is conditioned on `iam:PassedToService` against a named
+  # list, and the budget action may attach a policy to this role and to no other identity.
+  #checkov:skip=CKV_AWS_109:Creating the estate's service roles is this policy's purpose; the role-name prefix and the PassedToService list are the constraints, and the OIDC trust bounds who may use it at all.
+  #checkov:skip=CKV_AWS_110:As above.
+  #checkov:skip=CKV_AWS_286:As above.
+  #checkov:skip=CKV_AWS_287:As above.
   # ── The roles each layer creates ──────────────────────────────────────────
   #
   # Scoped to names this project owns, and **`iam:PassRole` is conditioned on the service that
@@ -371,26 +351,86 @@ data "aws_iam_policy_document" "deploy_estate" {
     }
   }
 
-  # **The escalation path this closes, named because checkov is right to flag the shape.**
+  # ── foundation: the guards ────────────────────────────────────────────────
   #
-  # `lambda:CreateFunction` plus `iam:PassRole` is a textbook privilege-escalation pair: create a
-  # function, pass it a more powerful role, invoke it, and the caller has that role's
-  # permissions. The two conditions above are what make it not that — the role name must match
-  # this project's prefix, and it must be passed to a service on the list — but neither stops the
-  # deploy role passing a `manifest-*` role to Lambda, which is precisely what it is for.
-  #
-  # So the boundary is not the policy, and saying otherwise would be the comfortable lie. The
-  # boundary is **who can assume this role at all**: an OIDC trust naming one repository by
-  # numeric id and one GitHub environment behind required reviewers (`infra/bootstrap/oidc.tf`).
-  # A deploy role that builds an estate can, by construction, build compute that runs as the
-  # roles it creates. What must never be true is that somebody outside that trust can make it do
-  # so, and `scripts/check_deploy_path.py` refuses a wildcard in the trust for that reason.
-  #
-  # The residual risk, stated rather than skipped past: anybody who can merge to this repository
-  # and obtain the environment approval can run arbitrary code as any `manifest-*` role. That is
-  # true of every IaC deploy role in existence and it is why the environment is protected.
-  #checkov:skip=CKV_AWS_110:Real and inherent. `lambda:CreateFunction` with `iam:PassRole` is an escalation shape, and it is what an IaC deploy role does. It is bounded by the role-name prefix, the `iam:PassedToService` list above, and — the control that actually matters — an OIDC trust naming one repository by numeric id and one protected environment. See the comment above for the residual risk, which is not hidden.
+  # The budget action attaches a deny policy to *this role*, which is the only role it may
+  # touch. A grant on `role/*` would let the guard disable any identity in the account.
+  statement {
+    sid    = "TheBudgetGuard"
+    effect = "Allow"
+    actions = [
+      "budgets:CreateBudget",
+      "budgets:DescribeBudget",
+      "budgets:ModifyBudget",
+      "budgets:DeleteBudget",
+      "budgets:CreateBudgetAction",
+      "budgets:DescribeBudgetAction",
+      "budgets:UpdateBudgetAction",
+      "budgets:DeleteBudgetAction",
+    ]
+    resources = ["arn:aws:budgets::${data.aws_caller_identity.current.account_id}:budget/${var.project}-*"]
+  }
 
+  statement {
+    sid    = "TheAlertTopicAndTheReaperSchedule"
+    effect = "Allow"
+    actions = [
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:GetTopicAttributes",
+      "sns:SetTopicAttributes",
+      "sns:Subscribe",
+      "sns:Unsubscribe",
+      "sns:ListSubscriptionsByTopic",
+      "sns:TagResource",
+      "events:PutRule",
+      "events:DeleteRule",
+      "events:DescribeRule",
+      "events:PutTargets",
+      "events:RemoveTargets",
+      "events:ListTargetsByRule",
+      "events:TagResource",
+      "events:UntagResource",
+      # Terraform reads tags back on every refresh. Absent, the *plan* fails rather than the
+      # apply — which is a layer that can be created once and never updated or destroyed.
+      "events:ListTagsForResource",
+      "sns:ListTagsForResource",
+      "sns:TagResource",
+      "sns:UntagResource",
+      # A subscription's attributes are read back on every refresh too, and the refusal names
+      # the subscription rather than the permission.
+      "sns:GetSubscriptionAttributes",
+      "sns:SetSubscriptionAttributes",
+    ]
+    resources = [
+      "arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
+      "arn:aws:events:*:${data.aws_caller_identity.current.account_id}:rule/${var.project}-*",
+    ]
+  }
+
+  # Reading the account id is how every layer names its own buckets.
+  #checkov:skip=CKV_AWS_111:sts:GetCallerIdentity takes no resource and never has.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "KnowWhichAccountThisIs"
+    effect    = "Allow"
+    actions   = ["sts:GetCallerIdentity"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "deploy_identity" {
+  name        = "${var.project}-deploy-identity"
+  description = "Deploy role: identity."
+  policy      = data.aws_iam_policy_document.deploy_identity.json
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_identity" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_identity.arn
+}
+
+data "aws_iam_policy_document" "deploy_data" {
   # ── extraction ────────────────────────────────────────────────────────────
   statement {
     sid    = "TheQueueAndTheRecords"
@@ -411,6 +451,15 @@ data "aws_iam_policy_document" "deploy_estate" {
       "dynamodb:TagResource",
       "dynamodb:UntagResource",
       "dynamodb:ListTagsOfResource",
+      # **The refresh reads, named together.** Terraform reads every attribute of a table back
+      # on each plan — time-to-live, point-in-time recovery, deletion protection — and a missing
+      # one fails the *plan*, not the apply. Discovering them a deploy at a time costs a cycle
+      # each; they are the documented read surface of a table and belong in one list.
+      "dynamodb:DescribeTimeToLive",
+      "dynamodb:UpdateTimeToLive",
+      "dynamodb:DescribeContributorInsights",
+      "dynamodb:DescribeKinesisStreamingDestination",
+      "dynamodb:DescribeTableReplicaAutoScaling",
       "states:CreateStateMachine",
       "states:DeleteStateMachine",
       "states:DescribeStateMachine",
@@ -489,24 +538,30 @@ data "aws_iam_policy_document" "deploy_estate" {
       "arn:aws:redshift-serverless:*:${data.aws_caller_identity.current.account_id}:workgroup/*",
     ]
   }
+}
 
-  # ── Log groups, everywhere ────────────────────────────────────────────────
-  statement {
-    sid    = "LogGroups"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:DeleteLogGroup",
-      "logs:DescribeLogGroups",
-      "logs:PutRetentionPolicy",
-      "logs:AssociateKmsKey",
-      "logs:DisassociateKmsKey",
-      "logs:TagResource",
-      "logs:ListTagsForResource",
-    ]
-    resources = ["arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:*"]
-  }
+resource "aws_iam_policy" "deploy_data" {
+  name        = "${var.project}-deploy-data"
+  description = "Deploy role: data."
+  policy      = data.aws_iam_policy_document.deploy_data.json
+}
 
+resource "aws_iam_role_policy_attachment" "deploy_data" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_data.arn
+}
+
+# `lambda:CreateFunction` with `iam:PassRole` is a genuine privilege-escalation shape, and it
+# is what an IaC deploy role does. It is bounded by the role-name prefix, by the
+# `iam:PassedToService` list in the identity policy, and — the control that actually matters —
+# by an OIDC trust naming one repository by numeric id and one environment. The residual risk
+# is written down rather than skipped past: anybody who can merge here and dispatch the deploy
+# can run code as any `manifest-*` role.
+data "aws_iam_policy_document" "deploy_compute" {
+  #checkov:skip=CKV_AWS_110:Real and inherent. `lambda:CreateFunction` with `iam:PassRole` is an escalation shape and it is what an IaC deploy role does; the boundary is the OIDC trust naming one repository by numeric id and one environment. See the comment above this block for the residual risk, which is not hidden.
+  #checkov:skip=CKV_AWS_109:Same statement, same reasoning — the role-name prefix and the PassedToService list bound it, and the trust bounds who can use it at all.
+  #checkov:skip=CKV_AWS_286:As above.
+  #checkov:skip=CKV_AWS_287:As above.
   # ── What bootstrap published ──────────────────────────────────────────────
   #
   # Scoped to this project's bootstrap prefix and nothing wider. A grant on `/manifest/*` would
@@ -536,6 +591,20 @@ data "aws_iam_policy_document" "deploy_estate" {
       "lambda:UntagResource",
       "lambda:ListTags",
       "lambda:ListVersionsByFunction",
+      # Same reason as the table reads above: the plan asks a function about itself, and a
+      # refusal on any one of these is a layer that can be created and never updated.
+      "lambda:GetFunctionCodeSigningConfig",
+      "lambda:GetFunctionConcurrency",
+      "lambda:GetFunctionEventInvokeConfig",
+      "lambda:GetFunctionUrlConfig",
+      "lambda:GetRuntimeManagementConfig",
+      "lambda:ListFunctionEventInvokeConfigs",
+      "lambda:GetLayerVersion",
+      "lambda:GetAlias",
+      "lambda:ListAliases",
+      "lambda:PutFunctionEventInvokeConfig",
+      "lambda:DeleteFunctionEventInvokeConfig",
+      "lambda:PutRuntimeManagementConfig",
       "ecr:GetAuthorizationToken",
       "ecr:CreateRepository",
       "ecr:DeleteRepository",
@@ -604,7 +673,20 @@ data "aws_iam_policy_document" "deploy_estate" {
     ]
     resources = ["*"]
   }
+}
 
+resource "aws_iam_policy" "deploy_compute" {
+  name        = "${var.project}-deploy-compute"
+  description = "Deploy role: compute."
+  policy      = data.aws_iam_policy_document.deploy_compute.json
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_compute" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_compute.arn
+}
+
+data "aws_iam_policy_document" "deploy_references" {
   statement {
     sid    = "ReadEveryLayersPublishedReferences"
     effect = "Allow"
@@ -666,47 +748,22 @@ data "aws_iam_policy_document" "deploy_estate" {
       "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/bootstrap/*"
     ]
   }
-
-  # Reading the account id is how every layer names its own buckets.
-  #checkov:skip=CKV_AWS_111:sts:GetCallerIdentity takes no resource and never has.
-  #checkov:skip=CKV_AWS_356:As above.
-  statement {
-    sid       = "KnowWhichAccountThisIs"
-    effect    = "Allow"
-    actions   = ["sts:GetCallerIdentity"]
-    resources = ["*"]
-  }
 }
 
-resource "aws_iam_role_policy" "deploy_estate" {
-  name   = "estate"
-  role   = aws_iam_role.deploy.id
-  policy = data.aws_iam_policy_document.deploy_estate.json
+resource "aws_iam_policy" "deploy_references" {
+  name        = "${var.project}-deploy-references"
+  description = "Deploy role: references."
+  policy      = data.aws_iam_policy_document.deploy_references.json
 }
 
+resource "aws_iam_role_policy_attachment" "deploy_references" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_references.arn
+}
 
-# ── The brake ────────────────────────────────────────────────────────────────
+# ── The budget brake ─────────────────────────────────────────────────────────
 #
-# Attached to this role by the budget action in `guards.tf` when spend crosses the ceiling.
-# It lives here rather than in `infra/foundation` because it acts on a role this layer owns,
-# and a guard that names its target by a transcribed string is a guard pointed at a name.
-#
-# **It denies creation and permits teardown**, and that asymmetry is the whole design. The
-# first version denied `*`, which is the obvious thing and is worse than useless: a brake that
-# also blocks `terraform destroy` strands every running resource in the estate, so the spend
-# the brake fired over *continues* while the only identity that could stop it has been
-# disarmed. The bill gets bigger because the guard worked.
-#
-# `../attestor/infra/bootstrap/main.tf` keeps `iam`, `sts`, `s3`, `dynamodb` and `budgets`,
-# which is enough to detach the brake and read state and not enough to tear down an EMR
-# application. This goes further: the verbs a `terraform destroy` actually needs — refresh
-# (`Describe`, `Get`, `List`) and removal (`Delete`, `Remove`, `Terminate`, and the rest) —
-# are permitted, and everything that could create or grow anything is denied.
-#
-# IAM cannot express "create" and "delete" as categories, so this is a verb-prefix
-# approximation and it is stated as one. What it gets right is the direction: the failure mode
-# of a too-permissive brake is a resource that could have been deleted and was, and the failure
-# mode of a too-strict one is an estate nobody can turn off.
+# Attached by a budget action when the ceiling is reached, and by nothing otherwise.
 data "aws_iam_policy_document" "budget_brake" {
   #checkov:skip=CKV_AWS_111:It is a Deny. Constraining its resource would narrow what the brake stops, which is the wrong direction for a brake.
   #checkov:skip=CKV_AWS_356:As above — a wildcard Deny is the safe direction of a wildcard.
@@ -765,18 +822,10 @@ data "aws_iam_policy_document" "budget_brake" {
       "states:StartSyncExecution",
     ]
   }
-
-  # **What is deliberately still permitted, and why each one matters at this exact moment.**
-  #
-  # Everything not denied above stays allowed, which includes every `Describe`, `Get`, `List`
-  # and `Delete` a teardown needs — without this file having had to enumerate them and get the
-  # list right. It also includes `budgets:*` and the IAM calls that detach this policy, because
-  # a brake whose only removal path is a console session by somebody with more rights is a
-  # human editing IAM by hand under time pressure, at the most expensive possible moment.
 }
 
 resource "aws_iam_policy" "budget_brake" {
   name        = "${var.project}-budget-stop"
-  description = "Attached to the deploy role by a budget action. Denies creation; permits teardown."
+  description = "Attached to the deploy role by a budget action. Denies what starts a meter; permits teardown."
   policy      = data.aws_iam_policy_document.budget_brake.json
 }

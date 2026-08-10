@@ -149,8 +149,18 @@ def _check_permissions_exist() -> list[str]:
     # left every grant in the file and none of them on the role, and the check passed. A policy
     # document with no attachment is the "written but not wired" failure in its purest form —
     # every permission visible in a diff, none of them in effect.
+    # **Two attachment shapes, because IAM forced the second one.**
+    #
+    # An inline `aws_iam_role_policy` was the original form; the aggregate 10 KB ceiling on
+    # inline policies made it impossible once the estate had six layers, so the grants are now
+    # managed policies joined by `aws_iam_role_policy_attachment`. The check knows both — and it
+    # correctly refused the moment the shape changed, which is the behaviour wanted from it.
     attached = re.search(
         r'resource\s+"aws_iam_role_policy"\s+"\w+"\s*\{[^}]*?role\s*=\s*aws_iam_role\.deploy\.id',
+        grants,
+        re.DOTALL,
+    ) or re.search(
+        r'resource\s+"aws_iam_role_policy_attachment"\s+"\w+"\s*\{[^}]*?role\s*=\s*aws_iam_role\.deploy\.name',
         grants,
         re.DOTALL,
     )
