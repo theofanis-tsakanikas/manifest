@@ -745,11 +745,17 @@ def _pass_a_shell_variable_nothing_assigns(root: Path) -> bool:
     its own validation rule, which is the one reason it failed loudly rather than deploying a
     role that could invoke every model in the account.
     """
-    return _replace(
-        root / ".github/workflows/deploy.yml",
-        "          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)\n",
-        "",
-    )
+    # **Every occurrence, not the first.** The first version used `_replace`, which edits one
+    # match — and the first match is in a job that never passes the variable to terraform, so
+    # the job that does still had its assignment and the gate correctly reported nothing. The
+    # mutation was accepted, which is `gate-proof` doing its job on `gate-proof`.
+    path = root / ".github/workflows/deploy.yml"
+    text = path.read_text(encoding="utf-8")
+    marker = "          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)\n"
+    if marker not in text:
+        return False
+    path.write_text(text.replace(marker, ""), encoding="utf-8")
+    return True
 
 
 MUTATIONS: tuple[Mutation, ...] = (

@@ -658,10 +658,12 @@ def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
                     used |= set(re.findall(r"\$\{?(\w+)", line))
             used -= {"GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_WORKSPACE"}
             for variable in sorted(used):
-                assigned = (
-                    re.search(rf"^\s*{variable}=", steps, re.M)
-                    or f'echo "{variable}=' in steps
-                    or f"TF_VAR_{variable}" in steps
+                # A real assignment only. `echo "VAR=$VAR" >> $GITHUB_ENV` was accepted here
+                # and it is precisely the shape that fails: with nothing assigned, the echo
+                # writes `VAR=` and the variable is defined as the empty string for every later
+                # step. The check counted the export and called it a value.
+                assigned = bool(re.search(rf"^\s*{variable}=", steps, re.M)) or (
+                    f"TF_VAR_{variable}" in steps
                 )
                 if not assigned:
                     problems.append(
