@@ -179,12 +179,39 @@ resource "aws_glue_catalog_table" "document_version" {
       name = "extracted_on"
       type = "timestamp"
     }
+    # **A column, because it used to be a partition key and Iceberg refuses those.**
+    #
+    # Removing the `partition_keys` block would otherwise have deleted the field outright —
+    # `extraction_date` was declared there and nowhere else, so the fix for the create error
+    # would have silently dropped the column every date-bounded query in `analytics/` reads.
+    # That is the shape worth noticing: the error was about partitioning and the damage would
+    # have been to the schema.
+    columns {
+      name    = "extraction_date"
+      type    = "date"
+      comment = "The day the record was extracted. Iceberg partitions on it through its own spec, not through a catalogue partition key"
+    }
   }
 
-  partition_keys {
-    name = "extraction_date"
-    type = "date"
-  }
+  # **No `partition_keys`, because Iceberg refuses them.** `CreateTable` returned *"Cannot
+  # create partitions in an iceberg table"*.
+  #
+  # A Hive table declares its partitions to the catalogue and the catalogue enforces them. An
+  # Iceberg table keeps its partition specification in its **own** metadata, evolves it without
+  # rewriting data, and treats a catalogue-level partition key as a contradiction — which is one
+  # of the reasons decision 12 chose Iceberg in the first place: claim 3 re-publishes a document
+  # as a new version, and a partitioning scheme that could not change without a rewrite would
+  # make that expensive.
+  #
+  # `extraction_date` is still how this table is read. It is a **column**, declared above, and
+  # the partition specification over it is set through Athena once the table exists:
+  #
+  #     ALTER TABLE document_version SET TBLPROPERTIES (
+  #       'write.spec' = 'day(extraction_date)'
+  #     )
+  #
+  # That is a data-plane statement rather than a catalogue attribute, and it does not belong in
+  # the layer that creates the table — which is exactly what the error was saying.
 }
 
 resource "aws_athena_workgroup" "analysis" {
