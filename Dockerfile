@@ -22,7 +22,17 @@
 # runtime interface is a pip package (`awslambdaric`), which is the documented way to run a
 # container image that is not built from an AWS base.
 
-FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm
+# **Trixie, not bookworm, and the reason is the whole point of the assertion below.**
+#
+# The first build from `bookworm` was refused by that assertion: *"reader is 5.3.0, this image
+# expects 5.5.x"*. Every threshold in `recordings/` was derived from the 5.5 series, and 5.3
+# would have produced different confidences on the same pages — quietly, with nothing
+# downstream noticing a distribution shifting by two points. The build failing is the ceremony
+# in `make ocr-record` enforced at the other end, and it worked on the first real deploy.
+#
+# Trixie carries the 5.5 series. If a future base moves it again, this build fails again, by
+# name, and the answer is to re-record and accept the movement — never to widen the assertion.
+FROM public.ecr.aws/docker/library/python:3.12-slim-trixie
 
 # The reader and its language data. Greek and Dutch are the two the scenario turns on and the
 # two no managed service reads — `docs/AWS-CONSTRAINTS.md` — so their absence is not a
