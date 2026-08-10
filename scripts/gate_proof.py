@@ -394,11 +394,18 @@ def _write_the_grants_and_never_attach_them(root: Path) -> bool:
     them, and the role has none of them. The first version of the gate read the policy document
     and stopped there, so this mutation was **accepted** — which is how the gate learned to
     check the attachment rather than the text.
+
+    **Retargeted 2026-08-10**, and the retargeting is itself the harness working. The grants
+    moved from one inline `aws_iam_role_policy` to six managed policies joined by
+    `aws_iam_role_policy_attachment`, because IAM's 10 KB ceiling on inline policies is an
+    aggregate across the role and six layers do not fit under it. This mutation's old target
+    stopped existing, and it was reported **STALE** rather than passing — which is the third of
+    the three rules at the top of this file, earning its place on a real refactor.
     """
     return _replace(
         root / "infra/bootstrap/deploy_permissions.tf",
-        'resource "aws_iam_role_policy" "deploy_estate" {',
-        'resource "aws_iam_role_policy" "deploy_estate_unattached" {\n  count = 0\n',
+        'resource "aws_iam_role_policy_attachment" "deploy_network" {',
+        'resource "aws_iam_role_policy_attachment" "deploy_network" {\n  count = 0\n',
     )
 
 
@@ -950,7 +957,7 @@ MUTATIONS: tuple[Mutation, ...] = (
         "write the grants and never attach them",
         "deploy permissions",
         [sys.executable, "scripts/check_deploy_path.py"],
-        "grants nothing",
+        "are declared and never attached to the deploy role",
         _write_the_grants_and_never_attach_them,
         "Every permission visible in the diff, none of them in effect. Accepted on first run, "
         "which is how the gate learned to check the attachment rather than the text.",

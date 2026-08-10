@@ -149,27 +149,51 @@ def _check_permissions_exist() -> list[str]:
     # left every grant in the file and none of them on the role, and the check passed. A policy
     # document with no attachment is the "written but not wired" failure in its purest form —
     # every permission visible in a diff, none of them in effect.
-    # **Two attachment shapes, because IAM forced the second one.**
+    # **Every policy is attached, not merely one of them.**
     #
-    # An inline `aws_iam_role_policy` was the original form; the aggregate 10 KB ceiling on
-    # inline policies made it impossible once the estate had six layers, so the grants are now
-    # managed policies joined by `aws_iam_role_policy_attachment`. The check knows both — and it
-    # correctly refused the moment the shape changed, which is the behaviour wanted from it.
-    attached = re.search(
+    # The grants were a single inline `aws_iam_role_policy` until IAM refused it: the 10 KB
+    # ceiling on inline policies is an aggregate across the role, and six layers do not fit. They
+    # are six managed policies now, joined by `aws_iam_role_policy_attachment`.
+    #
+    # That changed what this check has to prove. "At least one attachment exists" was enough for
+    # one policy and is worthless for six — detach `network` and five attachments remain, so the
+    # check passes while the deploy role cannot build a VPC. `gate-proof` demonstrated exactly
+    # that: the retargeted mutation was accepted until this was rewritten to pair them.
+    declared = set(re.findall(r'resource\s+"aws_iam_policy"\s+"(\w+)"', grants))
+    # An attachment carrying `count = 0` renders to nothing. It reads as present in the file and
+    # is absent from the account — the same "written but not wired" shape one level down — so the
+    # block is discarded before the policy it names is counted as attached.
+    attached_names: set[str] = set()
+    for block in re.finditer(
+        r'resource\s+"aws_iam_role_policy_attachment"\s+"\w+"\s*\{(.*?)\n\}', grants, re.DOTALL
+    ):
+        body = block.group(1)
+        if re.search(r"^\s*count\s*=\s*0\s*$", body, re.M):
+            continue
+        attached_names |= set(re.findall(r"policy_arn\s*=\s*aws_iam_policy\.(\w+)\.arn", body))
+    inline = re.search(
         r'resource\s+"aws_iam_role_policy"\s+"\w+"\s*\{[^}]*?role\s*=\s*aws_iam_role\.deploy\.id',
         grants,
         re.DOTALL,
-    ) or re.search(
-        r'resource\s+"aws_iam_role_policy_attachment"\s+"\w+"\s*\{[^}]*?role\s*=\s*aws_iam_role\.deploy\.name',
-        grants,
-        re.DOTALL,
     )
-    if not attached:
+
+    #: Policies that exist to be attached by something other than the role — the budget action
+    #: attaches this one when the ceiling is reached, and it must NOT be on the role by default.
+    ATTACHED_BY_A_GUARD = {"budget_brake"}
+
+    orphans = declared - attached_names - ATTACHED_BY_A_GUARD
+    if orphans and not inline:
         return [
-            "infra/bootstrap/deploy_permissions.tf declares grants that are not attached to "
-            "aws_iam_role.deploy. Every permission is visible in the diff and none is in "
-            "effect, which is the shape a reviewer is least likely to catch"
+            f"policies {sorted(orphans)} are declared and never attached to the deploy role. "
+            f"Every permission in them is visible in a diff and none is in effect, which is the "
+            f"shape a reviewer is least likely to catch"
         ]
+    if not declared and not inline:
+        return [
+            "infra/bootstrap/deploy_permissions.tf declares no policy attached to "
+            "aws_iam_role.deploy in any form this check recognises"
+        ]
+
     if re.search(r'resource\s+"aws_iam_role_policy"\s+"\w+"\s*\{\s*count\s*=\s*0', grants):
         return [
             "the deploy role's estate policy is attached with count = 0. It exists, it reads "
