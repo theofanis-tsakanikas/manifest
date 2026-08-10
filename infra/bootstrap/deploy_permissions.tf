@@ -156,6 +156,16 @@ data "aws_iam_policy_document" "deploy_estate" {
       "s3:PutBucketNotification",
       "s3:Get*",
       "s3:List*",
+      # **Objects, not only buckets.** Everything above configures a bucket; the deploy also
+      # *writes into one* — the derived thresholds the extraction handler reads, and the zip
+      # carrying that handler. Both go to the records bucket, and without this the refusal is
+      # `s3:PutObject` after the whole of `foundation` has been built.
+      #
+      # The same shape as the KMS grant one commit ago: administering a thing and using it are
+      # different permissions, and the administrative one reads as the larger.
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload",
     ]
     resources = [
       "arn:aws:s3:::${var.project}-*-${data.aws_caller_identity.current.account_id}",
