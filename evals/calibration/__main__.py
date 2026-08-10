@@ -209,7 +209,24 @@ def _movement(report: dict, baseline: dict) -> list[str]:
         before, after = previous.get("threshold"), entry.get("threshold")
         if before is None or after is None:
             continue
-        tolerance = float(entry.get("tolerance", 0.02))
+        # **No default, and this is the place it would matter most.** This number decides how
+        # far claim 1's thresholds may drift before the build goes red — it is the sensitivity
+        # of the only gate that stands between a derivation and a published field. A `0.02`
+        # written here as a fallback would be a threshold nobody declared, doing exactly what
+        # doctrine rule 3 says a modal value does: filling a hole with something plausible.
+        #
+        # Every field's tolerance comes from its contract (`contract.threshold_tolerance`, where
+        # this report is built), so the absence below cannot happen today. It is a refusal
+        # rather than a default because the day it *can* happen, the alternative is a field
+        # silently getting the loosest reasonable band at the moment nobody is looking.
+        if entry.get("tolerance") is None:
+            moved.append(
+                f"{name}: no declared threshold tolerance. The movement check has no band to "
+                f"compare against, and it refuses to invent one — a tolerance nobody wrote is "
+                f"a decision about claim 1's sensitivity that no reviewer ever saw"
+            )
+            continue
+        tolerance = float(entry["tolerance"])
         if abs(after - before) > tolerance:
             moved.append(
                 f"{name}: threshold moved {before:.3f} -> {after:.3f}, outside its declared "
