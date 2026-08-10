@@ -86,11 +86,16 @@ RUN installed="$(tesseract --version 2>&1 | head -1 | awk '{print $2}')" \
 ENV LAMBDA_TASK_ROOT=/var/task
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-# `LICENSE` beside `pyproject.toml`, because the packaging metadata names it and the build
-# refuses without it: *"License file does not exist: LICENSE"*. It is not obvious from the
-# outside — nothing in the source imports it — which is exactly why it failed here rather than
-# on any machine where the whole repository happens to be present.
-COPY pyproject.toml LICENSE ${LAMBDA_TASK_ROOT}/
+# **Everything `pyproject.toml` names, not only the code.** It declares `readme = "README.md"`
+# and `license = { file = "LICENSE" }`, and the build refuses without either: *"License file
+# does not exist"*, then *"Readme file does not exist"*, one per cycle.
+#
+# Two builds were spent discovering them one at a time, which is its own small lesson: the
+# packaging metadata is a list of files this image needs and nothing was reading it. It is read
+# now — `grep -E "readme|license|file =" pyproject.toml` is the whole check — and both are here.
+# Neither is imported by any module, which is exactly why a container is where it fails and a
+# developer machine with the full checkout is where it never does.
+COPY pyproject.toml README.md LICENSE ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 # The contracts travel with the image. They are the source of truth for which fields exist and
 # how each is compared, and a deployment whose code and contracts came from different commits
