@@ -273,9 +273,31 @@ data "aws_iam_policy_document" "deploy_estate" {
         "emr-serverless.amazonaws.com",
         "redshift.amazonaws.com",
         "glue.amazonaws.com",
+        "lambda.amazonaws.com",
+        "sagemaker.amazonaws.com",
       ]
     }
   }
+
+  # **The escalation path this closes, named because checkov is right to flag the shape.**
+  #
+  # `lambda:CreateFunction` plus `iam:PassRole` is a textbook privilege-escalation pair: create a
+  # function, pass it a more powerful role, invoke it, and the caller has that role's
+  # permissions. The two conditions above are what make it not that — the role name must match
+  # this project's prefix, and it must be passed to a service on the list — but neither stops the
+  # deploy role passing a `manifest-*` role to Lambda, which is precisely what it is for.
+  #
+  # So the boundary is not the policy, and saying otherwise would be the comfortable lie. The
+  # boundary is **who can assume this role at all**: an OIDC trust naming one repository by
+  # numeric id and one GitHub environment behind required reviewers (`infra/bootstrap/oidc.tf`).
+  # A deploy role that builds an estate can, by construction, build compute that runs as the
+  # roles it creates. What must never be true is that somebody outside that trust can make it do
+  # so, and `scripts/check_deploy_path.py` refuses a wildcard in the trust for that reason.
+  #
+  # The residual risk, stated rather than skipped past: anybody who can merge to this repository
+  # and obtain the environment approval can run arbitrary code as any `manifest-*` role. That is
+  # true of every IaC deploy role in existence and it is why the environment is protected.
+  #checkov:skip=CKV_AWS_110:Real and inherent. `lambda:CreateFunction` with `iam:PassRole` is an escalation shape, and it is what an IaC deploy role does. It is bounded by the role-name prefix, the `iam:PassedToService` list above, and — the control that actually matters — an OIDC trust naming one repository by numeric id and one protected environment. See the comment above for the residual risk, which is not hidden.
 
   # ── extraction ────────────────────────────────────────────────────────────
   statement {
@@ -397,6 +419,100 @@ data "aws_iam_policy_document" "deploy_estate" {
   #
   # Scoped to this project's bootstrap prefix and nothing wider. A grant on `/manifest/*` would
   # let a compromised deploy read every parameter any later layer ever writes.
+  # The functions that run this project's logic, and the registry their image lives in.
+  #
+  # `ecr:GetAuthorizationToken` takes no resource and is the one the deploy needs *before* it
+  # can push anything; the rest are scoped by the repository the extraction layer creates.
+  #checkov:skip=CKV_AWS_111:GetAuthorizationToken and the Lambda create/describe APIs are documented as not resource-scoped; the boundary is the deploy role's trust, which names one repository and one environment.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "BuildTheComputeAndItsRegistry"
+    effect = "Allow"
+    actions = [
+      "lambda:CreateFunction",
+      "lambda:DeleteFunction",
+      "lambda:GetFunction",
+      "lambda:GetFunctionConfiguration",
+      "lambda:UpdateFunctionCode",
+      "lambda:UpdateFunctionConfiguration",
+      "lambda:PutFunctionConcurrency",
+      "lambda:DeleteFunctionConcurrency",
+      "lambda:GetPolicy",
+      "lambda:AddPermission",
+      "lambda:RemovePermission",
+      "lambda:TagResource",
+      "lambda:UntagResource",
+      "lambda:ListTags",
+      "lambda:ListVersionsByFunction",
+      "ecr:GetAuthorizationToken",
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:DescribeRepositories",
+      "ecr:DescribeImages",
+      "ecr:BatchGetImage",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+      "ecr:PutLifecyclePolicy",
+      "ecr:GetLifecyclePolicy",
+      "ecr:DeleteLifecyclePolicy",
+      "ecr:TagResource",
+      "ecr:ListTagsForResource",
+      "ecr:PutImageTagMutability",
+      "ecr:PutImageScanningConfiguration",
+    ]
+    resources = ["*"]
+  }
+
+  # SageMaker and OpenSearch Serverless, for the two opt-in surfaces.
+  #
+  # Granted whether or not those surfaces are enabled: the grant is on the deploy *role*, and a
+  # role that gains permissions on the day somebody flips a flag is a role whose first apply
+  # after the flip fails on an access denial four minutes in.
+  #checkov:skip=CKV_AWS_111:These service APIs are largely not resource-scoped; the constraint is the deploy role's trust, which names one repository and one environment.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "BuildTheClassifierAndTheSearchSurface"
+    effect = "Allow"
+    actions = [
+      "sagemaker:CreateModel",
+      "sagemaker:DeleteModel",
+      "sagemaker:DescribeModel",
+      "sagemaker:CreateEndpoint",
+      "sagemaker:CreateEndpointConfig",
+      "sagemaker:DeleteEndpoint",
+      "sagemaker:DeleteEndpointConfig",
+      "sagemaker:DescribeEndpoint",
+      "sagemaker:DescribeEndpointConfig",
+      "sagemaker:UpdateEndpoint",
+      "sagemaker:AddTags",
+      "sagemaker:ListTags",
+      "aoss:CreateCollection",
+      "aoss:DeleteCollection",
+      "aoss:BatchGetCollection",
+      "aoss:ListCollections",
+      "aoss:UpdateCollection",
+      "aoss:CreateSecurityPolicy",
+      "aoss:DeleteSecurityPolicy",
+      "aoss:GetSecurityPolicy",
+      "aoss:UpdateSecurityPolicy",
+      "aoss:CreateAccessPolicy",
+      "aoss:DeleteAccessPolicy",
+      "aoss:GetAccessPolicy",
+      "aoss:UpdateAccessPolicy",
+      "aoss:CreateVpcEndpoint",
+      "aoss:DeleteVpcEndpoint",
+      "aoss:BatchGetVpcEndpoint",
+      "aoss:TagResource",
+      "aoss:UntagResource",
+      "aoss:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid    = "ReadEveryLayersPublishedReferences"
     effect = "Allow"

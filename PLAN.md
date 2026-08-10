@@ -315,12 +315,27 @@ gate was looking at:
 Each is now refused by a gate with a mutation attacking it, and the run above is the run after
 the fixes. **Still not dispatched, still nothing applied to AWS.**
 
-Deliberately not done, and named rather than quietly dropped: the HS classification *model*
-(the contract declares `hs_code` always-review, which is the property claim 5 is about, and a
-model trained on a synthetic distribution would carry an accuracy figure that is not a claim
-about production); the dbt marts over Redshift (the warehouse and its role are written, the
-four questions are named in decision 6, and the SQL is a separate increment); and the document
-search surface, which decision 5 already says to cut if it costs time.
+Deliberately not done, and named rather than quietly dropped: the dbt marts over Redshift (the
+warehouse and its role are written, the four questions are named in decision 6, and the SQL is a
+separate increment).
+
+**Two of the three came back, 2026-08-10**, when decision 14's revision made it clear the estate
+is meant to run:
+
+- **The HS classification endpoint** (`infra/extraction/classification.tf`). The reason it was
+  deferred was never "it is hard"; it was that a model trained on a synthetic distribution
+  carries an accuracy figure that is not a claim about production. That reason still holds, and
+  it constrains what may be *said*, not what may be built. So the endpoint is here, off by
+  default, returning ranked proposals rather than decisions — `hs_code` is always-review, so no
+  score it produces publishes anything — and any accuracy figure it yields is labelled a
+  statement about a distribution this repository generated, appears on no scoreboard, and never
+  becomes the sentence "the classifier is N% accurate".
+- **The search surface** (`infra/lakehouse/search.tf`). Off by default, because the service bills
+  an always-on floor whether anybody searches or not. It indexes **published records only, never
+  raw document text** — an index of counterparty-authored page text is that text retained,
+  ranked and shown to a human about to make a customs decision, with its declared retention
+  class dropped on the way in. Decision 5 still holds: it is not a claim and it is on no
+  scoreboard.
 
 ---
 

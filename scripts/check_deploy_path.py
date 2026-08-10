@@ -183,6 +183,10 @@ def _check_permissions_exist() -> list[str]:
         "redshift-serverless": "infra/analytics",
         "logs": "every layer writes to a log group",
         "ssm": "the deploy resolves what bootstrap published",
+        "lambda": "the tier-0 reader, the extraction handler and the provenance gate",
+        "ecr": "the reader image the container functions run from",
+        "sagemaker": "infra/extraction's opt-in classification endpoint",
+        "aoss": "infra/lakehouse's opt-in search surface",
     }
     if "iam:CreateServiceLinkedRole" not in grants:
         return [

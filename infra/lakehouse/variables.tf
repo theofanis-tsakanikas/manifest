@@ -26,3 +26,37 @@ variable "access_logs_bucket" {
   description = "The foundation layer's access-log bucket."
   type        = string
 }
+
+variable "enable_search" {
+  description = <<-EOT
+    Stand up the document search surface. **Off by default, and the default is the point.**
+
+    OpenSearch Serverless bills an always-on 2-OCU floor whether anybody searches or not
+    (`docs/AWS-CONSTRAINTS.md`, verified 2026-08-09) — a constant, not a per-use cost. Decision 5
+    says this surface is useful and is not a claim, and an estate that stood it up because a
+    deploy ran would have its bill decided by a default rather than by a person.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "search_principals" {
+  description = <<-EOT
+    IAM principal ARNs allowed to read and write the index. Never `*`.
+
+    A data-access policy is the only thing between an index of published customs records and
+    every principal in the account. Empty by default so that enabling search without naming
+    anybody produces a collection nobody can reach — which is the safe direction to get wrong.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for arn in var.search_principals : !strcontains(arn, "*")])
+    error_message = "Name principals explicitly; a wildcard here grants the whole account."
+  }
+}
+
+variable "vpc_id" { type = string }
+variable "private_subnet_ids" { type = list(string) }
+variable "endpoint_security_group_id" { type = string }

@@ -135,3 +135,35 @@ variable "document_automation_arns" {
     error_message = "Bedrock ARNs only, and no wildcards."
   }
 }
+
+variable "enable_classifier" {
+  description = <<-EOT
+    Stand up the tariff-classification endpoint. Off by default.
+
+    Serverless inference scales to nothing, so the cost is per request rather than per hour —
+    but an endpoint that exists is an endpoint somebody can call, and `hs_code` is declared
+    always-review, so every classification it produces lands in the review queue. Standing it up
+    is therefore a decision about **queue capacity**, not only about spend, and doctrine rule 1
+    says a queue past capacity is a failure of the system rather than of the reviewers.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "classifier_image_uri" {
+  description = "Inference container for the classifier. Required only when `enable_classifier` is true."
+  type        = string
+  default     = ""
+}
+
+variable "classifier_model_data_url" {
+  description = <<-EOT
+    S3 URI of the trained artefact, under the `models/` prefix the endpoint's role can read.
+
+    Whatever accuracy this artefact has is a statement about a distribution **this repository
+    generated**. It is labelled that way wherever it appears, it appears on no scoreboard, and
+    "the classifier is N% accurate" is a sentence this project does not have.
+  EOT
+  type        = string
+  default     = ""
+}
