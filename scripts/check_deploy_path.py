@@ -199,14 +199,23 @@ def _check_permissions_exist() -> list[str]:
 
 
 def _required_variables(layer: str) -> set[str]:
-    """Variables the layer declares with no default — the ones a run must supply."""
+    """Variables the layer declares with no default — the ones a run must supply.
+
+    A default is matched as an **assignment** at the start of a line, never as the word.
+
+    The first version searched the block for the string `default`, and that is a false-negative
+    machine: three variables whose own descriptions said "there is no default" were read as
+    having one and were never checked. It was found by adding those three, watching the gate
+    report one problem instead of four, and asking why. A gate that under-reports is worse than
+    no gate, because the green is the part people act on.
+    """
     variables = ROOT / "infra" / layer / "variables.tf"
     if not variables.exists():
         return set()
     blocks = re.findall(
         r'variable "([^"]+)" \{(.*?)\n\}', variables.read_text(encoding="utf-8"), re.S
     )
-    return {name for name, body in blocks if "default" not in body}
+    return {name for name, body in blocks if not re.search(r"^\s*default\s*=", body, re.M)}
 
 
 def _check_every_layer_can_evaluate() -> list[str]:
@@ -310,6 +319,42 @@ def _check_resolves_fail_loudly() -> list[str]:
     return problems
 
 
+def _check_nothing_names_what_nothing_creates() -> list[str]:
+    """A state machine may not invoke a function by name. It must reference the resource.
+
+    **This is the check for the failure that started all of them.** `VerifyProvenance` invoked
+    `"${var.project}-provenance-gate"` — a string — and no layer created that function. Terraform
+    was happy, because a string is a string. checkov was happy, because it reads resources.
+    `terraform validate` was happy, because nothing was malformed. On a real deployment every
+    document would have failed there, been caught by the step's `Catch`, and gone to a human: a
+    pipeline reporting success while sending 100% of its volume to review.
+
+    A Terraform *reference* cannot have that bug. `aws_lambda_function.provenance_gate.arn` does
+    not resolve unless the resource exists, and the graph makes the dependency real. A string
+    literal is a promise nobody checks.
+    """
+    problems: list[str] = []
+
+    for definition in sorted(ROOT.glob("infra/*/*.tf")):
+        text = definition.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if '"FunctionName"' not in stripped and '"StateMachineArn"' not in stripped:
+                continue
+            # A reference looks like `aws_lambda_function.x.arn`; a promise looks like a string
+            # with a project prefix in it.
+            if "aws_lambda_function." in stripped or "aws_sfn_state_machine." in stripped:
+                continue
+            problems.append(
+                f"{definition.relative_to(ROOT)} names a target as a literal: "
+                f"{stripped[:80]}. Reference the resource instead — a string does not fail when "
+                f"the thing it names was never created, it fails at the first invocation, "
+                f"inside a Catch, as a document quietly going to a human"
+            )
+
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -331,6 +376,7 @@ def main() -> int:
     problems.extend(_check_permissions_exist())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
+    problems.extend(_check_nothing_names_what_nothing_creates())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

@@ -482,6 +482,23 @@ def _let_a_failed_resolve_pass_for_an_empty_value(root: Path) -> bool:
     )
 
 
+def _name_a_function_that_nothing_creates(root: Path) -> bool:
+    """Replace the gate's resource reference with the string it used to be.
+
+    **This was the repository's actual state.** The state machine invoked
+    `"${var.project}-provenance-gate"` and no layer created it: `terraform validate`, `checkov`
+    and `tf_validate.py` all reported green on a pipeline whose central control did not exist.
+    The step's `Catch` then turned the resulting `ResourceNotFoundException` into a trip to the
+    review queue, so the failure mode was 100% of documents going to a human while every
+    dashboard stayed green.
+    """
+    return _replace(
+        root / "infra/extraction/pipeline.tf",
+        '"FunctionName" : aws_lambda_function.provenance_gate.arn,',
+        '"FunctionName" : "${var.project}-provenance-gate",',
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -714,6 +731,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_a_failed_resolve_pass_for_an_empty_value,
         "The repository's actual state in every job of both workflows. The tidier-looking "
         "line is the one `set -e` cannot see fail.",
+    ),
+    Mutation(
+        "invoke a function by name instead of by reference",
+        "deploy wiring",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "names a target as a literal",
+        _name_a_function_that_nothing_creates,
+        "The repository's actual state: the provenance gate was invoked by a name no layer "
+        "created, and the step's Catch turned that into every document going to a human.",
     ),
 )
 

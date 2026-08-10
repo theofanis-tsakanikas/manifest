@@ -297,7 +297,15 @@ jobs:
           done
       - run: |
           terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/extraction destroy -auto-approve -refresh=false
+          # `reader_image_digest` and the model ARN decide nothing in a teardown, and both
+          # still have to resolve, because a destroy evaluates the configuration. The digest
+          # is deliberately all zeros: it satisfies the format and could never name a real
+          # image, so a destroy that somehow ended in an apply would fail rather than deploy
+          # a function pointing at whatever happened to be pushed last.
+          terraform -chdir=infra/extraction destroy -auto-approve -refresh=false \
+            -var 'expires_at=1970-01-01' \
+            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
+            -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000'
 
   foundation:
     name: "destroy · foundation"

@@ -120,11 +120,29 @@ resource "aws_vpc_security_group_egress_rule" "endpoints_out" {
   ip_protocol       = "-1"
 }
 
+# Every service the private subnets talk to needs an endpoint, because there is no NAT gateway
+# and no internet route: a service that is missing from this list does not fail at deploy time,
+# it hangs until its client times out, and the error names a socket rather than a cause.
+#
+# Changed 2026-08-10, and the reasons are worth keeping:
+#
+# - **`comprehend` removed.** Nothing calls it any more; entity recognition here is
+#   deterministic code, and the service reads neither Greek nor Dutch. An endpoint for a service
+#   nothing calls is an hourly charge and a permanent puzzle for the next reader.
+# - **`ecr.api`, `ecr.dkr` added.** The tier-0 reader and the provenance gate are container
+#   functions in these subnets, and a Lambda that cannot pull its image never starts. This is
+#   the classic omission: everything validates, the deploy succeeds, and the first invocation
+#   fails with an image-pull error nobody attributes to a missing endpoint.
+# - **`bedrock-data-automation` and `bedrock-data-automation-runtime` added**, so the document
+#   tier is reachable if it is ever enabled.
 resource "aws_vpc_endpoint" "interface" {
   for_each = toset([
     "textract",
     "bedrock-runtime",
-    "comprehend",
+    "bedrock-data-automation",
+    "bedrock-data-automation-runtime",
+    "ecr.api",
+    "ecr.dkr",
     "states",
     "sqs",
     "kms",

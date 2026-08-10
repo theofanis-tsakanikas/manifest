@@ -24,7 +24,8 @@ locals {
   published = {
     state_bucket      = aws_s3_bucket.state.id
     state_kms_key_arn = aws_kms_key.state.arn
-    deploy_role_arn   = aws_iam_role.deploy.arn
+    deploy_role_arn      = aws_iam_role.deploy.arn
+    escalation_model_arn = var.escalation_model_arn
     # Computed here rather than in `foundation`, because the deploy needs it *before* foundation
     # has run — the lakehouse layer takes it as a variable and the name is deterministic. A
     # value two layers can compute is a value that will be computed differently in one of them.

@@ -149,3 +149,23 @@ variable "monthly_budget_eur" {
     error_message = "A budget above 500 is not a guard; it is a formality."
   }
 }
+
+variable "escalation_model_arn" {
+  description = <<-EOT
+    The Bedrock model or inference-profile ARN the cascade's escalation tier may invoke.
+
+    Taken here, with the other value nothing can derive, and published for the deploy to
+    resolve. It is a deployment decision — which model, in which Region, under which terms — and
+    it is the one grant in the estate that could otherwise be written as `*`.
+
+    `bedrock:InvokeModel` on `*` is permission to invoke every model in the account: different
+    prices, different data-handling terms, different regional footprints. Naming one is what
+    makes the budget guard a guard rather than a formality.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:bedrock:", var.escalation_model_arn)) && !strcontains(var.escalation_model_arn, "*")
+    error_message = "A Bedrock ARN with no wildcard. A wildcard here grants every model in the account."
+  }
+}

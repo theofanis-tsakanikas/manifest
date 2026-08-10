@@ -63,7 +63,7 @@ command in this repository, not a summary of one.
 | **injection** | **0 false positives** on 2,963 documents of ordinary trade prose; 4/4 planted strings recognised; the envelope refuses a forged delimiter rather than escaping it |
 | **line-item totals** | **252/252** deliberately truncated tables caught — 211 by direction, 41 as totals the reader mangled |
 | **classification** | 6/6 contested headings abstain; nothing publishes at any score |
-| `make gate-proof` | **25 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **26 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
 | `checkov` | **383 passed, 0 findings** across six layers; 92 deliberate exceptions, each with a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
@@ -219,7 +219,7 @@ one function, and keeping it that size is what stops the untested region growing
 make install       # venv + editable install
 make test          # 189 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 25 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 26 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)
