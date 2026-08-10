@@ -92,8 +92,13 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 reader-version: ## The image's reader and the recording's reader are the same reader
 	$(PY) scripts/reader_version_check.py
 
+.PHONY: pipeline-routing
+pipeline-routing: ## A document that publishes some of itself still owes the rest to a human
+	$(PY) scripts/check_pipeline_routing.py
+
 .PHONY: claims
 claims: core-pure planting-blind contracts-validate corpus-check envelope reader-version \
+	pipeline-routing \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
 	injection line-items classification marts ## Every claim gate that exists today
 

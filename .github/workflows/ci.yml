@@ -94,6 +94,13 @@ jobs:
         # shipped an artefact for the reader that was actually reading.
         run: python scripts/reader_version_check.py
 
+      - name: a document that publishes some of itself still owes the rest to a human
+        # Doctrine rule 1 asserted against the deployed state machine rather than against the
+        # core. The estate shipped with Publish and QueueForReview as the only terminal states,
+        # mutually exclusive — so a document that published eight fields and abstained on four
+        # sent the four to nobody, silently, on every successful execution.
+        run: python scripts/check_pipeline_routing.py
+
       - name: the corpus plants mismatches blind to the rules that will find them
         # Claim 4's independence, read off the import graph. A planter that knows the
         # reconciliation contract is a planter that can be tuned to it, and the harness would

@@ -170,6 +170,15 @@ CHECKS: list[Check] = [
         "that is actually reading. It cost a green deploy and an IAM error naming nothing.",
     ),
     Check(
+        "deployability",
+        "pipeline routing",
+        [PYTHON, "scripts/check_pipeline_routing.py"],
+        "A document that publishes eight fields and abstains on four still sends the four to a "
+        "human. The estate shipped without this: Publish and QueueForReview were the only "
+        "terminal states and they exclude each other, so every partial abstention reached "
+        "nobody and claim 5's capacity model was measuring the empty set.",
+    ),
+    Check(
         "correctness",
         "planting is blind",
         [PYTHON, "scripts/check_planting_is_blind.py"],

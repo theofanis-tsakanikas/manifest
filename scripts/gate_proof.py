@@ -92,6 +92,21 @@ def _let_the_core_learn_which_engine_read_the_page(root: Path) -> bool:
     )
 
 
+def _send_a_partly_published_document_straight_to_publish(root: Path) -> bool:
+    """Delete the branch that queues the abstentions on a document that also publishes.
+
+    The simplification anybody would make in good faith: `AnythingAbstained` looks like a
+    redundant hop on the happy path, and removing it makes the machine one state smaller and
+    reads as tidying. It is how the estate shipped, and nothing in an execution history says
+    otherwise — a run that drops four abstentions is identical to a run that had none.
+    """
+    return _replace(
+        root / "infra/extraction/pipeline.tf",
+        '          Next               = "QueueTheAbstentions"',
+        '          Next               = "Publish"',
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -783,6 +798,17 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_the_core_learn_which_engine_read_the_page,
         "A comment, which is how it starts. The branch arrives later and nobody remembers "
         "the comment was the first step.",
+    ),
+    Mutation(
+        "publish a document and drop the fields that abstained",
+        "pipeline routing",
+        [sys.executable, "scripts/check_pipeline_routing.py"],
+        "queued_count",
+        _send_a_partly_published_document_straight_to_publish,
+        "How the estate actually shipped. Publish and QueueForReview were the only terminal "
+        "states and they exclude each other, so a document that published eight fields and "
+        "abstained on four sent nobody the four. Nothing failed, and claim 5's capacity model "
+        "was left measuring the empty set.",
     ),
     Mutation(
         "read the clock inside the core",

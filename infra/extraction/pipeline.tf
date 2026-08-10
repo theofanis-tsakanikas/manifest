@@ -351,9 +351,60 @@ resource "aws_sfn_state_machine" "extraction" {
         Choices = [{
           Variable      = "$.provenance.checked.verified"
           BooleanEquals = true
-          Next          = "Publish"
+          Next          = "AnythingAbstained"
         }]
         Default = "QueueForReview"
+      }
+
+      # **The state that was missing, and the reason it matters more than anything else here.**
+      #
+      # `Publish` and `QueueForReview` used to be the only two terminal states, and they are
+      # mutually exclusive. So a document with twelve fields where eight cleared their thresholds
+      # and four abstained took the publish path — and the four that abstained **never reached a
+      # human**. They were written into the record object marked as queued, and nothing was sent
+      # to the queue.
+      #
+      # Nothing failed. The execution succeeded, the record was correct about what it did and did
+      # not contain, and the queue stayed empty. In a system whose first doctrine rule is
+      # *"abstention is the safe state — and abstention is not free"*, a pipeline where the
+      # common case of abstention costs the queue nothing makes the capacity model a measurement
+      # of the empty set. Claim 5's build-fails-on-overload check would have been scored against
+      # a queue that only ever received documents where **every** field abstained.
+      #
+      # Found by reading this definition against the doctrine, not by running it — an execution
+      # that drops four abstentions looks exactly like an execution that had none.
+      #
+      # Queue *before* publish, deliberately. If the queue send fails the execution stops and
+      # nothing is published, which is the safe direction; the reverse would publish and then
+      # lose the abstentions to a failure, which is the state this fixes.
+      AnythingAbstained = {
+        Type = "Choice"
+        Choices = [{
+          Variable           = "$.extraction.outcome.queued_count"
+          NumericGreaterThan = 0
+          Next               = "QueueTheAbstentions"
+        }]
+        Default = "Publish"
+      }
+
+      # The same queue and the same message shape as `QueueForReview`. It is a separate state
+      # rather than a shared one because a state can have exactly one `Next`, and this one
+      # continues to `Publish` while the other ends — the difference between "this document
+      # abstained entirely" and "this document published some of itself and owes a human the
+      # rest".
+      QueueTheAbstentions = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::sqs:sendMessage"
+        Parameters = {
+          "QueueUrl" : aws_sqs_queue.review.url,
+          "MessageBody.$" : "$"
+        }
+        # **Discard the send's result.** Without this the SQS response replaces the state's
+        # output and `Publish` loses `$.provenance.checked` — it would then write a message id
+        # into the records bucket where a customs record belongs, and the execution would still
+        # report success.
+        ResultPath = null
+        Next       = "Publish"
       }
 
       Publish = {
