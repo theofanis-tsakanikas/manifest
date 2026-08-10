@@ -571,11 +571,30 @@ data "aws_iam_policy_document" "deploy_estate" {
       "ssm:GetParameter",
       "ssm:GetParameters",
       "ssm:GetParametersByPath",
-      "ssm:DescribeParameters",
+      "ssm:ListTagsForResource",
     ]
     resources = [
       "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"
     ]
+  }
+
+  # **`ssm:DescribeParameters` takes no resource, and it was in the scoped statement above.**
+  #
+  # It is one of the APIs that supports no resource-level permission at all: a request for it
+  # against `parameter/manifest/*` matches nothing and is refused, which is what happened —
+  # after the whole network had been built, at the step that publishes what foundation offers
+  # its neighbours.
+  #
+  # Scoping is not lost, it moves: the *reads* that return values stay bounded to this
+  # project's prefix above. This one returns metadata about parameters and is the API's own
+  # shape, not a widening chosen here.
+  #checkov:skip=CKV_AWS_111:ssm:DescribeParameters supports no resource-level permissions; the value-returning reads above stay scoped to this project's prefix.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "ListWhatParametersExist"
+    effect    = "Allow"
+    actions   = ["ssm:DescribeParameters"]
+    resources = ["*"]
   }
 
   # Write, and **not** to the bootstrap prefix. That exclusion is the one meaningful boundary
