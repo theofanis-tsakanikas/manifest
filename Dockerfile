@@ -21,6 +21,16 @@
 # and the Greek and Dutch data come from the same distribution that pins them. The Lambda
 # runtime interface is a pip package (`awslambdaric`), which is the documented way to run a
 # container image that is not built from an AWS base.
+#
+# **The price of leaving the AWS base is that its batteries leave with it.** An AWS base image
+# ships `boto3`; this one does not, and the handlers import it. The first document through the
+# deployed pipeline failed with `No module named 'boto3'` — after the image built, after the
+# functions were created, after the trigger fired. Nothing before the first real execution could
+# have said so, because the module is imported inside the function that uses it precisely so the
+# unit tests run on a machine with no AWS libraries at all.
+#
+# That was the right call for the tests and it is exactly what hid this: a lazy import moves the
+# failure from load time to call time, which is later and quieter.
 
 # **Trixie, not bookworm, and the reason is the whole point of the assertion below.**
 #
@@ -104,7 +114,7 @@ COPY contracts/ ${LAMBDA_TASK_ROOT}/contracts/
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir "${LAMBDA_TASK_ROOT}" \
-    && python -m pip install --no-cache-dir pillow numpy pypdfium2 awslambdaric
+    && python -m pip install --no-cache-dir pillow numpy pypdfium2 awslambdaric boto3
 
 ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/src" \
     CONTRACTS_DIR="${LAMBDA_TASK_ROOT}/contracts"
