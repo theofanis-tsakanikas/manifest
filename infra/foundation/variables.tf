@@ -50,3 +50,21 @@ variable "vpc_cidr" {
   default     = "10.42.0.0/16"
 }
 
+
+# **Off by default, and the default is the point.**
+#
+# The four interface endpoints for Textract and the Bedrock services cost $0.132/hour together
+# — three network interfaces each, one per availability zone, charged whether or not a packet
+# crosses them. On the first real deploy that was 31% of the estate's hourly bill, for tiers the
+# state machine has no state to reach: nothing routes a page upward, and CloudTrail records zero
+# Textract calls in the account.
+#
+# Same shape as `include_expensive_layers` in `deploy.yml`: the expensive thing stands up because
+# somebody asked for it, never because a default said so. Turning this on is what a deploy that
+# actually intends to escalate does, and that deploy is also the one that would produce the first
+# accuracy figure for the escalated fraction — which does not exist today and may not be implied.
+variable "enable_escalation_tiers" {
+  description = "Stand up the VPC endpoints for Textract and Bedrock. Off: nothing calls them."
+  type        = bool
+  default     = false
+}

@@ -176,12 +176,26 @@ resource "aws_vpc_security_group_egress_rule" "to_dynamodb" {
 #   fails with an image-pull error nobody attributes to a missing endpoint.
 # - **`bedrock-data-automation` and `bedrock-data-automation-runtime` added**, so the document
 #   tier is reachable if it is ever enabled.
-resource "aws_vpc_endpoint" "interface" {
-  for_each = toset([
-    "textract",
-    "bedrock-runtime",
-    "bedrock-data-automation",
-    "bedrock-data-automation-runtime",
+#
+# Changed again after the first real deploy, and it is the same rule applied to the four this
+# file added rather than only to the one it removed.
+#
+# **The upper-tier endpoints were 31% of the bill for traffic that does not exist.** An interface
+# endpoint is charged per network interface per hour, one per availability zone, whether or not a
+# packet crosses it — three zones is $0.033/hour each at eu-central-1's published price. Four of
+# them stood for `textract` and the three Bedrock services. The state machine has no escalation
+# state: `ReadAtTierZero`, `ExtractAndThreshold`, `VerifyProvenance`, publish or queue, and
+# nothing routes a page upward. CloudTrail agrees — zero Textract calls in this account, and the
+# only `InvokeModel` events belong to a different project.
+#
+# So they are opt-in now, exactly like EMR Serverless and Redshift in `deploy.yml`, and for the
+# same stated reason: **an estate whose bill is decided by a default is an estate nobody chose.**
+# The comment above already said an endpoint for a service nothing calls is an hourly charge and
+# a permanent puzzle. It said it about `comprehend`, in the same commit that added four more.
+locals {
+  # Everything the pipeline that actually runs needs. A service missing here does not fail at
+  # deploy time — it hangs until its client times out, and the error names a socket.
+  endpoints_always = [
     "ecr.api",
     "ecr.dkr",
     "states",
@@ -191,7 +205,25 @@ resource "aws_vpc_endpoint" "interface" {
     "monitoring",
     "secretsmanager",
     "sts",
-  ])
+  ]
+
+  # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road
+  # before there is a vehicle; leaving them out is not a limitation, because the day the cascade
+  # escalates for real is a day somebody deploys deliberately.
+  endpoints_escalation = [
+    "textract",
+    "bedrock-runtime",
+    "bedrock-data-automation",
+    "bedrock-data-automation-runtime",
+  ]
+}
+
+resource "aws_vpc_endpoint" "interface" {
+  for_each = toset(
+    var.enable_escalation_tiers
+    ? concat(local.endpoints_always, local.endpoints_escalation)
+    : local.endpoints_always
+  )
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${data.aws_region.current.region}.${each.key}"
