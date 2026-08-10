@@ -13,7 +13,11 @@ Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageM
 > **Status: ready to deploy, not yet deployed.** `make preflight` runs **32 checks** — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas across
 > six layers, checkov at zero findings, and a check that the figures on this page are the ones
-> the run produced. All of them pass. **Nothing has been created in AWS.**
+> the run produced. All of them pass.
+>
+> **`infra/bootstrap` was applied on 2026-08-10** — the state backend, its key, the OIDC role
+> and the budget guard. Thirty-one resources, in one account, in `eu-central-1`. The other five
+> layers have not been applied and neither workflow has been dispatched.
 >
 > There are no screenshots, no wall-clock figures and no euro amounts presented as measured,
 > because none of those exist yet. The one cost figure here is labelled **modelled** everywhere
@@ -251,7 +255,7 @@ data. No AWS account, no credentials, no network.
 | [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
 | [`recordings/ocr/`](recordings/ocr/) | The tier-0 reader's normalised output, with its version and fingerprint. Every threshold derives from here |
 | [`evals/`](evals/) | The seven claim harnesses, labelled and credential-free |
-| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` could apply from a laptop and has not; every other layer applies only from a gated workflow that has not been dispatched yet |
+| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` **is applied** (2026-08-10, 31 resources); every other layer applies only from a workflow that has not been dispatched yet |
 | [`docs/adr/`](docs/adr/) | Five decisions, written before the code that assumes them |
 
 ---

@@ -167,3 +167,14 @@ variable "classifier_model_data_url" {
   type        = string
   default     = ""
 }
+
+variable "reader_repository_url" {
+  description = <<-EOT
+    The registry the reader image was pushed to, published by `infra/foundation`.
+
+    Owned there rather than here because the image must exist before a function can be created
+    from it — a registry owned by the consuming layer has to be created by the same apply that
+    needs it already populated, and the first run fails at `docker push`.
+  EOT
+  type        = string
+}

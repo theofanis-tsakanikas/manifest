@@ -145,6 +145,11 @@ to zero findings, and it stays unapplied — including `infra/bootstrap/` — un
 dispatches it deliberately. The `deploy` and `destroy` workflows are written and gated behind
 the environment their OIDC trust is scoped to, and **have not been dispatched**.
 
+**`infra/bootstrap` was applied on 2026-08-10**, deliberately, by the author — the state
+backend, its KMS key, the OIDC role, the SSM reference table and the budget guard. That is the
+one layer whose design permits a laptop apply, and it is the only one that has been applied.
+Everything above it is still unapplied.
+
 **Required reviewers on those environments are currently off**, under a dated acceptance that
 expires (`contracts/deploy/acceptance.yaml`). The reason is doctrine rule 2 turned on this
 repository rather than on its reviewers: the first deploy is expected to fail on a missing

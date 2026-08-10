@@ -9,46 +9,6 @@
 # the third is a zip because it needs neither, and keeping it separate means a change to the
 # extraction logic does not rebuild a large image.
 
-resource "aws_ecr_repository" "reader" {
-  name                 = "${var.project}-reader"
-  image_tag_mutability = "IMMUTABLE"
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  encryption_configuration {
-    encryption_type = "KMS"
-    kms_key         = var.data_key_arn
-  }
-
-  tags = { "${var.project}:expires-at" = var.expires_at }
-}
-
-# Keep the image the running functions point at, and nothing else.
-#
-# `IMMUTABLE` above means a tag never moves, so "latest" cannot silently become a different
-# reader — which matters here more than in most systems: every threshold in this repository was
-# derived from one build of that binary, and a tag that quietly repointed would move all of them
-# without a diff.
-resource "aws_ecr_lifecycle_policy" "reader" {
-  repository = aws_ecr_repository.reader.name
-
-  policy = jsonencode({
-    rules = [{
-      rulePriority = 1
-      description  = "Expire untagged images after a day; a tagged one is referenced by a deploy."
-      selection = {
-        tagStatus   = "untagged"
-        countType   = "sinceImagePushed"
-        countUnit   = "days"
-        countNumber = 1
-      }
-      action = { type = "expire" }
-    }]
-  })
-}
-
 # ── What the functions may do ────────────────────────────────────────────────
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -225,7 +185,12 @@ locals {
   # rather than a tag: a tag identifies what somebody meant, a digest identifies what is
   # actually there, and every threshold in this repository was derived from one specific build
   # of the reader inside it.
-  reader_image = "${aws_ecr_repository.reader.repository_url}@${var.reader_image_digest}"
+  #
+  # The registry itself lives in `foundation`. It has to: the image must exist **before** a
+  # function can be created from it, so a registry created by this layer would have to be
+  # created by the same apply that consumes it. On the first run there is no repository to push
+  # to and the deploy fails at `docker push`, four minutes in, with the approval spent.
+  reader_image = "${var.reader_repository_url}@${var.reader_image_digest}"
 }
 
 resource "aws_lambda_function" "read_tier0" {

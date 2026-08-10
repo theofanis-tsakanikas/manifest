@@ -18,10 +18,10 @@ of it affects an offline run, and each one is otherwise a deploy that fails at m
 
 `--fast` skips the slow members of each group; CI runs the whole thing.
 
-**Green here does not mean deployed.** `docs/DECISIONS.md` 14: nothing has been applied yet, and
-the first apply is a deliberate, separate act. This command answers *"would this be ready?"* and
-that is the only question it is allowed to answer — a green run after a deploy still means the
-same thing, because every check in it is offline by construction.
+**Green here does not mean deployed.** `docs/DECISIONS.md` 14: only `bootstrap` has been
+applied, and each layer above it is a deliberate, separate act. This command answers *"would
+this be ready?"* and that is the only question it is allowed to answer — a green run after a
+deploy still means the same thing, because every check in it is offline by construction.
 
 The list grows one line per phase. A check for a claim that is not yet provable would be a
 green tick over work that has not happened, so there are fewer lines here than there will be.

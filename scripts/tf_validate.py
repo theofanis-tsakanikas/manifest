@@ -13,7 +13,7 @@ acceptable. Where a name has a format AWS enforces, the offline stand-in is a `c
 script, not this.
 
 That distinction is the whole of what `docs/DECISIONS.md` 14 permits this repository to say
-about its estate. Nothing here has been applied, so "validated" has to mean exactly what it
+about its estate. Only `bootstrap` has been applied, so "validated" has to mean exactly what it
 means and no more.
 
 Layers are discovered rather than listed. A hardcoded list goes stale the day a layer is

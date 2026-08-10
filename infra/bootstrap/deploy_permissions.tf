@@ -601,45 +601,67 @@ data "aws_iam_policy_document" "budget_brake" {
   #checkov:skip=CKV_AWS_356:As above — a wildcard Deny is the safe direction of a wildcard.
   #checkov:skip=CKV_AWS_289:Permissions management is deliberately *not* denied: the brake has to be removable by the same identity that can read state, or lifting it needs a second human with console access.
   #checkov:skip=CKV_AWS_290:As above.
+  # **Deny what creates spend, rather than deny everything except a safe list.**
+  #
+  # The first version used `not_actions` with entries like `"*:Describe*"`, and IAM rejects it:
+  # *"Action vendors must not contain wildcards."* A wildcard is allowed in the action, never in
+  # the service that owns it. `terraform validate` cannot see this, checkov cannot see it, and
+  # `tf_validate.py` calls both — it surfaced on the first real apply, at the twelfth resource,
+  # which is exactly where a brake failing to build is most expensive.
+  #
+  # Rewriting it as a deny-list rather than an allow-list turns out to be the better control
+  # anyway, and not only because it is expressible. "Everything except reading and deleting"
+  # required guessing every verb a teardown might need, and a verb missed from that list is a
+  # brake that strands the estate it fired over. Naming what **starts a meter** is a shorter,
+  # checkable list: nothing new can be created, and every path out remains open by default.
   statement {
-    sid       = "DenyEverythingExceptLookingAndDeleting"
+    sid       = "DenyAnythingThatStartsAMeter"
     effect    = "Deny"
     resources = ["*"]
 
-    not_actions = [
-      # Refresh. A destroy plans before it deletes, and a plan that cannot read state reports
-      # every resource as already gone and deletes nothing.
-      "*:Describe*",
-      "*:Get*",
-      "*:List*",
-      "*:BatchGet*",
-      # Removal.
-      "*:Delete*",
-      "*:Remove*",
-      "*:Terminate*",
-      "*:Deregister*",
-      "*:Disassociate*",
-      "*:Revoke*",
-      "*:Detach*",
-      "*:Stop*",
-      "*:Cancel*",
-      "*:Abort*",
-      # The state backend, so the destroy can read and write its own record of what it removed.
-      "s3:PutObject",
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem",
-      "kms:Decrypt",
-      "kms:Encrypt",
-      "kms:GenerateDataKey",
-      "sts:*",
-      # Lifting the brake once the spend is understood. Denying this would mean the only way
-      # back is a console session by somebody with more rights than this role — which is a
-      # human doing IAM by hand under time pressure, at the exact moment that is most costly.
-      "iam:DetachRolePolicy",
-      "iam:AttachRolePolicy",
-      "budgets:*",
+    actions = [
+      # Compute and the network it runs in.
+      "ec2:RunInstances",
+      "ec2:CreateNatGateway",
+      "ec2:CreateVpcEndpoint",
+      "ec2:AllocateAddress",
+      "lambda:CreateFunction",
+      "lambda:PutProvisionedConcurrencyConfig",
+      # The metered readers. The cascade's whole cost argument is that these stay off pages
+      # that do not need them; at the ceiling they stay off every page.
+      "textract:*",
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:Converse",
+      "bedrock:ConverseStream",
+      "bedrock:InvokeDataAutomationAsync",
+      # The two layers that bill by the hour whether or not anything is asked of them.
+      "emr-serverless:CreateApplication",
+      "emr-serverless:StartApplication",
+      "emr-serverless:StartJobRun",
+      "redshift-serverless:CreateWorkgroup",
+      "redshift-serverless:CreateNamespace",
+      "redshift-serverless:UpdateWorkgroup",
+      "aoss:CreateCollection",
+      "sagemaker:CreateEndpoint",
+      "sagemaker:CreateEndpointConfig",
+      "sagemaker:UpdateEndpoint",
+      "sagemaker:CreateTrainingJob",
+      # Storage that grows, and the queue that feeds it.
+      "s3:CreateBucket",
+      "dynamodb:CreateTable",
+      "states:StartExecution",
+      "states:StartSyncExecution",
     ]
   }
+
+  # **What is deliberately still permitted, and why each one matters at this exact moment.**
+  #
+  # Everything not denied above stays allowed, which includes every `Describe`, `Get`, `List`
+  # and `Delete` a teardown needs — without this file having had to enumerate them and get the
+  # list right. It also includes `budgets:*` and the IAM calls that detach this policy, because
+  # a brake whose only removal path is a console session by somebody with more rights is a
+  # human editing IAM by hand under time pressure, at the most expensive possible moment.
 }
 
 resource "aws_iam_policy" "budget_brake" {

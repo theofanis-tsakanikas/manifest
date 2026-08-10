@@ -215,8 +215,10 @@ jobs:
         id: image
         run: |
           set -euo pipefail
-          registry="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          repository="$registry/${{ env.PROJECT }}-reader"
+          # The repository URL comes from what foundation published, not from a string built
+          # here. A constructed URL is a second place the name lives, and the two drift.
+          repository="$TF_VAR_reader_repository_url"
+          registry="${repository%%/*}"
           aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
             | docker login --username AWS --password-stdin "$registry"
           # Tagged by commit, never `latest`. The repository is IMMUTABLE, so a tag cannot be

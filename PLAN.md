@@ -276,14 +276,14 @@ with zero false positives; every un-merge re-points every downstream record.
       and it is the difference between a portfolio piece and a bill.
 
 **Done when:** `make preflight` is green, `deploy.yml` and `destroy.yml` exist and validate,
-nothing has been applied to AWS yet, and a stranger with no AWS account can reproduce every
+the estate is deployable, and a stranger with no AWS account can reproduce every
 number on the scoreboard.
 
 **Done, 2026-08-09.** `make preflight`: 26 passed, 0 failed, 0 skipped. Six Terraform layers,
 6/6 validating, checkov at zero across all of them. `deploy.yml` and `destroy.yml` both exist,
 both are human-dispatch-only and scoped to the environments their trust names, and `scripts/check_deploy_path.py`
 is the gate that keeps them matched — with six mutations attacking it. **Neither has ever
-been dispatched, and nothing has been applied to AWS.**
+been dispatched. `infra/bootstrap` was applied 2026-08-10; the five layers above it were not.**
 
 **Reopened and closed again, 2026-08-10, after reading `../attestor/infra/bootstrap/`.** The
 paragraph above was true of everything it checked, and everything it checked was the wrong

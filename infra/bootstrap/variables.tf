@@ -133,20 +133,28 @@ variable "budget_notification_email" {
   }
 }
 
-variable "monthly_budget_eur" {
+variable "monthly_budget_usd" {
   description = <<-EOT
-    The ceiling at which the deploy role loses its ability to create anything.
+    The ceiling at which the deploy role loses its ability to create anything, **in US dollars**.
 
-    A design constraint, not a forecast. `CLAUDE.md` puts the whole-run ceiling under EUR 150
-    and that figure is a constraint on what may be built, never a result — nothing here has
-    been applied and no euro has been spent.
+    A design constraint, not a forecast. `CLAUDE.md` puts the whole-run ceiling under EUR 150,
+    and that figure is a constraint on what may be built rather than a result.
+
+    **Dollars, because AWS Budgets refuses euro** — *"EUR is not in the supported unit set:
+    [USD]"*, returned by `CreateBudget` on the first real apply. The default here is EUR 150 at
+    **1 EUR = 1.17 USD** (ECB euro reference rate, https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/eurofxref-graph-usd.en.html,
+    read 2026-08-10), rounded **up** to 175: a guard that fires early because the euro moved is
+    a guard somebody raises, and a raised guard is no guard.
+
+    The euro figure is the design ceiling and stays in `CLAUDE.md`. This is the enforceable
+    approximation of it, and the difference is written down rather than quietly absorbed.
   EOT
   type        = number
-  default     = 150
+  default     = 175
 
   validation {
-    condition     = var.monthly_budget_eur > 0 && var.monthly_budget_eur <= 500
-    error_message = "A budget above 500 is not a guard; it is a formality."
+    condition     = var.monthly_budget_usd > 0 && var.monthly_budget_usd <= 600
+    error_message = "A budget above 600 USD is not a guard; it is a formality."
   }
 }
 

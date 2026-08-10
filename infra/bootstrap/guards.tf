@@ -5,13 +5,24 @@
 # transcribed string — and a guard whose target is a hand-typed name is a guard pointed at a
 # name rather than at a role.
 #
-# **Nothing here has ever fired, because nothing has been applied.** `docs/DECISIONS.md` 14.
-
+# **The ceiling is declared in euro and enforced in dollars, and that gap is stated rather than
+# hidden.**
+#
+# AWS Budgets refuses `EUR`: *"EUR is not in the supported unit set: [USD]"*. It surfaced on the
+# first real apply, because `terraform validate` checks that an attribute exists and not that a
+# service will accept its value — a distinction `scripts/tf_validate.py` already warns about in
+# its own docstring, and here is the first time it cost something.
+#
+# So the design ceiling stays what `CLAUDE.md` says it is, in euro, and the *guard* is set in
+# dollars with the conversion written down: a rate, a source and a date, exactly as every other
+# figure in this repository has to carry. The converted number is deliberately generous — a
+# guard that fires early because the euro moved is a guard somebody raises, and a raised guard
+# is no guard.
 resource "aws_budgets_budget" "estate" {
   name         = "${var.project}-estate"
   budget_type  = "COST"
-  limit_amount = tostring(var.monthly_budget_eur)
-  limit_unit   = "EUR"
+  limit_amount = tostring(var.monthly_budget_usd)
+  limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
   # Forecast first. A guard that only fires on actual spend tells you about money already gone.

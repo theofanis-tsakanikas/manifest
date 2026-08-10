@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The deploy path exists, tears itself down, and has never been dispatched.
+"""The deploy path exists, tears itself down, and has not been dispatched.
 
 Three checks, and the third is the one that would be embarrassing to get wrong.
 
@@ -708,7 +708,7 @@ def main() -> int:
         f"deploy-path: {len(applied)} layer(s) applied, all torn down in reverse order, both "
         f"workflows human-dispatch only, and every job scoped to the environment the OIDC trust "
         f"names. Required reviewers are OFF under a dated acceptance that expires "
-        f"({_approval_expiry()}). **Neither workflow has ever been dispatched.**"
+        f"({_approval_expiry()}). **Neither workflow has been dispatched.**"
     )
     return 0
 
