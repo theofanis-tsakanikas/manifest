@@ -347,6 +347,11 @@ data "aws_iam_policy_document" "deploy_identity" {
         "glue.amazonaws.com",
         "lambda.amazonaws.com",
         "sagemaker.amazonaws.com",
+        # EventBridge passes the trigger role when a rule targets a state machine. Absent, the
+        # rule and its role both exist, the target does not, and a document landing in the
+        # bucket causes nothing — the exact failure the trigger was written to close, reached
+        # this time through a missing entry in this list rather than through a missing rule.
+        "events.amazonaws.com",
       ]
     }
   }
