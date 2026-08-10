@@ -319,9 +319,13 @@ gate was looking at:
 Each is now refused by a gate with a mutation attacking it, and the run above is the run after
 the fixes. **Still not dispatched, still nothing applied to AWS.**
 
-Deliberately not done, and named rather than quietly dropped: the dbt marts over Redshift (the
-warehouse and its role are written, the four questions are named in decision 6, and the SQL is a
-separate increment).
+**Nothing is deliberately left undone at this point in the plan.** The last entry on that list —
+the dbt marts over Redshift — was already inaccurate when it was written: `analytics/` carries all
+four marts decision 6 names, as SQL, with `scripts/check_marts.py` refusing any column the
+warehouse schema does not declare. What is absent is dbt *the tool*, and that is a packaging
+choice rather than a missing capability: the four questions are answered, the SQL is checked
+against a declared schema offline, and adding a transformation framework on top would be a
+dependency in exchange for a directory layout.
 
 **Two of the three came back, 2026-08-10**, when decision 14's revision made it clear the estate
 is meant to run:

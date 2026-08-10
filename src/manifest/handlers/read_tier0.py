@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Any
 
 from manifest.extraction.local import reader as local_reader
+from manifest.handlers.emit import emit
+from manifest.observability.telemetry import extraction_span
 
 #: The language data this scenario needs, checked on every cold start rather than assumed.
 #:
@@ -208,6 +210,23 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     )
 
     scores = [word.confidence for page in reading.pages for word in page.words]
+
+    # The span carries ids, counts and a tier — never a value read off the page. The pure module
+    # refuses the attributes that would smuggle one in; this is where the refusal gets exercised.
+    emit(
+        extraction_span(
+            trace_id=reading.fingerprint()[:32],
+            span_id=f"read-{reading.fingerprint()[:16]}",
+            document_version=reading.fingerprint(),
+            document_type=request.document_type,
+            reader_tier=0,
+            language=request.language,
+            fields_extracted=0,
+            fields_published=0,
+            fields_queued=0,
+        )
+    )
+
     return {
         "document_id": reading.source_id,
         "reading": {"bucket": records, "key": key},

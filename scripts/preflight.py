@@ -99,6 +99,41 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "claim 1 · the loop",
+        [PYTHON, "-m", "evals.feedback"],
+        "A reviewer's correction enters the derivation and a field can leave always-review as N "
+        "grows — with the error budget untouched. Rubber-stamped and hurried decisions are "
+        "excluded and counted, because an approval from somebody who was not looking lowers the "
+        "observed error rate on evidence nobody generated.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "what the discipline buys",
+        [PYTHON, "-m", "evals.baseline"],
+        "The derived policy against publishing everything and against a hand-picked 0.85 — "
+        "wrong-rate and queue volume, both, for all three. Without this the repository proves "
+        "its controls refuse correctly and never says what that is worth.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "production drift",
+        [PYTHON, "-m", "evals.drift"],
+        "The declared envelope applied to arriving traffic, firing in both directions. A reader "
+        "suddenly confident is the more alarming direction and the one nobody watches.",
+        slow=True,
+    ),
+    Check(
+        "consistency",
+        "the external corpus is licensed",
+        [PYTHON, "scripts/check_external_corpus.py"],
+        "An out-of-distribution set may only be scored if its terms were read and written down "
+        "first. The temptation here is to score and read afterwards, and that is the order this "
+        "refuses.",
+    ),
+    Check(
+        "correctness",
         "core purity",
         [PYTHON, "scripts/check_core_is_pure.py"],
         "The core imports no cloud SDK, reads no clock and names no engine. It is the reason "

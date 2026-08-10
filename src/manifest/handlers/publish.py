@@ -37,6 +37,8 @@ from manifest.core.document import Line, Page, ReadDocument, ReaderIdentity, Wor
 from manifest.core.fields import Extracted, extract_from_pages
 from manifest.core.geometry import Box, PageSize
 from manifest.core.review import Reason, reason_for
+from manifest.handlers.emit import emit
+from manifest.observability.telemetry import extraction_span
 
 
 class HandlerError(RuntimeError):
@@ -117,6 +119,27 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
             _outcome(field.name, extract_from_pages(reading.pages, field.name, anchor), thresholds)
         )
 
+    published = sum(1 for outcome in outcomes if outcome.publishable)
+    queued = sum(1 for outcome in outcomes if outcome.queued_because is not None)
+
+    # `fields_published` against `fields_queued` is claim 5's queue load per document — the
+    # number that turns "abstention is the safe state" into something an operator can watch
+    # rather than a sentence in a doctrine.
+    emit(
+        extraction_span(
+            trace_id=reading.fingerprint()[:32],
+            span_id=f"publish-{reading.fingerprint()[:16]}",
+            parent=f"read-{reading.fingerprint()[:16]}",
+            document_version=reading.fingerprint(),
+            document_type=document_type,
+            reader_tier=0,
+            language=language,
+            fields_extracted=len(outcomes),
+            fields_published=published,
+            fields_queued=queued,
+        )
+    )
+
     return {
         "document_id": reading.source_id,
         "fingerprint": reading.fingerprint(),
@@ -140,8 +163,8 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         # Counted here so the next state does not have to, and so a document where *everything*
         # is queued is visible as one number rather than as a list somebody has to scan. A
         # pipeline quietly queueing 100% is the shape claim 5 exists to detect.
-        "publishable_count": sum(1 for outcome in outcomes if outcome.publishable),
-        "queued_count": sum(1 for outcome in outcomes if outcome.queued_because is not None),
+        "publishable_count": published,
+        "queued_count": queued,
     }
 
 

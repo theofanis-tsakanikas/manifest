@@ -79,6 +79,17 @@ Provable **in CI, on a laptop, with no AWS account and no credentials**.
 
 **Claim 1 is the one that separates this from a demo. Claim 5 is the one nobody builds.**
 
+**And claim 1 is a loop, not a photograph.** A reviewer's correction is the highest-quality label
+this system will ever see — a human looked at the page and said what it said — and
+`src/manifest/core/feedback.py` turns it into an observation so that a field can *leave*
+always-review as N grows. The rule that keeps it honest is one arrow that does not exist:
+corrections move **N**, never an error budget. A budget that relaxed under queue pressure would
+be ADR-0001's forbidden move wearing a feedback loop, and `gate-proof` plants exactly that.
+
+An approval from a reviewer who agrees with everything is **not** evidence and is excluded and
+counted, because admitting it lowers the observed error rate on evidence nobody produced by
+looking at anything. That is doctrine rule 2 with a number attached.
+
 `make gate-proof` breaks each gate on purpose and requires the *named* gate to refuse it, for
 the right reason. Attestor's three rules apply: green first; a non-zero exit is not evidence;
 a mutation whose target has moved is STALE, not passed.
@@ -175,6 +186,15 @@ every threshold, per field, old against new, with N** — and refuses to overwri
 shift is explicitly accepted and the acceptance recorded. An engine upgrade that improves a
 field is good news; an engine upgrade that moves a threshold nobody looked at is claim 1
 becoming decoration.
+
+**The envelope binds the traffic too, not only the generator.** A document system does not fail
+with an error — it fails when a new scanning supplier ships 150 dpi, confidences drift down,
+abstention doubles, and every gate still passes. Every threshold here is a statement of the form
+*"at this score, on documents like the ones we measured"*; when the documents stop being like
+that, the threshold does not become wrong, it becomes **unsupported**, and goes on publishing.
+`src/manifest/core/drift.py` applies the same declared bands to arriving windows and reports a
+finding — never an adjustment. It fires in both directions: a reader suddenly *confident* has
+usually stopped seeing something, and that is the direction nobody watches.
 
 **The corpus declares its operating envelope, and a generator that leaves it fails the
 build.** The generator decides whether any number in this repository means anything. Degrade

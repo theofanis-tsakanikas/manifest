@@ -584,6 +584,56 @@ def _stop_uploading_the_pages_the_gate_re_reads(root: Path) -> bool:
     )
 
 
+def _let_a_correction_relax_the_error_budget(root: Path) -> bool:
+    """Let review volume reach the error budget.
+
+    The one thing the feedback loop must never do, and the most plausible way it would happen:
+    somebody notices the queue is full, notices that corrections are pouring in, and reasons
+    that a budget which produces this much review must be too tight. That is ADR-0001's
+    forbidden move wearing a feedback loop — the derivation inverted, so that the threshold
+    stops being a consequence of declared harm and becomes a consequence of how the month went.
+
+    The mutation makes `movement()` scale the budget by the evidence it was given.
+    """
+    return _replace(
+        root / "src/manifest/core/feedback.py",
+        "    first = derive(field, list(before), error_budget)",
+        "    if added:\n"
+        "        error_budget = error_budget * Decimal(2)\n"
+        "    first = derive(field, list(before), error_budget)",
+    )
+
+
+def _admit_the_rubber_stamp(root: Path) -> bool:
+    """Count an approval from a reviewer who agrees with everything.
+
+    It reads as generosity — more evidence is better — and it is the one way this module can
+    poison the derivation it exists to feed. Every observation is a `CORRECT` at whatever
+    confidence the model emitted, so the observed error rate falls, the bound tightens, and the
+    threshold drops on evidence nobody produced by looking at anything.
+    """
+    return _replace(
+        root / "src/manifest/core/feedback.py",
+        "            if profile is not None and profile.agreement_rate >= maximum_agreement_rate:",
+        "            if False:",
+    )
+
+
+def _let_the_envelope_widen_to_fit_the_traffic(root: Path) -> bool:
+    """Make the drift band accept whatever arrived.
+
+    The comfortable failure: a detector that fires becomes a detector somebody widens, one band
+    at a time, until it agrees with every window it is shown. A control that cannot disagree
+    with reality is not a control.
+    """
+    holds = "    def holds(self, value: float) -> bool:\n"
+    return _replace(
+        root / "src/manifest/core/drift.py",
+        holds + "        return self.lower <= value <= self.upper",
+        holds + "        return True",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -863,6 +913,33 @@ MUTATIONS: tuple[Mutation, ...] = (
         "The repository's actual state, found last: the gate re-opened pages that lived only "
         "in a temporary directory, so every field would have been uncheckable and every "
         "document queued — while the pipeline reported success.",
+    ),
+    Mutation(
+        "let review volume relax the error budget",
+        "claim 1 · the loop",
+        [sys.executable, "-m", "evals.feedback"],
+        "the error budget changed during derivation",
+        _let_a_correction_relax_the_error_budget,
+        "ADR-0001's forbidden move wearing a feedback loop: a threshold that stops being a "
+        "consequence of declared harm and becomes a consequence of how the month went.",
+    ),
+    Mutation(
+        "count an approval from a reviewer who agrees with everything",
+        "claim 1 · the loop",
+        [sys.executable, "-m", "evals.feedback"],
+        "100% agreement rate contributed",
+        _admit_the_rubber_stamp,
+        "Reads as generosity — more evidence is better — and lowers every threshold on "
+        "evidence nobody produced by looking at anything.",
+    ),
+    Mutation(
+        "widen the drift band until it fits whatever arrived",
+        "production drift",
+        [sys.executable, "-m", "evals.drift"],
+        "the envelope did not fire",
+        _let_the_envelope_widen_to_fit_the_traffic,
+        "A detector that fires becomes a detector somebody widens, one band at a time, until "
+        "it agrees with every window it is shown.",
     ),
 )
 
