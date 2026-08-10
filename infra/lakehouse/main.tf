@@ -103,8 +103,17 @@ resource "aws_glue_catalog_table" "document_version" {
   database_name = aws_glue_catalog_database.records.name
   table_type    = "EXTERNAL_TABLE"
 
+  # **No `table_type` here.** `CreateTable` returned *"Cannot use reserved parameters table_type
+  # or metadata_location while creating an iceberg table"*.
+  #
+  # `open_table_format_input` below is the declaration that this is Iceberg, and Glue writes
+  # `table_type` and `metadata_location` itself as a result. Setting either by hand is not a
+  # duplicate that gets overwritten — it is refused outright, because the two would be two
+  # sources of truth for the same fact and Glue declines to pick between them.
+  #
+  # The second Iceberg-specific refusal in a row, and the same lesson both times: an Iceberg
+  # table is described to the catalogue in one place, not two. The first was partitioning.
   parameters = {
-    "table_type"     = "ICEBERG"
     "format"         = "parquet"
     "classification" = "parquet"
   }
