@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import re
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -101,6 +102,48 @@ def _describe(manifest: RecordingManifest) -> str:
     )
 
 
+def _reader_is_the_deployed_one() -> str:
+    """Refuse to record with a reader the estate cannot run. Returns the complaint, or "".
+
+    **The trap this closes, which this repository already fell into once.** The committed
+    recording was made here, on a laptop, by Homebrew's `tesseract 5.5.2`. The estate reads with
+    the image built from `Dockerfile`, which is Debian, and no Linux distribution ships 5.5.2 —
+    so the reader that produced every threshold in this repository was one the estate could
+    never run. It survived a green deploy and surfaced as an IAM error on the first real
+    document, because the extraction handler looks its thresholds up by the reader's exact
+    identity and there was no artefact for the reader that was actually reading.
+
+    Running this target on a laptop is how that happened, and running it again is how it would
+    come back — so it refuses when the local binary is not the one `Dockerfile` declares. The
+    ceremony lives in `.github/workflows/record.yml` now, which builds that image and records
+    inside it.
+
+    No escape hatch, and none is needed: run this inside the image and the two agree, which is
+    the only arrangement where the recording describes the reader the estate has.
+    """
+    declaration = re.search(
+        r'^ARG\s+EXPECTED_READER_VERSION=(?:"([^"]*)"|(\S+))\s*$',
+        (ROOT / "Dockerfile").read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    if declaration is None:
+        return (
+            "Dockerfile declares no EXPECTED_READER_VERSION, so there is nothing to record against."
+        )
+    expected = (declaration.group(1) or declaration.group(2)).strip()
+    actual = local.version().binary
+    if actual == expected:
+        return ""
+    return (
+        f"this machine's reader is '{actual}' and the estate's image carries '{expected}'.\n\n"
+        f"A recording made here would derive every threshold in this repository from a binary\n"
+        f"the deployed pipeline cannot run — which is exactly what happened once already, and it\n"
+        f"survived a green deploy before surfacing as a missing threshold artefact.\n\n"
+        f"Dispatch .github/workflows/record.yml instead. It builds the image and records inside\n"
+        f"it, so the reader in the recording is the reader in the estate, by construction."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept", action="store_true", help="Overwrite the existing recording.")
@@ -117,6 +160,11 @@ def main() -> int:
             "runs, so claims 1 and 2 cannot be derived without it — see ADR-0005",
             file=sys.stderr,
         )
+        return 1
+
+    problem = _reader_is_the_deployed_one()
+    if problem:
+        print(problem, file=sys.stderr)
         return 1
 
     jobs = _jobs(arguments.limit or None)
