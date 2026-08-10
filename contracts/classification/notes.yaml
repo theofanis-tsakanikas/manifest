@@ -1,0 +1,108 @@
+# The explanatory text a classification proposal must be able to point at.
+#
+# **These notes are AUTHORED, and that word is doing the same work it does in
+# `tests/extraction/fixtures/AUTHORED.md`.**
+#
+# The real article here is the WCO's *Explanatory Notes to the Harmonised System* and the
+# European Commission's *Explanatory Notes to the Combined Nomenclature*. The first is a
+# copyrighted publication sold by the WCO. The second is published in the Official Journal and
+# is reusable under the Commission's own reuse decision — and vendoring it is a licence question
+# that gets the same treatment as `corpus/external/LICENCE.md`: read the terms, quote them, date
+# them, *then* commit. That has not been done, so this file does not pretend it has.
+#
+# What is here is text written for the twelve headings this corpus's goods fall under, saying
+# the thing the real notes say: what distinguishes this heading from the one beside it. It is
+# enough to exercise the grounding gate and it is not a tariff reference. Nobody should classify
+# anything against this file.
+#
+# **Why the gate does not care.** `src/manifest/classification/grounding.py` refuses a proposal
+# whose distinguishing terms are absent from the retrieved context. That refusal is the same
+# whether the corpus of notes is authored or official — swapping in the real Combined
+# Nomenclature changes what gets retrieved and changes nothing about the control. The gate is
+# the claim; the notes are its input.
+version: 1
+
+#: How many of a heading's distinguishing terms the retrieved context must carry before a
+#: proposal may go forward. Declared here rather than defaulted in code — it is the strength of
+#: the gate, and a strength chosen in a module is a policy nobody reviews.
+#:
+#: Two, not one. One term is satisfied by a single shared noun — "ceramic", "cotton" — which
+#: every sibling heading also carries; the pairs this system must abstain on differ by exactly
+#: one qualifier, and a gate passing on one term would pass both members of every contested
+#: pair and prove nothing.
+minimum_grounding_terms: 2
+
+#: How many entries the retriever surfaces. Small on purpose: a context wide enough to contain
+#: every heading grounds every proposal, and a gate that always passes is decoration.
+retrieval_limit: 4
+
+notes:
+  - code: "690722"
+    note: >-
+      Covers tiles whose face has been coated with a vitreous glaze fired to a glassy,
+      impermeable finish. The glaze is the distinguishing feature and it is visible on the
+      surface; where a commercial description is silent on the finish, this heading and 690721
+      cannot be told apart from the description alone.
+
+  - code: "690721"
+    note: >-
+      Covers tiles left with a porous, matt biscuit surface with no vitreous coating applied.
+      Absence of glaze is the distinguishing feature. Terracotta and quarry tiles fall here.
+
+  - code: "150910"
+    note: >-
+      Oil obtained from the fruit of the olive tree solely by mechanical or physical means,
+      under conditions that do not alter the oil. Virgin means unrefined: no solvent extraction,
+      no re-esterification, no blending with oil obtained by other processes.
+
+  - code: "150990"
+    note: >-
+      Olive oil that has undergone refining — neutralisation, bleaching or deodorisation — or
+      blends of refined with virgin. The processing step is the distinguishing feature and it
+      appears on no commercial invoice.
+
+  - code: "630221"
+    note: >-
+      Bed linen of cotton bearing a printed design applied to the woven fabric after weaving.
+      Printing is the distinguishing feature; a woven-in pattern is not printing.
+
+  - code: "630231"
+    note: >-
+      Bed linen of cotton without printing, including plain, dyed, and jacquard woven designs
+      where the pattern is formed in the weave rather than applied to it.
+
+  - code: "761010"
+    note: >-
+      Aluminium structures for closing an opening: doors, windows, their frames, thresholds and
+      the fittings presented with them. Distinguished from other aluminium structures by
+      function — a closure for an aperture rather than a load-bearing member.
+
+  - code: "851610"
+    note: >-
+      Electric appliances that heat water: instantaneous heaters that warm water as it flows,
+      storage heaters holding a heated reservoir, and immersion heaters designed to be placed
+      into a vessel of water.
+
+  - code: "681591"
+    note: >-
+      Worked stone containing magnesite, magnesium oxide, dolomite or chromite, chiefly
+      refractory pieces for furnace and kiln linings. The mineral content is the distinguishing
+      feature, not the shape.
+
+  - code: "680221"
+    note: >-
+      Marble, travertine and alabaster that has been worked beyond simple squaring — sawn,
+      polished, moulded or otherwise dressed — for monumental or building purposes. The stone
+      species and the working are both distinguishing.
+
+  - code: "630533"
+    note: >-
+      Sacks and bags used for packing, made of woven strip or the like of polyethylene or
+      polypropylene. Distinguished by the material being extruded strip rather than a spun
+      textile yarn.
+
+  - code: "731210"
+    note: >-
+      Stranded wire, ropes and cables assembled from iron or steel wires and not electrically
+      insulated. Insulation is the distinguishing absence: an insulated cable is an electrical
+      article and falls elsewhere.

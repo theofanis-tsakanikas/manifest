@@ -1,0 +1,17 @@
+{
+ "_note": "Derived from an externally licensed document set \u2014 see corpus/external/LICENCE.md for the set, its licence, and the date its terms were read. No image from that set is redistributed here. These are confidences and correctness flags with no text in them.",
+ "abstained": 1142,
+ "comparison_rules": [
+  "unicode",
+  "whitespace",
+  "case",
+  "separators"
+ ],
+ "correct": 813,
+ "observations": 1214,
+ "pages": 100,
+ "reader_name": "reference-ocr",
+ "reader_version": "tesseract 5.5.2",
+ "skipped": 0,
+ "source": "https://huggingface.co/api/datasets/naver-clova-ix/cord-v2/parquet/default/test/0.parquet"
+}

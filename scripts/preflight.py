@@ -59,6 +59,9 @@ RUFF = _tool("ruff")
 #: it another way still runs the scan.
 CHECKOV = str(_CV) if (_CV := ROOT / ".venv-checkov" / "bin" / "checkov").exists() else "checkov"
 
+#: Which paragraph of the README carries the service line: title, tagline, services.
+SUBTITLE_PARAGRAPH = 2
+
 LINT_PATHS = ["src", "tests", "scripts", "corpus", "evals", "pipelines"]
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
@@ -134,6 +137,23 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "the out-of-distribution column",
+        [PYTHON, "-m", "evals.external"],
+        "Whether a confidence means the same thing on paper this repository did not design. It "
+        "is the only answer to 'did you tune the generator until the claims passed?' that does "
+        "not come from the generator's own author.",
+        slow=True,
+    ),
+    Check(
+        "correctness",
+        "grounded classification",
+        [PYTHON, "-m", "evals.grounding"],
+        "A tariff proposal that cannot point at the text it came from does not go forward — "
+        "claim 2's argument applied to text instead of pixels. Contested pairs still abstain "
+        "with both members well supported, which is the trap retrieval creates.",
+    ),
+    Check(
+        "correctness",
         "core purity",
         [PYTHON, "scripts/check_core_is_pure.py"],
         "The core imports no cloud SDK, reads no clock and names no engine. It is the reason "
@@ -163,16 +183,6 @@ CHECKS: list[Check] = [
         "The gate passes honest records and refuses corrupted ones, by the right layer. A "
         "corrupted box that verifies is claim 2 reporting green over a record nothing checked.",
         slow=True,
-    ),
-    Check(
-        "correctness",
-        "claim 2 · provenance",
-        [PYTHON, "-m", "evals.provenance", "--sample", "40"],
-        "The recorded box is checked against the page: ink where the record says a value is, "
-        "and a different recognition path reading the same value from that crop. Needs the "
-        "rendered corpus, which is why CI cannot run it and this can.",
-        slow=True,
-        needs=str(ROOT / "corpus" / "rendered"),
     ),
     Check(
         "correctness",
@@ -383,6 +393,9 @@ def _scoreboard_figures(report: Report) -> dict[str, str]:
     figures: dict[str, str] = {}
 
     for result in report.results:
+        found = re.search(r"(\d+) passed[ ,]", result.output)
+        if found and result.check.name == "test suite":
+            figures["tests"] = f"{found.group(1)} passing"
         found = re.search(r"gate-proof: (\d+) refused, (\d+) accepted, (\d+) stale", result.output)
         if found:
             figures["gate-proof"] = (
@@ -425,21 +438,95 @@ def check_the_scoreboard(report: Report) -> Result:
     if "gate-proof" not in figures or "checkov" not in figures:
         return Result(check, "skip", 0.0, "gate-proof and checkov did not run (--fast)")
 
+    problems: list[str] = []
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    stale = [
+
+    # **The number has to be right everywhere it appears, not somewhere.**
+    #
+    # The first version of this check verified three figures — gate-proof, checkov, the check
+    # count — and reported green over four others: the test count in two places, disagreeing
+    # with each other and with reality by fifty-nine; a "breaks nineteen controls" left two
+    # lines under a table saying thirty-three.
+    #
+    # A check scoped to three figures, described as "the scoreboard is verified", is worse than
+    # no check: it is the drift this file exists to catch, wearing the badge of the thing that
+    # was supposed to catch it. So every count the README states is now extracted and required
+    # to match, wherever it is written.
+    counted = {
+        "tests": re.findall(r"\*\*(\d+) passing\*\*|# (\d+) tests", readme),
+        "gate-proof mutations": re.findall(
+            r"\*\*(\d+) refused|break (\d+) controls|breaks (\d+) controls", readme
+        ),
+    }
+    for name, matches in counted.items():
+        spoken = {value for group in matches for value in group if value}
+        if len(spoken) > 1:
+            problems.append(
+                f"README states the {name} count as {sorted(spoken, key=int)} in different "
+                f"places. Two numbers for one fact is worse than one stale number: nobody can "
+                f"tell which is current, so nobody trusts either"
+            )
+
+    problems += [
         f"README does not say `{value}` ({name}). It is what this run produced"
         for name, value in figures.items()
         if value not in readme
     ]
+
+    # A service in the subtitle that the estate does not use is decision 6's CV keyword, and the
+    # subtitle is the worst place in the repository for one: it is the first line a reader sees.
+    # `Comprehend` sat there for a day after being deliberately removed everywhere else —
+    # including from the core purity gate's list of forbidden names.
+    # The italic service line, which is the third paragraph: title, tagline, services.
+    paragraphs = readme.split("\n\n")
+    subtitle = paragraphs[SUBTITLE_PARAGRAPH] if len(paragraphs) > SUBTITLE_PARAGRAPH else ""
+    # **Comments stripped first.** Without this the check read `comprehend:` out of the comment
+    # that records its removal and reported the service as present — a gate finding a service in
+    # the prose explaining that the service is gone. What the subtitle must match is what the
+    # estate *does*, and a comment does nothing.
+    estate = "\n".join(
+        "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        )
+        for path in sorted(ROOT.glob("infra/*/*.tf"))
+    ).lower()
+    for service, token in {
+        "Comprehend": "comprehend:",
+        "OpenSearch": "opensearchserverless",
+        "SageMaker": "sagemaker",
+        "Redshift": "redshiftserverless",
+        "EMR Serverless": "emrserverless",
+        "Lambda": "aws_lambda_function",
+        "Textract": "textract:",
+        "Bedrock": "bedrock:",
+    }.items():
+        named = service.lower() in subtitle.lower()
+        present = token in estate
+        if named and not present:
+            problems.append(
+                f"the README subtitle advertises {service} and no layer uses it. Decision 6: a "
+                f"service named where it cannot be pointed at its work is a CV keyword, and "
+                f"this is the first line anybody reads"
+            )
+        if present and not named:
+            problems.append(
+                f"{service} is in the estate and absent from the README subtitle. The "
+                f"under-statement is the same defect as the over-statement: the line does not "
+                f"describe the system"
+            )
     # A count stated twice with two different values is worse than a stale one: it means nobody
     # can tell which is current.
     counts = set(re.findall(r"\*\*(\d+) checks?\*\*|all (\d+)[:,]| all (\d+) pass", readme))
     spoken = {n for group in counts for n in group if n}
     if len(spoken) > 1:
-        stale.append(f"README states the preflight count as {sorted(spoken)} in different places")
+        problems.append(
+            f"README states the preflight count as {sorted(spoken)} in different places"
+        )
 
-    if stale:
-        return Result(check, "fail", 0.0, "\n".join(stale))
+    if problems:
+        return Result(check, "fail", 0.0, "\n".join(problems))
     return Result(check, "pass", 0.0, ", ".join(f"{k}: {v}" for k, v in figures.items()))
 
 

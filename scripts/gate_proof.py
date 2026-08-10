@@ -634,6 +634,35 @@ def _let_the_envelope_widen_to_fit_the_traffic(root: Path) -> bool:
     )
 
 
+def _ground_a_proposal_on_the_heading_code(root: Path) -> bool:
+    """Match the heading code against the context instead of the terms that distinguish it.
+
+    The plausible version, and it reads as a simplification: the code *is* in the note, so
+    checking for it is faster and always passes. That is the problem — it always passes. A code
+    is a label; matching one proves the note exists, not that anything in it supports choosing
+    this heading over the one beside it.
+    """
+    return _replace(
+        root / "src/manifest/classification/grounding.py",
+        "    found = tuple(term for term in required if term in haystack)",
+        "    found = tuple(required) if code in haystack else ()",
+    )
+
+
+def _retrieve_everything_regardless_of_overlap(root: Path) -> bool:
+    """Return every entry, including those sharing not one informative term.
+
+    Reads as generosity — a wider context grounds more proposals — and it is how a grounding
+    gate becomes decoration: a context containing the whole nomenclature grounds every heading
+    in it, so the check passes for any code at all.
+    """
+    return _replace(
+        root / "src/manifest/classification/grounding.py",
+        "    return tuple(entry for entry in scored[:limit] if entry.score > 0)",
+        "    return tuple(scored)",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -940,6 +969,24 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_the_envelope_widen_to_fit_the_traffic,
         "A detector that fires becomes a detector somebody widens, one band at a time, until "
         "it agrees with every window it is shown.",
+    ),
+    Mutation(
+        "ground a proposal on its heading code instead of its distinguishing terms",
+        "grounded classification",
+        [sys.executable, "-m", "evals.grounding"],
+        "is the right heading and the grounding gate refused it",
+        _ground_a_proposal_on_the_heading_code,
+        "Reads as a simplification and always passes: a code is a label, and matching one "
+        "proves the note exists rather than that anything in it supports the choice.",
+    ),
+    Mutation(
+        "retrieve every entry regardless of overlap",
+        "grounded classification",
+        [sys.executable, "-m", "evals.grounding"],
+        "retriever that returns something for everything",
+        _retrieve_everything_regardless_of_overlap,
+        "Reads as generosity. A context containing the whole nomenclature grounds every "
+        "heading in it, which is a gate that has stopped checking anything.",
     ),
 )
 

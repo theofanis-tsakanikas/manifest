@@ -2,15 +2,15 @@
 
 **A document intelligence platform for cross-border trade. Every field traces to a pixel.**
 
-*AWS Textract · Bedrock · Comprehend · Step Functions · EMR Serverless · Iceberg on S3 ·
-Athena · Redshift Serverless · Terraform*
+*AWS Textract · Bedrock · Bedrock Data Automation · Lambda · Step Functions · EMR Serverless ·
+Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageMaker · Terraform*
 
 > **Manifest** — the trade document, and the word for *made evident*. Both meanings are the
 > project.
 
 ---
 
-> **Status: ready to deploy, not yet deployed.** `make preflight` runs **31 checks** — every claim
+> **Status: ready to deploy, not yet deployed.** `make preflight` runs **32 checks** — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas across
 > six layers, checkov at zero findings, and a check that the figures on this page are the ones
 > the run produced. All of them pass. **Nothing has been created in AWS.**
@@ -66,14 +66,16 @@ command in this repository, not a summary of one.
 | **claim 1 · the loop** | review evidence moves **4 fields out of always-review** — and the error budget is untouched in every one. A 100% agreement rate contributes **0 of 500** observations; two seconds on task contributes **0 of 100** |
 | **what it buys** | publishing everything: **19.11% wrong**, 34 declared budgets missed. A hand-picked 0.85: **4.56%**, 25 missed. Derived: **0.41%**, **none missed** — at 19,606 items queued. The queue cost is printed beside the wrong-rate, always |
 | **production drift** | the declared envelope fires on a −0.25 shift **and** on a +0.25 one; a 9-document window returns **undecided**, never *inside* |
-| `make gate-proof` | **33 refused, 0 accepted, 0 stale** |
+| **out of distribution** | on 100 pages of **real photographed paper** nobody here designed (CC BY 4.0, `corpus/external/LICENCE.md`): ECE **0.0592** against **0.0371** on the generated corpus. The reader's confidences transport — which is the only answer to *"did you tune the generator until the claims passed?"* that does not come from the generator's author |
+| **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
+| `make gate-proof` | **35 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
 | `checkov` | **517 passed, 0 findings** across six layers; 123 deliberate exceptions, each with a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **236 passing**, offline, credential-free |
+| test suite | **295 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
-does; `gate-proof` breaks nineteen controls on purpose and requires the **named** gate to refuse
+does; `gate-proof` breaks 35 controls on purpose and requires the **named** gate to refuse
 each one, for the right reason.
 
 ---
@@ -222,9 +224,9 @@ one function, and keeping it that size is what stops the untested region growing
 
 ```bash
 make install       # venv + editable install
-make test          # 189 tests, offline, under a minute
+make test          # 295 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 33 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 35 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)

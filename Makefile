@@ -64,6 +64,13 @@ corpus-check: ## The generator reproduces the committed ground truth, exactly
 # The ceremony, not a command. It is the one act that can move every threshold in this
 # repository at once, so it refuses to overwrite without ACCEPT=1 and prints what changed
 # before it writes. See ADR-0005 and docs/DECISIONS.md 19.
+.PHONY: external-record
+external-record: ## Read the licensed external set and record how the reader's confidence behaved
+	@echo "Fetches an externally licensed document set. corpus/external/LICENCE.md carries the"
+	@echo "licence, the source and the date its terms were read. No image is stored here — the"
+	@echo "recording is confidences and correctness flags, with no text in it."
+	$(PY) scripts/external_record.py
+
 .PHONY: ocr-record
 ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to overwrite)
 	$(PY) scripts/ocr_record.py $(if $(ACCEPT),--accept,)
@@ -105,10 +112,6 @@ envelope: ## The generator stays inside its declared operating range (decision 2
 .PHONY: claim-1
 claim-1: ## CLAIM 1 — no field publishes below a threshold derived from its error budget
 	$(PY) -m evals.calibration
-
-.PHONY: claim-2
-claim-2: ## CLAIM 2 — every published field traces to a box, checked against the page
-	$(PY) -m evals.provenance
 
 .PHONY: claim-2
 claim-2: ## CLAIM 2 — every published field traces to a box, checked against the page

@@ -52,7 +52,20 @@ def main() -> int:
         path for path in EXTERNAL.rglob("*") if path.is_file() and path.suffix.lower() in DOCUMENTS
     )
 
-    if not documents:
+    # **A recording counts as the set being present.**
+    #
+    # This repository deliberately redistributes no image: `recordings/external/` holds
+    # confidences and correctness flags, and nothing else. The first version of this check
+    # looked only for image files, so the state that actually exists here — a recording derived
+    # from somebody's data, with no image beside it — read as "no set present" and passed
+    # without ever looking at the licence.
+    #
+    # That is the same shape as every other finding in this repository: a check scoped to what
+    # was expected rather than to what is there. What triggers the obligation is having used the
+    # data, not having stored it.
+    recording = (ROOT / "recordings" / "external").exists()
+
+    if not documents and not recording:
         print(
             "external-corpus: no out-of-distribution set present.\n"
             "  This is a stated gap, not a failure — `corpus/external/README.md` records what a\n"
@@ -64,9 +77,13 @@ def main() -> int:
         return 0
 
     if not LICENCE.exists():
+        present = (
+            f"{len(documents)} document(s) are present"
+            if documents
+            else "a recording derived from an external set exists"
+        )
         print(
-            f"external-corpus: {len(documents)} document(s) are present and {LICENCE.name} is "
-            f"not.\n\n"
+            f"external-corpus: {present} and {LICENCE.name} is not.\n\n"
             f"  Refused. Decision 13's rule is to verify the licence *before* committing "
             f"anything, and the failure mode it guards is specific: an out-of-distribution "
             f"column is worth a lot to this project, and the fastest way to get one is to "
