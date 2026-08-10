@@ -83,28 +83,48 @@ data "aws_iam_policy_document" "deploy_estate" {
     resources = ["*"]
   }
 
-  #checkov:skip=CKV_AWS_111:Modification and deletion are scoped by ResourceTag below, which is the boundary the API supports for these actions.
+  # **Configuration is unconditioned; deletion is tag-scoped.** Both used to sit behind
+  # `aws:ResourceTag`, and the second real deploy was refused `AuthorizeSecurityGroupIngress`
+  # and `AuthorizeSecurityGroupEgress`: those apply to a security group whose tags the provider
+  # writes in a *separate* call, so at the moment of authorising there is nothing to match.
+  #
+  # The same lesson as the create statement above, one layer along — a tag condition is only as
+  # good as the API's tag timing. Deletion keeps it, and that is where it was always earning its
+  # place: deleting something this project does not own is the failure worth a condition, and a
+  # resource being deleted has existed long enough to carry its tags.
+  #checkov:skip=CKV_AWS_111:These apply to resources whose tags the provider writes in a separate call; the boundary is the role's trust, and deletion below is tag-scoped.
   #checkov:skip=CKV_AWS_356:As above.
   statement {
-    sid    = "ModifyWhatThisProjectOwns"
+    sid    = "ConfigureWhatThisProjectCreated"
     effect = "Allow"
     actions = [
       "ec2:ModifyVpcAttribute",
       "ec2:ModifyVpcEndpoint",
       "ec2:ModifySubnetAttribute",
+      "ec2:ModifySecurityGroupRules",
       "ec2:AssociateRouteTable",
       "ec2:DisassociateRouteTable",
       "ec2:AuthorizeSecurityGroupIngress",
       "ec2:AuthorizeSecurityGroupEgress",
       "ec2:RevokeSecurityGroupIngress",
       "ec2:RevokeSecurityGroupEgress",
+      "ec2:DeleteTags",
+    ]
+    resources = ["*"]
+  }
+
+  #checkov:skip=CKV_AWS_111:Deletion is scoped by ResourceTag — the boundary the API supports and the one worth having.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "DeleteOnlyWhatThisProjectOwns"
+    effect = "Allow"
+    actions = [
       "ec2:DeleteVpc",
       "ec2:DeleteSubnet",
       "ec2:DeleteRouteTable",
       "ec2:DeleteVpcEndpoints",
       "ec2:DeleteSecurityGroup",
       "ec2:DeleteFlowLogs",
-      "ec2:DeleteTags",
     ]
     resources = ["*"]
     condition {
@@ -166,6 +186,14 @@ data "aws_iam_policy_document" "deploy_estate" {
       "kms:ScheduleKeyDeletion",
       "kms:DeleteAlias",
       "kms:ListResourceTags",
+      "kms:TagResource",
+      "kms:UntagResource",
+      # A service that encrypts on this key's behalf — flow logs, a log group, a queue — asks
+      # KMS for a grant when it is attached. Without this the *consumer* fails rather than the
+      # key, and the error names the consumer rather than the missing permission.
+      "kms:CreateGrant",
+      "kms:ListGrants",
+      "kms:RevokeGrant",
     ]
     resources = ["arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*"]
     condition {
@@ -221,6 +249,10 @@ data "aws_iam_policy_document" "deploy_estate" {
       "sns:ListTagsForResource",
       "sns:TagResource",
       "sns:UntagResource",
+      # A subscription's attributes are read back on every refresh too, and the refusal names
+      # the subscription rather than the permission.
+      "sns:GetSubscriptionAttributes",
+      "sns:SetSubscriptionAttributes",
     ]
     resources = [
       "arn:aws:sns:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
