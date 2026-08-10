@@ -208,12 +208,19 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
 
     checked = (output.get("provenance") or {}).get("checked") or {}
     per_field = checked.get("fields") or []
-    verdicts = {entry.get("field"): entry.get("verified") for entry in per_field}
+    # **`verdict`, not `verified`.** The gate returns a *word* per field — verified, refused, or
+    # uncheckable — and the last of those is the reason a boolean would not do: a field nothing
+    # could look at has not been verified, and recording it as `false` would merge "we checked
+    # and it is wrong" with "we could not check", which have opposite fixes.
+    verdicts = [entry.get("verdict") for entry in per_field]
+    vocabulary = {"verified", "refused", "uncheckable", "not_applicable"}
     estate.check(
         "4 · the provenance gate ran per field, not per document",
-        len(per_field) > 0 and all(v is not None for v in verdicts.values()),
-        f"{len(per_field)} field verdict(s). One boolean for a whole document is a gate that "
-        f"cannot say which field it refused, and claim 2 is a statement about fields",
+        len(per_field) > 0 and all(v in vocabulary for v in verdicts),
+        f"{len(per_field)} field verdict(s): "
+        + ", ".join(f"{v}×{verdicts.count(v)}" for v in sorted(set(verdicts), key=str))
+        + ". One boolean for a whole document is a gate that cannot say which field it refused, "
+        "and claim 2 is a statement about fields",
     )
 
     fingerprint = outcome.get("fingerprint", "")
@@ -292,7 +299,7 @@ def _check_a_box_against_the_page(estate: Estate, document_id: str, record: dict
     published = [
         entry
         for entry in record.get("fields", [])
-        if entry.get("verified") and entry.get("value") and entry.get("box")
+        if entry.get("verdict") == "verified" and entry.get("value") and entry.get("box")
     ]
     if not published:
         estate.check(
