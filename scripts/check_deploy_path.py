@@ -182,13 +182,132 @@ def _check_permissions_exist() -> list[str]:
         "emr-serverless": "infra/batch",
         "redshift-serverless": "infra/analytics",
         "logs": "every layer writes to a log group",
+        "ssm": "the deploy resolves what bootstrap published",
     }
+    if "iam:CreateServiceLinkedRole" not in grants:
+        return [
+            "the deploy role cannot create a service-linked role. EMR Serverless, Redshift "
+            "Serverless and Athena each create one on first use, and without the grant the "
+            "apply fails as an IAM error in the middle of creating something else"
+        ]
     return [
         f"the deploy role has no {service}: grant, and {why}. A deploy fails on this four "
         f"minutes in, after the environment approval has been given"
         for service, why in sorted(required.items())
         if f'"{service}:' not in grants
     ]
+
+
+def _required_variables(layer: str) -> set[str]:
+    """Variables the layer declares with no default — the ones a run must supply."""
+    variables = ROOT / "infra" / layer / "variables.tf"
+    if not variables.exists():
+        return set()
+    blocks = re.findall(
+        r'variable "([^"]+)" \{(.*?)\n\}', variables.read_text(encoding="utf-8"), re.S
+    )
+    return {name for name, body in blocks if "default" not in body}
+
+
+def _check_every_layer_can_evaluate() -> list[str]:
+    """A required variable nobody supplies is an apply — or a destroy — that stops and waits.
+
+    This is the check that was missing, and the gap it left is the one worth naming: three of
+    the five layers in `destroy.yml` declared a variable with no default, nothing in the
+    workflow supplied it, and everything reported green. `terraform validate` does not ask for
+    variable values, `checkov` reads resources rather than runs, and `tf_validate.py` calls
+    both. So a teardown path that would have halted at the first prompt — with the estate
+    standing and the approval already given — passed three separate gates.
+
+    A destroy that cannot run is worse than no destroy at all, because the repository claims
+    one.
+    """
+    problems: list[str] = []
+
+    for name in ("deploy.yml", "destroy.yml"):
+        workflow = _load(name)
+        for job_name, job in workflow["jobs"].items():
+            steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            layers = set(re.findall(r"terraform -chdir=infra/(\w+)", steps))
+            for layer in sorted(layers):
+                for variable in sorted(_required_variables(layer)):
+                    supplied = (
+                        f"-var '{variable}=" in steps
+                        or f'-var "{variable}=' in steps
+                        or f"TF_VAR_{variable}=" in steps
+                        # Resolved in bulk from a path whose parameter names are the variable
+                        # names — see `infra/foundation/published.tf`.
+                        or (
+                            "get-parameters-by-path" in steps
+                            and variable in _parameters_published_by_layers()
+                        )
+                    )
+                    if not supplied:
+                        problems.append(
+                            f"{name}:{job_name} runs terraform in infra/{layer}, which requires "
+                            f"the variable `{variable}`, and nothing in the job supplies it. The "
+                            f"run stops at a prompt that has no terminal to appear on"
+                        )
+    return problems
+
+
+def _parameters_published_by_layers() -> set[str]:
+    """Names published under `/<project>/<layer>/*` by any layer other than bootstrap."""
+    names: set[str] = set()
+    for published in ROOT.glob("infra/*/published.tf"):
+        if published.parent.name == "bootstrap":
+            continue
+        body = published.read_text(encoding="utf-8")
+        block = re.search(r"published = \{(.*?)\n  \}", body, re.S)
+        if block:
+            names |= set(re.findall(r"^\s*(\w+)\s*=", block.group(1), re.M))
+    return names
+
+
+def _check_resolves_fail_loudly() -> list[str]:
+    """A resolve that finds nothing must stop the job, not continue with an empty value.
+
+    Two shell shapes make a failed read invisible, and both were in these workflows:
+
+    `echo "VAR=$(aws ssm get-parameter ...)"` — the command `set -e` judges is the `echo`, which
+    succeeds. A missing parameter becomes `VAR=`, and the job carries on to
+    `-backend-config="bucket="` four minutes later, with the environment approval spent.
+
+    A `while read` over `get-parameters-by-path` that matches nothing — reading nothing is a
+    successful read. No variable is set, and the run stops at an input prompt that has no
+    terminal to appear on.
+
+    Both are the same failure as a required variable nobody supplies, arriving through a
+    different door, so they are refused in the same place.
+    """
+    problems: list[str] = []
+
+    for name in ("deploy.yml", "destroy.yml"):
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("echo ") and "$(aws ssm get-parameter" in stripped:
+                problems.append(
+                    f"{name} reads a parameter inside an `echo`: {stripped[:70]}... A failed "
+                    f"read is a successful echo, so the value silently becomes empty. Assign it "
+                    f"to a variable first, which is the form `set -e` can see fail"
+                )
+            if stripped.startswith("echo ") and "$(read_param" in stripped and "=$(" in stripped:
+                problems.append(
+                    f"{name} reads a parameter inside an `echo`: {stripped[:70]}... Same reason"
+                )
+
+        for job_name, job in _load(name)["jobs"].items():
+            steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            if "get-parameters-by-path" in steps and "-eq 0" not in steps:
+                problems.append(
+                    f"{name}:{job_name} resolves a whole SSM path and never checks that it "
+                    f"found anything. An empty path is a missing layer, and reading nothing "
+                    f"is a successful read"
+                )
+
+    return problems
 
 
 def main() -> int:
@@ -210,6 +329,8 @@ def main() -> int:
 
     problems.extend(_check_resolution())
     problems.extend(_check_permissions_exist())
+    problems.extend(_check_every_layer_can_evaluate())
+    problems.extend(_check_resolves_fail_loudly())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

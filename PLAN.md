@@ -253,11 +253,45 @@ with zero false positives; every un-merge re-points every downstream record.
 nothing has ever been applied to AWS, and a stranger with no AWS account can reproduce every
 number on the scoreboard.
 
-**Done, 2026-08-09.** `make preflight`: 21 passed, 0 failed, 0 skipped. Six Terraform layers,
+**Done, 2026-08-09.** `make preflight`: 26 passed, 0 failed, 0 skipped. Six Terraform layers,
 6/6 validating, checkov at zero across all of them. `deploy.yml` and `destroy.yml` both exist,
 both are human-dispatch-only behind protected environments, and `scripts/check_deploy_path.py`
-is the gate that keeps them matched — with three mutations attacking it. **Neither has ever
+is the gate that keeps them matched — with six mutations attacking it. **Neither has ever
 been dispatched, and nothing has been applied to AWS.**
+
+**Reopened and closed again, 2026-08-10, after reading `../attestor/infra/bootstrap/`.** The
+paragraph above was true of everything it checked, and everything it checked was the wrong
+half. Seven findings, none of them a bug in a function and every one of them a gap in what a
+gate was looking at:
+
+- **Two of the six layers had no job at all.** A comment said `infra/batch` and
+  `infra/analytics` were "separate dispatches with their own approval". There were no such
+  dispatches. Written, validated and unreachable is not the same as written, validated and not
+  run — and only the second is what this repository claims.
+- **The teardown would have halted at an input prompt**, on four layers, each declaring a
+  variable with no default that nothing supplied. `terraform validate` never asks for a
+  variable's value and checkov reads resources rather than runs, so three gates called it
+  green. A destroy that cannot run is worse than no destroy, because the repository says there
+  is one.
+- **The budget brake stranded the estate it fired over.** It denied `*`, which includes
+  `terraform destroy` — so the spend that tripped it would have carried on, with the only
+  remaining route a human with credentials at a laptop.
+- **OIDC trusted names, not ids.** A repository name can be released and re-registered by
+  somebody else, and a trust scoped to names is one they inherit.
+- **Cross-layer values travelled in a CI artifact.** It existed for exactly one workflow run,
+  so dispatching a single layer found nothing. Now published to `/manifest/foundation/*`, which
+  is Attestor's pattern and its reasoning: not `terraform_remote_state` either, because that
+  gives every consumer read access to the state bucket and turns the blast radius of a bug in
+  the smallest layer into the blast radius of the largest.
+- **A failed parameter read passed for an empty value.** `echo "VAR=$(aws ssm get-parameter …)"`
+  is a successful `echo` when the read fails. `set -e` cannot see it.
+- **The scoreboard had drifted.** `README.md` opens by saying every figure on it is the output
+  of a command here, and nothing checked that. It carried four stale numbers and disagreed with
+  itself about the preflight count. Nobody wrote a lie; a scoreboard drifts by the ordinary act
+  of adding a gate, silently, toward looking more finished than it is.
+
+Each is now refused by a gate with a mutation attacking it, and the run above is the run after
+the fixes. **Still never dispatched, still nothing applied to AWS.**
 
 Deliberately not done, and named rather than quietly dropped: the HS classification *model*
 (the contract declares `hs_code` always-review, which is the property claim 5 is about, and a

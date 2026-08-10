@@ -19,6 +19,12 @@
 # in the account — held by a workflow anybody can trigger a run of.
 
 data "aws_iam_policy_document" "deploy_estate" {
+  # `iam:CreateServiceLinkedRole` on `*`. AWS defines no resource form for it, and the roles it
+  # creates are AWS's own — their trust policy and their permissions are fixed by the service,
+  # not by this account. The alternative to granting it is an apply that fails partway through
+  # creating an EMR application, with the reviewer's approval already spent, on an IAM error
+  # about a role nobody wrote. Documented at the statement rather than only here.
+  #checkov:skip=CKV_AWS_109:The only unconstrained permissions-management action here is iam:CreateServiceLinkedRole, which AWS requires on "*" and which creates roles AWS itself defines. Every other IAM action in this document is scoped to arn:aws:iam::<account>:role/<project>-*.
   # Every statement below is scoped by *tag* where the API supports it and by ARN pattern where
   # it does not. Neither is a perfect boundary and both are better than `Resource: "*"`: a
   # deploy role that can delete a bucket in another project's account is a role whose blast
@@ -237,6 +243,21 @@ data "aws_iam_policy_document" "deploy_estate" {
     ]
   }
 
+  # `iam:CreateServiceLinkedRole` has no resource form — AWS requires `*` — and without it an
+  # apply fails the first time a service needs its own linked role. EMR Serverless, Redshift
+  # Serverless and Athena all do, on first use, and the failure arrives as an IAM error in the
+  # middle of creating something else. Listed alone rather than folded into the statement above
+  # so the wildcard is visible and attributable.
+  #checkov:skip=CKV_AWS_111:iam:CreateServiceLinkedRole has no resource form; AWS requires "*".
+  #checkov:skip=CKV_AWS_356:As above.
+  #checkov:skip=CKV_AWS_107:This is not a credentials-exposing action; it creates a role AWS itself defines and controls.
+  statement {
+    sid       = "ServiceLinkedRoles"
+    effect    = "Allow"
+    actions   = ["iam:CreateServiceLinkedRole"]
+    resources = ["*"]
+  }
+
   statement {
     sid       = "PassRolesOnlyToTheServicesThatRunThem"
     effect    = "Allow"
@@ -377,13 +398,43 @@ data "aws_iam_policy_document" "deploy_estate" {
   # Scoped to this project's bootstrap prefix and nothing wider. A grant on `/manifest/*` would
   # let a compromised deploy read every parameter any later layer ever writes.
   statement {
-    sid    = "ReadWhatBootstrapPublished"
+    sid    = "ReadEveryLayersPublishedReferences"
     effect = "Allow"
     actions = [
       "ssm:GetParameter",
       "ssm:GetParameters",
       "ssm:GetParametersByPath",
+      "ssm:DescribeParameters",
     ]
+    resources = [
+      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"
+    ]
+  }
+
+  # Write, and **not** to the bootstrap prefix. That exclusion is the one meaningful boundary
+  # here: every other prefix is written by this same role applying a layer, so scoping between
+  # them would be theatre. `/bootstrap/*` is different — it is written by a human at a laptop,
+  # and it is what CI resolves its own backend and role from. A deploy that could rewrite it
+  # could point the next deploy at a state bucket of its choosing.
+  statement {
+    sid    = "PublishThisLayersOwnReferences"
+    effect = "Allow"
+    actions = [
+      "ssm:PutParameter",
+      "ssm:DeleteParameter",
+      "ssm:DeleteParameters",
+      "ssm:AddTagsToResource",
+      "ssm:ListTagsForResource",
+    ]
+    resources = [
+      "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/*"
+    ]
+  }
+
+  statement {
+    sid     = "NeverRewriteWhatTheHumanPublished"
+    effect  = "Deny"
+    actions = ["ssm:PutParameter", "ssm:DeleteParameter", "ssm:DeleteParameters"]
     resources = [
       "arn:aws:ssm:*:${data.aws_caller_identity.current.account_id}:parameter/${var.project}/bootstrap/*"
     ]
@@ -404,4 +455,79 @@ resource "aws_iam_role_policy" "deploy_estate" {
   name   = "estate"
   role   = aws_iam_role.deploy.id
   policy = data.aws_iam_policy_document.deploy_estate.json
+}
+
+
+# ── The brake ────────────────────────────────────────────────────────────────
+#
+# Attached to this role by the budget action in `guards.tf` when spend crosses the ceiling.
+# It lives here rather than in `infra/foundation` because it acts on a role this layer owns,
+# and a guard that names its target by a transcribed string is a guard pointed at a name.
+#
+# **It denies creation and permits teardown**, and that asymmetry is the whole design. The
+# first version denied `*`, which is the obvious thing and is worse than useless: a brake that
+# also blocks `terraform destroy` strands every running resource in the estate, so the spend
+# the brake fired over *continues* while the only identity that could stop it has been
+# disarmed. The bill gets bigger because the guard worked.
+#
+# `../attestor/infra/bootstrap/main.tf` keeps `iam`, `sts`, `s3`, `dynamodb` and `budgets`,
+# which is enough to detach the brake and read state and not enough to tear down an EMR
+# application. This goes further: the verbs a `terraform destroy` actually needs — refresh
+# (`Describe`, `Get`, `List`) and removal (`Delete`, `Remove`, `Terminate`, and the rest) —
+# are permitted, and everything that could create or grow anything is denied.
+#
+# IAM cannot express "create" and "delete" as categories, so this is a verb-prefix
+# approximation and it is stated as one. What it gets right is the direction: the failure mode
+# of a too-permissive brake is a resource that could have been deleted and was, and the failure
+# mode of a too-strict one is an estate nobody can turn off.
+data "aws_iam_policy_document" "budget_brake" {
+  #checkov:skip=CKV_AWS_111:It is a Deny. Constraining its resource would narrow what the brake stops, which is the wrong direction for a brake.
+  #checkov:skip=CKV_AWS_356:As above — a wildcard Deny is the safe direction of a wildcard.
+  #checkov:skip=CKV_AWS_289:Permissions management is deliberately *not* denied: the brake has to be removable by the same identity that can read state, or lifting it needs a second human with console access.
+  #checkov:skip=CKV_AWS_290:As above.
+  statement {
+    sid       = "DenyEverythingExceptLookingAndDeleting"
+    effect    = "Deny"
+    resources = ["*"]
+
+    not_actions = [
+      # Refresh. A destroy plans before it deletes, and a plan that cannot read state reports
+      # every resource as already gone and deletes nothing.
+      "*:Describe*",
+      "*:Get*",
+      "*:List*",
+      "*:BatchGet*",
+      # Removal.
+      "*:Delete*",
+      "*:Remove*",
+      "*:Terminate*",
+      "*:Deregister*",
+      "*:Disassociate*",
+      "*:Revoke*",
+      "*:Detach*",
+      "*:Stop*",
+      "*:Cancel*",
+      "*:Abort*",
+      # The state backend, so the destroy can read and write its own record of what it removed.
+      "s3:PutObject",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey",
+      "sts:*",
+      # Lifting the brake once the spend is understood. Denying this would mean the only way
+      # back is a console session by somebody with more rights than this role — which is a
+      # human doing IAM by hand under time pressure, at the exact moment that is most costly.
+      "iam:DetachRolePolicy",
+      "iam:AttachRolePolicy",
+      "budgets:*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "budget_brake" {
+  name        = "${var.project}-budget-stop"
+  description = "Attached to the deploy role by a budget action. Denies creation; permits teardown."
+  policy      = data.aws_iam_policy_document.budget_brake.json
 }

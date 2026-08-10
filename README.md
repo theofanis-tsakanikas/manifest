@@ -10,9 +10,10 @@ Athena · Redshift Serverless · Terraform*
 
 ---
 
-> **Status: ready to deploy, not deployed.** `make preflight` runs **25 checks** — every claim
+> **Status: ready to deploy, not deployed.** `make preflight` runs **26 checks** — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas across
-> six layers, and checkov at zero findings. All 25 pass. **Nothing has been created in AWS.**
+> six layers, checkov at zero findings, and a check that the figures on this page are the ones
+> the run produced. All of them pass. **Nothing has been created in AWS.**
 >
 > There are no screenshots, no wall-clock figures and no euro amounts presented as measured,
 > because none of those exist here. The one cost figure in this repository is labelled
@@ -58,9 +59,9 @@ command in this repository, not a summary of one.
 | **injection** | **0 false positives** on 2,963 documents of ordinary trade prose; 4/4 planted strings recognised; the envelope refuses a forged delimiter rather than escaping it |
 | **line-item totals** | **252/252** deliberately truncated tables caught — 211 by direction, 41 as totals the reader mangled |
 | **classification** | 6/6 contested headings abstain; nothing publishes at any score |
-| `make gate-proof` | **19 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **25 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **370 passed, 0 findings** across six layers; 60 deliberate exceptions, each with a written reason beside the resource |
+| `checkov` | **383 passed, 0 findings** across six layers; 92 deliberate exceptions, each with a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
 | test suite | **236 passing**, offline, credential-free |
 
@@ -214,8 +215,8 @@ one function, and keeping it that size is what stops the untested region growing
 make install       # venv + editable install
 make test          # 189 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 19 controls on purpose; each must be refused, for the right reason
-make preflight     # all 21: correctness, consistency, deployability
+make gate-proof    # break 25 controls on purpose; each must be refused, for the right reason
+make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)
 make ocr-record    # the ceremony — refuses to overwrite without ACCEPT=1

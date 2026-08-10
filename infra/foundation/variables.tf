@@ -26,23 +26,6 @@ variable "expires_at" {
   }
 }
 
-variable "monthly_budget_eur" {
-  description = <<-EOT
-    The budget at which the deploy role is disabled.
-
-    A design ceiling, not a forecast. `CLAUDE.md` puts the whole-run ceiling under EUR 150 and
-    that figure is a constraint on what may be built, never a result — nothing here has been
-    applied and no euro has been spent.
-  EOT
-  type        = number
-  default     = 150
-
-  validation {
-    condition     = var.monthly_budget_eur > 0 && var.monthly_budget_eur <= 500
-    error_message = "A budget above 500 is not a guard; it is a formality."
-  }
-}
-
 variable "budget_notification_email" {
   description = "Where the budget alarm goes. A guard nobody is told about is a guard that fires into a log."
   type        = string
@@ -67,15 +50,3 @@ variable "vpc_cidr" {
   default     = "10.42.0.0/16"
 }
 
-variable "deploy_role_name" {
-  description = <<-EOT
-    The role the budget action disables.
-
-    Named rather than looked up, because this layer must not depend on `bootstrap`'s state.
-    Cross-layer references are outputs to data sources; a remote state read would make one
-    layer's internals another layer's contract, and the two could then not be destroyed
-    separately.
-  EOT
-  type        = string
-  default     = "manifest-deploy"
-}

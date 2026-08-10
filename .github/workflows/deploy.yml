@@ -29,6 +29,13 @@ on:
         description: "ISO date after which the reaper may destroy this estate. No default."
         required: true
         type: string
+      include_expensive_layers:
+        description: >-
+          Also stand up EMR Serverless and the Redshift workgroup. Off by default, and the
+          default is the point: these two are the estate's cost, and an estate that stands them
+          up because a deploy ran is an estate whose bill is decided by a default.
+        type: boolean
+        default: false
       confirm:
         description: 'Type "apply" to confirm. Nothing in this repository has ever been applied.'
         required: true
@@ -97,9 +104,13 @@ jobs:
             aws ssm get-parameter --name "/${{ env.PROJECT }}/bootstrap/$1" \
               --with-decryption --query 'Parameter.Value' --output text
           }
+          # Assigned first, for the reason above: inside an `echo`, a failed read is a
+          # successful command that writes an empty value.
+          TF_STATE_BUCKET=$(read_param state_bucket)
+          BUDGET_EMAIL=$(read_param budget_notification_email)
           {
-            echo "TF_STATE_BUCKET=$(read_param state_bucket)"
-            echo "BUDGET_EMAIL=$(read_param budget_notification_email)"
+            echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
+            echo "BUDGET_EMAIL=$BUDGET_EMAIL"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: init
@@ -111,17 +122,15 @@ jobs:
             -var "budget_notification_email=$BUDGET_EMAIL"
       - name: apply
         run: terraform -chdir=infra/foundation apply -auto-approve tfplan
-      - name: outputs
-        id: out
-        run: terraform -chdir=infra/foundation output -json > foundation.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: foundation-outputs
-          path: foundation.json
 
-  # Every layer below takes foundation's outputs as *variables*. Never a remote state read:
-  # that makes one layer's internals another layer's contract, and the two can then not be
-  # destroyed separately — which is the property `destroy.yml` depends on.
+  # Every layer below takes foundation's references as *variables*, resolved from
+  # `/manifest/foundation/*` — see `infra/foundation/published.tf` for the short, deliberate
+  # list of what a layer offers its neighbours.
+  #
+  # Never a remote state read: that makes one layer's internals another layer's contract, needs
+  # every consumer to hold read access to the state bucket, and turns the blast radius of a bug
+  # in the smallest layer into the blast radius of the largest. The two could then not be
+  # destroyed separately either — which is the property `destroy.yml` depends on.
   extraction:
     name: "apply · extraction"
     needs: foundation
@@ -154,27 +163,46 @@ jobs:
             aws ssm get-parameter --name "/${{ env.PROJECT }}/bootstrap/$1" \
               --with-decryption --query 'Parameter.Value' --output text
           }
+          # Assigned first, for the reason above: inside an `echo`, a failed read is a
+          # successful command that writes an empty value.
+          TF_STATE_BUCKET=$(read_param state_bucket)
+          BUDGET_EMAIL=$(read_param budget_notification_email)
           {
-            echo "TF_STATE_BUCKET=$(read_param state_bucket)"
-            echo "BUDGET_EMAIL=$(read_param budget_notification_email)"
+            echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
+            echo "BUDGET_EMAIL=$BUDGET_EMAIL"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
-      - uses: actions/download-artifact@v4
-        with:
-          name: foundation-outputs
+      - name: resolve what foundation published
+        # From SSM, not from a CI artifact. The artifact existed for exactly one workflow run,
+        # so dispatching this layer on its own found nothing — and `batch` and `analytics` had
+        # no path at all, because no run had ever produced one for them.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
       - name: apply
         run: |
           terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/extraction apply -auto-approve \
-            -var 'expires_at=${{ inputs.expires_at }}' \
-            -var "vpc_id=$(jq -r .vpc_id.value foundation.json)" \
-            -var "private_subnet_ids=$(jq -c .private_subnet_ids.value foundation.json)" \
-            -var "endpoint_security_group_id=$(jq -r .endpoint_security_group_id.value foundation.json)" \
-            -var "data_key_arn=$(jq -r .data_key_arn.value foundation.json)" \
-            -var "logs_key_arn=$(jq -r .logs_key_arn.value foundation.json)" \
-            -var "landing_bucket=$(jq -r .bucket_names.value.landing foundation.json)" \
-            -var "records_bucket=$(jq -r .bucket_names.value.records foundation.json)" \
-            -var "evidence_bucket=$(jq -r .bucket_names.value.evidence foundation.json)"
+            -var 'expires_at=${{ inputs.expires_at }}'
 
   lakehouse:
     name: "apply · lakehouse"
@@ -208,26 +236,169 @@ jobs:
             aws ssm get-parameter --name "/${{ env.PROJECT }}/bootstrap/$1" \
               --with-decryption --query 'Parameter.Value' --output text
           }
+          # Assigned first, for the reason above: inside an `echo`, a failed read is a
+          # successful command that writes an empty value.
+          TF_STATE_BUCKET=$(read_param state_bucket)
+          BUDGET_EMAIL=$(read_param budget_notification_email)
           {
-            echo "TF_STATE_BUCKET=$(read_param state_bucket)"
-            echo "BUDGET_EMAIL=$(read_param budget_notification_email)"
+            echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
+            echo "BUDGET_EMAIL=$BUDGET_EMAIL"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
-      - uses: actions/download-artifact@v4
-        with:
-          name: foundation-outputs
+      - name: resolve what foundation published
+        # From SSM, not from a CI artifact. The artifact existed for exactly one workflow run,
+        # so dispatching this layer on its own found nothing — and `batch` and `analytics` had
+        # no path at all, because no run had ever produced one for them.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
       - name: apply
         run: |
           terraform -chdir=infra/lakehouse init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/lakehouse apply -auto-approve \
-            -var 'expires_at=${{ inputs.expires_at }}' \
-            -var "data_key_arn=$(jq -r .data_key_arn.value foundation.json)" \
-            -var "logs_key_arn=$(jq -r .logs_key_arn.value foundation.json)" \
-            -var "records_bucket=$(jq -r .bucket_names.value.records foundation.json)" \
-            -var "access_logs_bucket=$(jq -r .access_logs_bucket.value foundation.json)"
+            -var 'expires_at=${{ inputs.expires_at }}'
 
   # `batch` and `analytics` are deliberately NOT applied by default. They are the two most
   # expensive layers in the estate — EMR Serverless and a Redshift workgroup — and an estate
   # that stands them up because a deploy ran is an estate whose cost is decided by a default.
   # They are separate dispatches with their own approval, which is the same discipline as
   # Attestor's OpenSearch: stand up, use, tear down, never leave standing.
+
+  # ── The two expensive layers ────────────────────────────────────────────────
+  #
+  # EMR Serverless and a Redshift workgroup. They are **not** part of the default deploy — an
+  # estate that stands them up because a deploy ran is an estate whose cost is decided by a
+  # default — so each is its own dispatch with its own approval, the same discipline Attestor
+  # applies to OpenSearch: stand up, use, tear down, never leave standing.
+  #
+  # They were previously described as separate dispatches and were not: no job existed, so two
+  # of the six layers had no path at all. Written, validated and unreachable is a different
+  # thing from written, validated and not run.
+  batch:
+    name: "apply · batch (opt-in)"
+    if: inputs.include_expensive_layers
+    needs: lakehouse
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        run: |
+          set -euo pipefail
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+      - name: apply
+        run: |
+          terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/batch apply -auto-approve -var 'expires_at=${{ inputs.expires_at }}'
+
+  analytics:
+    name: "apply · analytics (opt-in)"
+    if: inputs.include_expensive_layers
+    needs: batch
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        run: |
+          set -euo pipefail
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+      - name: apply
+        run: |
+          terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
+          terraform -chdir=infra/analytics apply -auto-approve -var 'expires_at=${{ inputs.expires_at }}'

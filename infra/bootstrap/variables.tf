@@ -26,6 +26,37 @@ variable "github_repo" {
   default     = "manifest"
 }
 
+variable "github_owner_id" {
+  description = <<-EOT
+    The account's **numeric** id, from `https://api.github.com/users/<owner>`.
+
+    Required, with no default. A repository name can be released and re-registered by somebody
+    else; a numeric id cannot, so a trust scoped to names is one whoever claims the name after
+    you inherits. This is the value that closes that.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_owner_id))
+    error_message = "A numeric id, not the account name."
+  }
+}
+
+variable "github_repository_id" {
+  description = <<-EOT
+    The repository's **numeric** id, from `https://api.github.com/repos/<owner>/<repo>`.
+
+    Same reason as the owner id, and the same lack of a default: a value that could be guessed
+    wrong and default to something is a trust policy that silently trusts the wrong thing.
+  EOT
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9]+$", var.github_repository_id))
+    error_message = "A numeric id, not the repository name."
+  }
+}
+
 variable "deploy_environments" {
   description = <<-EOT
     GitHub environments allowed to assume the deploy role.
@@ -99,5 +130,22 @@ variable "budget_notification_email" {
   validation {
     condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_notification_email))
     error_message = "Give an address the alarm can actually reach."
+  }
+}
+
+variable "monthly_budget_eur" {
+  description = <<-EOT
+    The ceiling at which the deploy role loses its ability to create anything.
+
+    A design constraint, not a forecast. `CLAUDE.md` puts the whole-run ceiling under EUR 150
+    and that figure is a constraint on what may be built, never a result — nothing here has
+    been applied and no euro has been spent.
+  EOT
+  type        = number
+  default     = 150
+
+  validation {
+    condition     = var.monthly_budget_eur > 0 && var.monthly_budget_eur <= 500
+    error_message = "A budget above 500 is not a guard; it is a formality."
   }
 }

@@ -78,13 +78,44 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        # A destroy still has to evaluate the configuration, so every required variable still
+        # has to resolve. `terraform validate` never asked for one, which is why this was
+        # missing and looked fine.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
       - run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/analytics destroy -auto-approve -refresh=false
+          terraform -chdir=infra/analytics destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
   batch:
     name: "destroy · batch"
@@ -107,13 +138,44 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        # A destroy still has to evaluate the configuration, so every required variable still
+        # has to resolve. `terraform validate` never asked for one, which is why this was
+        # missing and looked fine.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
       - run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/batch destroy -auto-approve -refresh=false
+          terraform -chdir=infra/batch destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
   lakehouse:
     name: "destroy · lakehouse"
@@ -138,10 +200,41 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        # A destroy still has to evaluate the configuration, so every required variable still
+        # has to resolve. `terraform validate` never asked for one, which is why this was
+        # missing and looked fine.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
       - name: empty the lake before destroying it
         # A versioned bucket with objects in it refuses to be destroyed, and a teardown that
         # fails on that leaves the bucket, its storage cost and the KMS key it needs. The
@@ -162,7 +255,7 @@ jobs:
           echo "emptying $LAKE_BUCKET"
           aws s3 rm "s3://$LAKE_BUCKET" --recursive || true
       - run: |
-          terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false
+          terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
   extraction:
     name: "destroy · extraction"
@@ -185,9 +278,14 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: release deletion protection on the record tables
         # The decision table and the ledger carry `deletion_protection_enabled`, which is right
@@ -222,10 +320,24 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve the alert address
+        # A SecureString, so `--with-decryption`. Needed even here: the SNS subscription is
+        # part of the configuration, and a destroy evaluates the configuration.
+        run: |
+          set -euo pipefail
+          BUDGET_EMAIL=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/budget_notification_email" \
+            --with-decryption --query 'Parameter.Value' --output text)
+          echo "BUDGET_EMAIL=$BUDGET_EMAIL" >> "$GITHUB_ENV"
       - name: empty the data zones
         run: |
           for zone in landing records evidence access-logs; do
@@ -233,7 +345,9 @@ jobs:
           done
       - run: |
           terraform -chdir=infra/foundation init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/foundation destroy -auto-approve -refresh=false
+          terraform -chdir=infra/foundation destroy -auto-approve -refresh=false \
+            -var 'expires_at=1970-01-01' \
+            -var "budget_notification_email=$BUDGET_EMAIL"
 
   # `infra/bootstrap` is deliberately absent. It holds the state bucket, which has
   # `prevent_destroy`, and the role this workflow assumes to do any of the above — a teardown
@@ -257,9 +371,14 @@ jobs:
         # torn down nothing.
         run: |
           set -euo pipefail
-          echo "TF_STATE_BUCKET=$(aws ssm get-parameter \
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
             --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)" >> "$GITHUB_ENV"
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: list anything still tagged for this project
         # The step that makes this a teardown rather than a hope. A destroy that reports success

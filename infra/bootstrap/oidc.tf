@@ -24,10 +24,30 @@ locals {
   # list rather than reached with a wildcard: `repo:owner/repo:*` trusts every branch and
   # every pull request, including one a stranger opens, and it reads as a small convenience
   # right up until it is the whole of the breach.
-  trusted_subjects = [
-    for environment in var.deploy_environments :
-    "repo:${var.github_owner}/${var.github_repo}:environment:${environment}"
-  ]
+  #
+  # **Both the immutable and the named form.** GitHub can issue a subject carrying the numeric
+  # ids — `repo:owner@218610429/manifest@1324675810:environment:deploy` — and that form is the
+  # one that matters: a repository *name* can be deleted and re-registered by somebody else,
+  # and a trust scoped to names is inherited by whoever claims the name after you. Ids cannot
+  # be re-registered.
+  #
+  # Both are accepted because the account decides which it sends, not this file, and a
+  # federation that works only against the format in use on the day it was written breaks on a
+  # Tuesday. Accepting the pair widens nothing: each names one repository and one environment.
+  #
+  # This was missing. The first version of this file trusted names only — the same trust
+  # `../attestor/infra/bootstrap/main.tf` had already moved away from, for a reason written
+  # down there and not read here.
+  trusted_subjects = concat(
+    [
+      for environment in var.deploy_environments :
+      "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repo}@${var.github_repository_id}:environment:${environment}"
+    ],
+    [
+      for environment in var.deploy_environments :
+      "repo:${var.github_owner}/${var.github_repo}:environment:${environment}"
+    ],
+  )
 }
 
 data "aws_iam_policy_document" "assume_from_github" {
@@ -47,7 +67,8 @@ data "aws_iam_policy_document" "assume_from_github" {
     }
 
     # StringEquals, not StringLike. There is no wildcard in any of these values, so the weaker
-    # operator would buy nothing and would let one creep in unnoticed later.
+    # operator would buy nothing and would let one creep in unnoticed later — and
+    # `scripts/check_deploy_path.py` refuses one if it ever does.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"

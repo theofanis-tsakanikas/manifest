@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -331,6 +332,71 @@ def run(check: Check) -> Result:
     return Result(check, status, elapsed, (completed.stdout + completed.stderr)[-3000:])
 
 
+def _scoreboard_figures(report: Report) -> dict[str, str]:
+    """The figures this run actually produced, keyed by the phrase the README must contain."""
+    figures: dict[str, str] = {}
+
+    for result in report.results:
+        found = re.search(r"gate-proof: (\d+) refused, (\d+) accepted, (\d+) stale", result.output)
+        if found:
+            figures["gate-proof"] = (
+                f"{found.group(1)} refused, {found.group(2)} accepted, {found.group(3)} stale"
+            )
+        found = re.search(r"Passed checks: (\d+), Failed checks: (\d+)", result.output)
+        if found:
+            figures["checkov"] = f"{found.group(1)} passed, {found.group(2)} findings"
+
+    # Plus one, because this check is one of the checks and is not in the list yet. Stated
+    # rather than left as a bare `+ 1`: the number on the README is the number `make preflight`
+    # prints, and the two agreeing is the whole point of the check.
+    figures["preflight"] = f"{len(report.results) + 1} checks"
+    return figures
+
+
+def check_the_scoreboard(report: Report) -> Result:
+    """The README's numbers must be the numbers this run produced.
+
+    `README.md` opens by saying every figure on it is the output of a command in this
+    repository. Nothing enforced that, and by the time it was looked at the scoreboard carried
+    three stale figures and disagreed with itself: **25 checks** at the top, **21** in the usage
+    block, **19** mutations against a harness reporting 24, and a checkov total 13 behind.
+
+    None of them was a lie when it was written, and that is the point — a scoreboard drifts by
+    the ordinary act of adding a gate, silently, in the direction of looking more finished than
+    it is. A repository whose first claim is that every number is reproducible has to be the one
+    that checks.
+    """
+    check = Check(
+        group="deployability",
+        name="scoreboard",
+        command=[],
+        matters=(
+            "the README states every figure is the output of a command here; a stale one makes "
+            "that sentence false about itself"
+        ),
+    )
+    figures = _scoreboard_figures(report)
+    if "gate-proof" not in figures or "checkov" not in figures:
+        return Result(check, "skip", 0.0, "gate-proof and checkov did not run (--fast)")
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    stale = [
+        f"README does not say `{value}` ({name}). It is what this run produced"
+        for name, value in figures.items()
+        if value not in readme
+    ]
+    # A count stated twice with two different values is worse than a stale one: it means nobody
+    # can tell which is current.
+    counts = set(re.findall(r"\*\*(\d+) checks?\*\*|all (\d+)[:,]| all (\d+) pass", readme))
+    spoken = {n for group in counts for n in group if n}
+    if len(spoken) > 1:
+        stale.append(f"README states the preflight count as {sorted(spoken)} in different places")
+
+    if stale:
+        return Result(check, "fail", 0.0, "\n".join(stale))
+    return Result(check, "pass", 0.0, ", ".join(f"{k}: {v}" for k, v in figures.items()))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fast", action="store_true", help="Skip the slow checks.")
@@ -368,6 +434,15 @@ def main() -> int:
         print(f"\n{RED}FAILED{RESET} {result.check.name}")
         print(f"  why it matters: {result.check.matters}")
         print(f"{DIM}{result.output.rstrip()}{RESET}")
+
+    scoreboard = check_the_scoreboard(report)
+    report.results.append(scoreboard)
+    if scoreboard.status == "fail":
+        print(f"\n{RED}FAILED{RESET} {scoreboard.check.name}")
+        print(f"  why it matters: {scoreboard.check.matters}")
+        print(f"{DIM}{scoreboard.output}{RESET}")
+    elif scoreboard.status == "pass":
+        print(f"{GREEN}ok{RESET}     scoreboard — {scoreboard.output}")
 
     passed = sum(1 for result in report.results if result.status == "pass")
     print(

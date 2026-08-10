@@ -423,6 +423,65 @@ def _take_away_the_deploy_roles_permission_to_build_the_network(root: Path) -> b
     return True
 
 
+def _let_a_layer_run_without_the_variables_it_requires(root: Path) -> bool:
+    """Stop supplying `expires_at` to the batch teardown.
+
+    **This was the repository's actual state**, on three of the five layers in `destroy.yml` at
+    once. Each declared a variable with no default, nothing in the workflow supplied it, and
+    three separate gates reported green: `terraform validate` never asks for a variable value,
+    `checkov` reads resources rather than runs, and `tf_validate.py` calls both.
+
+    So the repository claimed a teardown path that would have halted at an input prompt with no
+    terminal to appear on — the estate standing, the destroy approval already given, and the
+    only remaining route a human with credentials at a laptop. A destroy that cannot run is
+    worse than no destroy, because the repository says there is one.
+    """
+    path = root / ".github/workflows/destroy.yml"
+    text = path.read_text(encoding="utf-8")
+    destroy = "terraform -chdir=infra/batch destroy -auto-approve -refresh=false"
+    marker = f"{destroy} -var 'expires_at=1970-01-01'"
+    if marker not in text:
+        return False
+    path.write_text(text.replace(marker, destroy), encoding="utf-8")
+    return True
+
+
+def _stop_publishing_what_the_next_layer_reads(root: Path) -> bool:
+    """Remove `data_key_arn` from what foundation publishes.
+
+    The lakehouse requires it and has no default for it, and it arrives by name: the workflow
+    resolves `/manifest/foundation/*` in bulk and turns each parameter into the `TF_VAR_` of the
+    same name. That is a good mechanism and a quiet one — nothing in the YAML mentions the
+    variable, so dropping the publication looks like a tidy-up of an unused output.
+    """
+    path = root / "infra/foundation/published.tf"
+    text = path.read_text(encoding="utf-8")
+    if "data_key_arn " not in text:
+        return False
+    lines = [
+        line
+        for line in text.splitlines(keepends=True)
+        if not line.strip().startswith("data_key_arn ")
+    ]
+    path.write_text("".join(lines), encoding="utf-8")
+    return True
+
+
+def _let_a_failed_resolve_pass_for_an_empty_value(root: Path) -> bool:
+    """Fold the parameter read back inside its `echo`.
+
+    **This was the repository's actual state** in every job of both workflows. It reads as the
+    tidier line — one command instead of two — and it is the difference between a job that stops
+    on a missing parameter and one that carries an empty string into a backend configuration.
+    `set -e` cannot see it: the command it judges is the `echo`, and the `echo` worked.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        "          TF_STATE_BUCKET=$(aws ssm get-parameter",
+        '          echo "TF_STATE_BUCKET=$(aws ssm get-parameter',
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -628,6 +687,33 @@ MUTATIONS: tuple[Mutation, ...] = (
         _take_away_the_deploy_roles_permission_to_build_the_network,
         "The repository's actual state until this gate was written, generalised: six layers "
         "and a role that could create nothing. Fails four minutes in, approval already spent.",
+    ),
+    Mutation(
+        "let a teardown run without the variables it requires",
+        "deploy evaluability",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "requires the variable `expires_at`",
+        _let_a_layer_run_without_the_variables_it_requires,
+        "The repository's actual state on three layers at once. validate, checkov and "
+        "tf_validate all reported green on a teardown that would halt at a prompt.",
+    ),
+    Mutation(
+        "stop publishing a reference the next layer resolves by name",
+        "deploy evaluability",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "requires the variable `data_key_arn`",
+        _stop_publishing_what_the_next_layer_reads,
+        "Bulk resolution by name is quiet: no YAML line mentions the variable, so removing "
+        "the publication reads as deleting an unused output.",
+    ),
+    Mutation(
+        "let a failed parameter read pass for an empty value",
+        "deploy resolution",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "reads a parameter inside an `echo`",
+        _let_a_failed_resolve_pass_for_an_empty_value,
+        "The repository's actual state in every job of both workflows. The tidier-looking "
+        "line is the one `set -e` cannot see fail.",
     ),
 )
 
