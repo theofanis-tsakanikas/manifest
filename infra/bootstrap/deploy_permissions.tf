@@ -535,6 +535,14 @@ data "aws_iam_policy_document" "deploy_data" {
       "arn:aws:glue:*:${data.aws_caller_identity.current.account_id}:catalog",
       "arn:aws:glue:*:${data.aws_caller_identity.current.account_id}:database/${var.project}*",
       "arn:aws:glue:*:${data.aws_caller_identity.current.account_id}:table/${var.project}*/*",
+      # **`DeleteDatabase` is authorised against what the database *contains*, not only against
+      # the database.** Glue checks the catalog, the database, its tables and its user-defined
+      # functions — so a grant naming the first three is refused on the fourth, and the message
+      # points at a `userDefinedFunction/` ARN for a database that has none.
+      #
+      # There is nothing to guess here: it is the documented authorisation model, and the only
+      # way to meet it is to name a resource type this estate never creates.
+      "arn:aws:glue:*:${data.aws_caller_identity.current.account_id}:userDefinedFunction/${var.project}*/*",
       "arn:aws:athena:*:${data.aws_caller_identity.current.account_id}:workgroup/${var.project}-*",
     ]
   }
