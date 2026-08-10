@@ -1,10 +1,24 @@
 # The state machine that reads a document, and the role it runs as.
 #
-# Step Functions rather than a chain of Lambdas calling each other: the escalation decision is
-# a *state*, and a state machine makes "this page was kept at tier 0 and this one escalated" a
-# thing the execution history records rather than a thing somebody reconstructs from logs. The
-# cascade's routing distribution is claim 7's measured input, and a design where it is only
-# visible in log lines is a design where that input is expensive to trust.
+# Step Functions rather than a chain of Lambdas calling each other, so that the escalation
+# decision *can* be a state: "this page was kept at tier 0 and this one escalated" belongs in an
+# execution history, not in log lines somebody reconstructs. The cascade's routing distribution
+# is the cost model's measured input, and a design where it is visible only in logs is a design
+# where that input is expensive to trust.
+#
+# **This machine has no escalation state, and the header above used to say it did.**
+#
+# The deployed states are `ReadAtTierZero`, `ExtractAndThreshold`, `VerifyProvenance`, and then
+# publish or queue. Nothing routes a page upward, because routing a page upward means calling
+# Textract or a Bedrock model — a billed API this repository has never called and does not call
+# from an estate whose whole cost argument is that tier 0 is free. The escalation grants below
+# exist so the role is ready for a machine that does; today they are permissions with no caller,
+# and saying so is cheaper than discovering it from an execution history that never branches.
+#
+# The routing rule itself is real and is proved where it can be proved without a bill:
+# `src/manifest/cascade/` decides, `contracts/cascade/routing.yaml` declares, and `evals/scale/`
+# scores the distribution over the corpus offline. What the estate demonstrates is tier 0
+# end to end. What it does not demonstrate is the escalation, and no figure here implies it.
 
 resource "aws_cloudwatch_log_group" "pipeline" {
   #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate. The customs record is in the records bucket, which has no expiry at all.
