@@ -712,6 +712,26 @@ def _let_the_acceptance_outlive_its_expiry(root: Path) -> bool:
     )
 
 
+def _use_an_env_variable_that_is_not_defined(root: Path) -> bool:
+    """Take `PROJECT` back out of the deploy's env block.
+
+    **This was the repository's actual state, and it cost the first real deploy.** Every SSM
+    path and the role ARN in `deploy.yml` interpolate `${{ env.PROJECT }}`; undefined, it
+    renders as the empty string, so the workflow assumed `role/-deploy` and read
+    `//bootstrap/state_bucket`. The error was *"Not authorized to perform
+    sts:AssumeRoleWithWebIdentity"*, which points at a trust policy — the OIDC provider's
+    audience list and the subject claim were both checked before anybody looked at the ARN.
+
+    `destroy.yml` had the variable. Nothing compared the two, because an undefined variable in
+    GitHub Actions is not an error and warns nowhere.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        "  PROJECT: manifest",
+        "  # PROJECT removed",
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -1064,6 +1084,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_the_acceptance_outlive_its_expiry,
         "An acceptance nobody revisits is a permanent decision in temporary clothes, and it "
         "happens by a date passing while everything stays green.",
+    ),
+    Mutation(
+        "use an env variable the workflow never defines",
+        "workflow variables",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "uses `env.PROJECT` and never defines it",
+        _use_an_env_variable_that_is_not_defined,
+        "The repository's actual state, and it cost the first real deploy: an empty string in "
+        "a role ARN, reported as a trust-policy failure.",
     ),
 )
 

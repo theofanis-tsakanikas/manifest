@@ -599,6 +599,34 @@ def _check_the_approval_removal_is_accepted() -> list[str]:
     return []
 
 
+def _check_every_env_reference_is_defined() -> list[str]:
+    """A `${{ env.X }}` that is not defined renders as the empty string, silently.
+
+    **This cost the first real deploy.** `deploy.yml` used `${{ env.PROJECT }}` in the role ARN
+    and in every SSM path and never defined it, so the workflow tried to assume `role/-deploy`
+    and read `//bootstrap/state_bucket`. The error was *"Not authorized to perform
+    sts:AssumeRoleWithWebIdentity"*, which reads as a trust-policy problem — the investigation
+    went to the OIDC provider's audience list and the subject claim before it reached the ARN.
+
+    `destroy.yml` defined it correctly. Nothing compared the two files, because an undefined
+    variable in GitHub Actions is not an error and produces no warning anywhere.
+    """
+    problems: list[str] = []
+
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        defined = set(yaml.safe_load(text).get("env") or {})
+        used = set(re.findall(r"\$\{\{\s*env\.(\w+)\s*\}\}", text))
+        for name in sorted(used - defined):
+            problems.append(
+                f"{path.name} uses `env.{name}` and never defines it. An undefined variable "
+                f"renders as an empty string rather than failing, so this becomes a wrong ARN "
+                f"or a wrong path and the error it produces names something else entirely"
+            )
+
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -624,6 +652,7 @@ def main() -> int:
     problems.extend(_check_the_runtime_artefacts_are_deployed())
     problems.extend(_check_a_trigger_can_actually_fire())
     problems.extend(_check_actions_are_pinned())
+    problems.extend(_check_every_env_reference_is_defined())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

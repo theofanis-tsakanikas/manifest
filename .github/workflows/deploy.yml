@@ -55,6 +55,17 @@ concurrency:
 env:
   TF_VERSION: "1.15.5"
   AWS_REGION: eu-central-1
+  # **This was missing, and it cost the first real deploy.**
+  #
+  # `${{ env.PROJECT }}` appears in the role ARN and in every SSM path in this file. Undefined,
+  # it renders as the empty string: the deploy tried to assume `role/-deploy` and read
+  # `//bootstrap/state_bucket`, and the error it produced was *"Not authorized to perform
+  # sts:AssumeRoleWithWebIdentity"* — which reads as a trust-policy problem and sent the
+  # investigation to the OIDC provider, the audience and the subject claim before the ARN.
+  #
+  # `destroy.yml` had it. This file did not, and nothing compared them: an undefined variable
+  # in GitHub Actions is not an error, it is an empty string.
+  PROJECT: manifest
 
 jobs:
   confirm:
