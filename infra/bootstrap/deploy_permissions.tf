@@ -203,6 +203,37 @@ data "aws_iam_policy_document" "deploy_estate" {
     }
   }
 
+  # **Using the keys, not only managing them.**
+  #
+  # The statement above covers a key's *administration* — describe it, set its policy, schedule
+  # its deletion. It says nothing about encrypting with it, and the deploy does exactly that:
+  # it uploads the derived thresholds and the handler package to the records bucket with
+  # `--ssekms-key-id`, and S3 asks KMS for a data key on the caller's behalf.
+  #
+  # `kms:GenerateDataKey` was the refusal, after the whole of `foundation` had been built. The
+  # distinction between managing a key and using one is easy to miss precisely because the
+  # first sounds like the larger permission.
+  #
+  # Scoped by tag, so this covers the keys this project created and no other key in the account.
+  statement {
+    sid    = "EncryptWithThisProjectsKeys"
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncryptFrom",
+      "kms:ReEncryptTo",
+      "kms:GenerateDataKey",
+      "kms:GenerateDataKeyWithoutPlaintext",
+    ]
+    resources = ["arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:key/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/manifest:project"
+      values   = [var.project]
+    }
+  }
+
   # ── foundation: the guards ────────────────────────────────────────────────
   #
   # The budget action attaches a deny policy to *this role*, which is the only role it may
