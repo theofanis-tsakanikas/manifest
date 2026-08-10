@@ -120,6 +120,47 @@ resource "aws_vpc_security_group_egress_rule" "endpoints_out" {
   ip_protocol       = "-1"
 }
 
+# **A gateway endpoint is not an address inside the VPC, and the rule above does not cover it.**
+#
+# This cost the first four documents that ever reached the deployed pipeline. Each one hung for
+# the full ten-minute Lambda timeout using 106 MB — not slow work, no work at all — and produced
+# no log line beyond `START`. The route table sent the packet to the S3 gateway endpoint
+# correctly; the security group then dropped it, because S3 answers on a **public** prefix and
+# egress was allowed only to `10.42.0.0/16`.
+#
+# Nothing errors in that arrangement. A dropped packet is not a refusal: there is no RST, no
+# 403, no message naming a permission — just a socket that never answers and a function that
+# times out. It is the quietest possible failure and the most expensive to diagnose, and only a
+# real document could have found it.
+#
+# The prefix lists are the precise fix. `0.0.0.0/0` would also work and would silently give the
+# subnets a general exit — which is the property this network is built to not have.
+data "aws_prefix_list" "s3" {
+  name = "com.amazonaws.${data.aws_region.current.region}.s3"
+}
+
+data "aws_prefix_list" "dynamodb" {
+  name = "com.amazonaws.${data.aws_region.current.region}.dynamodb"
+}
+
+resource "aws_vpc_security_group_egress_rule" "to_s3" {
+  security_group_id = aws_security_group.endpoints.id
+  description       = "S3 through its gateway endpoint, which answers on a public prefix."
+  prefix_list_id    = data.aws_prefix_list.s3.id
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "to_dynamodb" {
+  security_group_id = aws_security_group.endpoints.id
+  description       = "DynamoDB through its gateway endpoint, same reason as S3."
+  prefix_list_id    = data.aws_prefix_list.dynamodb.id
+  from_port         = 443
+  to_port           = 443
+  ip_protocol       = "tcp"
+}
+
 # Every service the private subnets talk to needs an endpoint, because there is no NAT gateway
 # and no internet route: a service that is missing from this list does not fail at deploy time,
 # it hangs until its client times out, and the error names a socket rather than a cause.
