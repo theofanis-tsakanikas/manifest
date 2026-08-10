@@ -1,4 +1,6 @@
-# The teardown path. **Not optional, and never dispatched.**
+# The teardown path. **Not optional, and exercised — first run 2026-08-10, after the first
+# deploy.** It is the half of the pair that gets written and never tested, so the test is worth
+# more than the writing: what it left standing is a defect in this file, not an accident.
 #
 # A repository with a deploy path and no destroy path is how an estate gets left standing, and
 # it is the difference between a portfolio piece and a bill. This file exists from the same

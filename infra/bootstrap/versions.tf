@@ -5,10 +5,11 @@
 # applied only from a gated workflow: a layer that can be applied from a laptop is a layer
 # that will drift.
 #
-# **And this layer is not applied either.** `docs/DECISIONS.md` 14 — nothing in this
-# repository is ever applied to AWS, including the one layer whose design permits a laptop
-# apply. What is claimed is `terraform validate` against real provider schemas and checkov at
-# zero findings, with the limits of that stated in `scripts/tf_validate.py`.
+# **This layer is applied from a laptop, and only this one.** `docs/DECISIONS.md` 14. It was
+# applied on 2026-08-10 and it is deliberately *not* torn down with the rest: it holds the
+# state bucket, the lock table and the OIDC trust every other layer's apply depends on, so
+# destroying it would leave the estate above it unreachable by the only path allowed to reach
+# it. `destroy.yml` does not name it, and that is a decision rather than an omission.
 
 terraform {
   required_version = ">= 1.10"

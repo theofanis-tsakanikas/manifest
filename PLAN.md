@@ -268,12 +268,14 @@ with zero false positives; every un-merge re-points every downstream record.
       checkov at zero findings. One command.
 - [x] `README.md` with a scoreboard in Attestor's style: **every number the output of a command
       in this repository**, run on a laptop. The cost figure appears as *modelled*, with its
-      inputs. A status block at the top, in Attestor's words: **ready to deploy, not deployed** —
-      what `make preflight` checks, and what has deliberately never been run.
-- [x] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind a
-      the environment their trust names, **neither dispatched**. The destroy workflow is not optional: a
-      repository with a deploy path and no teardown path is how an estate gets left standing,
-      and it is the difference between a portfolio piece and a bill.
+      inputs. A status block at the top: what `make preflight` checks, what has been applied and
+      when, and what has still never been run. It said **ready to deploy, not deployed** until
+      2026-08-10, and it says what happened since.
+- [x] `.github/workflows/deploy.yml` and `destroy.yml` — both written, both gated behind the
+      environment their trust names, **both dispatched on 2026-08-10**. The destroy workflow is
+      not optional: a repository with a deploy path and no teardown path is how an estate gets
+      left standing, and it is the difference between a portfolio piece and a bill. Writing it
+      was never the hard part; running it is what proves it takes what the deploy made.
 
 **Done when:** `make preflight` is green, `deploy.yml` and `destroy.yml` exist and validate,
 the estate is deployable, and a stranger with no AWS account can reproduce every

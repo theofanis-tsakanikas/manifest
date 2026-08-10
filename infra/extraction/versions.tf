@@ -1,5 +1,6 @@
 # The extraction pipeline: a state machine, a review queue, and the roles that reach the
-# readers. Applied only from a gated workflow — and never applied at all (decision 14).
+# readers. Applied only from a gated workflow, and first applied on 2026-08-10 (decision 14).
+# The readers it reaches are the tier-0 image; no managed extraction engine has been called.
 
 terraform {
   required_version = ">= 1.10"

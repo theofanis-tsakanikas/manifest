@@ -18,8 +18,10 @@
 # ── The reaper ───────────────────────────────────────────────────────────────
 #
 # A scheduled rule that reads `manifest:expires-at` and destroys what has passed it. The
-# schedule is written here; what it *invokes* is the destroy workflow, which is gated behind a
-# protected environment and has never been dispatched.
+# schedule is written here; what it *invokes* is the destroy workflow, which is gated behind
+# the environment its OIDC trust names. That workflow has now been dispatched by hand (see
+# decision 14); the reaper's own path to it has not fired, because nothing has yet passed its
+# `manifest:expires-at`.
 #
 # It is a rule and an alarm rather than a Lambda that deletes things, and that is deliberate: a
 # function with permission to destroy the estate is a function whose permissions are the most

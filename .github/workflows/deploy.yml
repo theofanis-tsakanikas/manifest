@@ -1,8 +1,19 @@
-# The deploy path. **Written, gated, and never dispatched.**
+# The deploy path. **Written, gated, and dispatched — for the first time on 2026-08-10.**
 #
-# `docs/DECISIONS.md` 14: nothing in this repository is ever applied to AWS. This file exists
-# because "ready to deploy" is a claim about a path that can be inspected, and a repository
-# that says it is ready without one is asking to be taken at its word.
+# `docs/DECISIONS.md` 14. For most of this repository's life the header here read "never
+# dispatched", and that sentence was true when it was written and false the moment the first
+# apply succeeded. It is corrected rather than quietly left, because a repository describing a
+# posture it no longer holds is the same defect whichever way the error points.
+#
+# What the first dispatch found is the argument for having built the path before using it: a
+# security group that dropped every packet to the S3 gateway endpoint without erroring, a
+# reader whose version did not match the recording every threshold was derived from, and
+# fourteen missing IAM grants that no offline check could have known about. None of them were
+# visible from `terraform validate`, and all of them were cheap here and expensive later.
+#
+# What it did **not** license is in decision 14 and is worth reading before quoting anything
+# from this estate: no managed extraction engine was called, no distributed job ran, and every
+# cost figure in this repository is still modelled.
 #
 # Three properties make it a gate rather than a button.
 #

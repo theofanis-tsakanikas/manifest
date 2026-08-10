@@ -816,11 +816,24 @@ def main() -> int:
             print(f"  {problem}", file=sys.stderr)
         return 1
 
+    # **The sentence that used to be here, and why it is gone.**
+    #
+    # This line ended with "**Neither workflow has been dispatched.**" — printed as a result, by
+    # a script that reads YAML files and has never spoken to GitHub. It could not have known. It
+    # was true when it was written, it went false the moment `deploy.yml` was first dispatched,
+    # and nothing about this check would have changed to say so.
+    #
+    # That is the exact defect this repository exists to argue against, in miniature: a control
+    # that reports something outside its own evidence. What this script can prove is the shape
+    # of the path — every applied layer torn down, in reverse, by human dispatch only, scoped to
+    # the environment its trust names. Whether anyone has walked it is run history, which lives
+    # in GitHub and in `docs/DECISIONS.md` 14, and it is not this gate's to assert.
     print(
         f"deploy-path: {len(applied)} layer(s) applied, all torn down in reverse order, both "
         f"workflows human-dispatch only, and every job scoped to the environment the OIDC trust "
         f"names. Required reviewers are OFF under a dated acceptance that expires "
-        f"({_approval_expiry()}). **Neither workflow has been dispatched.**"
+        f"({_approval_expiry()}). This checks the path, not whether it has been walked — see "
+        f"docs/DECISIONS.md 14 for what has actually been applied, and when."
     )
     return 0
 

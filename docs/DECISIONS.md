@@ -126,9 +126,37 @@ decisions on fields that *did* change are re-queued.
 part of the argument. The public dataset is the honesty check — the same role real VED
 telemetry plays in Fleet Risk. Verify the licence before committing anything.
 
-**14 · This system is built to run on AWS. Nothing is applied yet, and the author dispatches
-the first deploy when he decides.** *(Revised 2026-08-10. The original text is kept below,
-because how it went wrong is the useful part.)*
+**14 · This system is built to run on AWS. The first deploy ran on 2026-08-10, and what that
+did and did not license is stated below.** *(Revised twice on 2026-08-10 — once before the
+first apply and once after it. Both earlier texts are kept, because how each went wrong is the
+useful part.)*
+
+**Status: applied.** `deploy.yml` was dispatched against `main`, and `foundation`, `extraction`
+and `lakehouse` applied. `batch` and `analytics` were left off — they are the estate's cost and
+they stand up only on an explicit input. Documents were put through the deployed pipeline. The
+estate was then torn down through `destroy.yml`.
+
+What that changed, exactly, and nothing more:
+
+- The sentences "never applied" and "never dispatched" are gone from this repository, because
+  they were false the moment the first apply succeeded. A repository that describes a posture
+  it no longer holds is the overclaim this project spends its life removing, and the direction
+  of the error does not excuse it.
+- Statements about the AWS **estate** — that the layers apply, that the trust policy holds,
+  that the teardown takes what the deploy made — are now statements about something that
+  happened, and they say when.
+
+What it did **not** change, and these are the ones a reader should check first:
+
+- **No AWS extraction engine has ever been called.** Textract, Bedrock Data Automation and the
+  LLM extractor are adapters written against documented schemas and exercised against authored
+  fixtures. The estate that ran, read with the tier-0 local reader and nothing else. There is
+  no accuracy figure for the escalated fraction of the cascade and there cannot be one.
+- **No distributed job has ever executed.** `batch` was never applied. Claim 7 is proved by the
+  pure planner and its ledger, on a laptop, and says so.
+- **Every cost figure is still modelled.** A bill existing does not make a number measured; the
+  number would have to have been measured. Decision 15 is unchanged.
+- **Every claim is still scored offline.** Not one of the seven moved into the estate.
 
 The order is: build everything up to and including the deploy path — all code, all local
 tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.yml` and
@@ -136,7 +164,7 @@ tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.
 deploy, deliberately, as a separate act. `infra/bootstrap/` applies from a laptop first;
 everything above it applies from CI.
 
-What still holds, before the first apply:
+What was written before the first apply, kept as it stood:
 
 - No screenshot or console capture from a real estate. There is not one yet.
 - No wall-clock time and no euro figure presented as measured. The €150 ceiling in `CLAUDE.md`

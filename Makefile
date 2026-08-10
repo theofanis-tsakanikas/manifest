@@ -188,9 +188,11 @@ iac-scan: checkov-venv ## checkov over the Terraform layers
 
 # ── Cloud (never run implicitly; always a deliberate act) ────────────────────
 #
-# There is no `apply` target and there will not be one. `docs/DECISIONS.md` 14: nothing in
-# this repository is ever applied to AWS, including `infra/bootstrap/`. A Makefile target
-# that applies is a target somebody runs.
+# There is no `apply` target and there will not be one. `docs/DECISIONS.md` 14: every layer
+# above `infra/bootstrap/` applies from CI and nowhere else, and bootstrap applies by a
+# deliberate, documented act rather than by a word somebody can tab-complete. A Makefile target
+# that applies is a target somebody runs — which is the whole objection, and it survives the
+# estate having been stood up.
 
 .PHONY: preflight
 preflight: ## Everything that must be true before the estate is stood up
