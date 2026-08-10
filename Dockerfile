@@ -86,7 +86,11 @@ RUN installed="$(tesseract --version 2>&1 | head -1 | awk '{print $2}')" \
 ENV LAMBDA_TASK_ROOT=/var/task
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-COPY pyproject.toml ${LAMBDA_TASK_ROOT}/
+# `LICENSE` beside `pyproject.toml`, because the packaging metadata names it and the build
+# refuses without it: *"License file does not exist: LICENSE"*. It is not obvious from the
+# outside — nothing in the source imports it — which is exactly why it failed here rather than
+# on any machine where the whole repository happens to be present.
+COPY pyproject.toml LICENSE ${LAMBDA_TASK_ROOT}/
 COPY src/ ${LAMBDA_TASK_ROOT}/src/
 # The contracts travel with the image. They are the source of truth for which fields exist and
 # how each is compared, and a deployment whose code and contracts came from different commits
