@@ -25,6 +25,7 @@ that is the logic claims 2 and 4 are about.
 from __future__ import annotations
 
 import csv
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -288,6 +289,22 @@ def _run(command: list[str]) -> str:
         capture_output=True,
         text=True,
         check=False,
+        # **One thread, because the parallelism belongs to the caller.**
+        #
+        # The reader is internally parallelised with OpenMP and defaults to one thread per core.
+        # Every caller here reads *pages* in parallel — one process per core — so the two
+        # multiply: four processes each starting four threads is sixteen threads fighting over
+        # four cores, and the result is not four times faster, it is several times slower.
+        #
+        # Measured, not assumed. The recording ceremony read 407 pages per shard in 42–56
+        # minutes on a four-core runner; the same binary on a laptop, single-threaded, reads a
+        # page in 0.30 seconds — two minutes for the same 407. The reader's own documentation
+        # says to set this when running multiple instances, and nothing here did.
+        #
+        # Set at the call rather than in the image, because it is a fact about *how this module
+        # is used* — every reader in this repository is driven page-parallel — and an
+        # environment variable in a Dockerfile is one that a laptop run silently does without.
+        env={**os.environ, "OMP_THREAD_LIMIT": "1"},
     )
     if completed.returncode != 0:
         raise ReaderUnavailable(f"{' '.join(command[:3])} failed: {completed.stderr.strip()[:400]}")
