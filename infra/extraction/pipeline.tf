@@ -351,7 +351,10 @@ resource "aws_sfn_state_machine" "extraction" {
           # was previously published, so a re-extraction writes a new object beside the old one
           # rather than over it, and both stay retrievable.
           "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
-          "Body.$" : "$.provenance.checked",
+          # **Serialised, not passed as an object.** `s3:PutObject` takes a string body; handing
+          # it the checked record as a structure is a type error at the API rather than at the
+          # plan, so it fails on the first document rather than on the first deploy.
+          "Body.$" : "States.JsonToString($.provenance.checked)",
           "ServerSideEncryption" : "aws:kms",
           "SsekmsKeyId" : var.data_key_arn
         }
