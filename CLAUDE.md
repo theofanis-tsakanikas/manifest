@@ -2,8 +2,15 @@
 
 **A document intelligence platform for cross-border trade. Every field traces to a pixel.**
 
-AWS-native: Textract · Bedrock Data Automation · Bedrock · Comprehend · human review ·
-EMR Serverless · Step Functions · Iceberg on S3 · OpenSearch · Redshift · SageMaker · Terraform
+AWS-native: Textract · Bedrock Data Automation · Bedrock · human review · Lambda ·
+Step Functions · EMR Serverless · Iceberg on S3 · OpenSearch · Redshift · SageMaker · Terraform
+
+*Each of these has a job below. A service named here that cannot be pointed at the work it does
+is a CV keyword, and decision 6 already says what to do with those: drop it rather than keep
+it. **Comprehend was dropped by that rule** — its work is entity recognition, this system does
+that in deterministic code because there is exactly one right answer, and it reads neither
+Greek nor Dutch (`docs/AWS-CONSTRAINTS.md`), which are the two languages the escalation tier
+exists for.*
 
 > **Manifest** — the trade document, and the word for *made evident*. Both meanings are the
 > project.
@@ -68,7 +75,7 @@ Provable **in CI, on a laptop, with no AWS account and no credentials**.
 | **4** | **Cross-document disagreement is surfaced, never smoothed.** On a corpus with N planted mismatches, exactly N are found, with zero false positives on the set that agrees. The planting is the generator perturbing a value in a document, **blind to the reconciliation contract**; the expected findings are derived from ground truth by a separate path. A planter that reads the contract to decide what to break and a detector that reads the same contract to find it is one function agreeing with itself. The zero-false-positive figure is a statement about a set this repository authored. | `evals/reconciliation/` |
 | **5** | **The human loop is real, and measured.** A classification below threshold cannot be published without a recorded human decision — *and* the review queue is a declared finite resource: if the threshold pushes volume past capacity, the **build fails**, and rubber-stamping is detected and reported. | `evals/review/` |
 | **6** | **Entity resolution is reversible.** A merge of two parties can be un-merged with lineage intact and every downstream record correctly re-pointed. | `evals/entities/` |
-| **7** | **Bulk reprocessing is idempotent, and its cost is modelled honestly.** Re-running a reprocessing job produces no duplicates and no double work — proved by the **pure planner and its ledger, running on a laptop**, because no distributed job in this repository has ever been executed. The batch layer is an adapter over that planner: written, validated, never run. Cost is a **model**: the routing distribution across cascade tiers is *measured* on the corpus, multiplied by *published* unit prices. It is labelled a model everywhere it appears and is never presented as a measurement, because nothing here has ever been run against a billed API. | `evals/scale/` |
+| **7** | **Bulk reprocessing is idempotent, and its cost is modelled honestly.** Re-running a reprocessing job produces no duplicates and no double work — proved by the **pure planner and its ledger, running on a laptop** — which is where the proof belongs, because a claim that needs a cluster to check is a claim nobody can reproduce. The batch layer is an adapter over that planner, and the planner is what the adapter executes. Cost is a **model** until a bill exists: the routing distribution across cascade tiers is *measured* on the corpus, multiplied by *published* unit prices. It is labelled a model everywhere it appears, and it may only be called a measurement once a real run has produced one, with its date. | `evals/scale/` |
 
 **Claim 1 is the one that separates this from a demo. Claim 5 is the one nobody builds.**
 
@@ -119,26 +126,39 @@ confidence, page and geometry. The core never learns which engine produced a val
 engines must be an adapter change and nothing else, and there is a test that fails if an
 engine name appears anywhere in `core/`.
 
-**Nothing is ever applied to AWS.** The estate is written, formatted, validated against real
-provider schemas and scanned to zero findings — and left unapplied. Not once, not briefly,
-not from a laptop, not `infra/bootstrap/`. The `deploy` and `destroy` workflows are written,
-gated behind a protected environment, and **never dispatched**. The posture is Attestor's and
-Watermark's: **ready to deploy, not deployed.** No screenshot from a real console, no
-wall-clock figure, no euro figure stated as measured. If the author deploys later, that is his
-run, not a claim this repository makes.
+**Nothing is applied to AWS yet — and "yet" is the whole of the word.** This system is built
+to run on AWS. That is the point of it, and every service in the header above is there to do a
+job rather than to be listed. What is deferred is the *timing* of the first apply, not the
+apply: the estate is written, formatted, validated against real provider schemas and scanned
+to zero findings, and it stays unapplied — including `infra/bootstrap/` — until the author
+dispatches it deliberately. The `deploy` and `destroy` workflows are written and gated behind
+a protected environment, and **have not been dispatched**.
+
+Until that day, and only until then: no screenshot from a real console, no wall-clock figure,
+no euro figure stated as measured. Every claim in this repository is scored offline, and stays
+scored offline afterwards, because a claim that needs a running estate to check is a claim
+nobody can reproduce.
+
+**An earlier revision of this file said "nothing is *ever* applied" and treated that as the
+posture.** It was a misreading of a sequencing instruction as a permanent stance, and it cost
+the project real components: adapters that were never written because they were never going to
+be called, and a pipeline with no compute in it because no compute was going to run. The rule
+is *not yet*. Anything written on the assumption of *never* is a defect.
 
 **Offline is the default, and there is a real engine behind it.** This is the rule that saves
 the project. Claims 1 and 2 need *actual confidence scores on actually degraded pages* —
-invented ones would be fabricated results, and there is no AWS call to get real ones. So the
-cascade's bottom tier is a **local open-source OCR engine** running on the machine, for free,
-producing genuine confidences and genuine geometry on the genuine corpus. The AWS engines are
-adapters above it behind the same normalised representation.
+invented ones would be fabricated results, and waiting for an AWS account to get real ones
+would make every claim unreproducible by anybody else. So the cascade's bottom tier is a
+**local open-source OCR engine**: free, deterministic, and running on the genuine corpus, on a
+laptop and in the deployed estate alike, from the same container image.
 
 This is not a compromise. It is the strongest available proof that the normalised
 representation is real: if a local engine and a managed service are interchangeable behind it,
 the abstraction holds. Adapters for the AWS engines are written and their response mapping is
 tested against the **documented** schema; the fixtures are authored from that schema and
-marked as authored, never presented as captured responses.
+marked as authored. When the estate is applied, a recorded real response may replace an
+authored fixture — and the fixture's provenance changes with it, in the same commit. What is
+forbidden is an authored fixture *presented* as captured, in either direction.
 
 **The engine recording is the unit of evidence, and regenerating it is a ceremony.** The
 tier-0 engine is a binary, and a binary produces different confidences on different versions
@@ -199,7 +219,7 @@ manifest/
 │   ├── core/                   # PURE: normalisation, confidence, thresholds, reconciliation, ER, gates
 │   ├── extraction/             # engine adapters → the normalised representation
 │   │                           #   local/  the open-source OCR engine — the one that actually runs
-│   │                           #   aws/    Textract · BDA · LLM — written, schema-tested, never called
+│   │                           #   aws/    Textract · BDA · Bedrock — schema-tested; called once deployed
 │   ├── cascade/                # engine routing: cheap first, escalate on low confidence
 │   ├── classification/         # HS code proposal + the human decision path
 │   ├── entities/               # entity resolution, merge/unmerge, lineage
@@ -224,7 +244,7 @@ manifest/
 ├── docs/                       # adr/ · SCENARIO · REGULATORY · DECISIONS · PORTFOLIO-CONTEXT · AWS-CONSTRAINTS · DAY-ONE
 └── .github/workflows/          # ci.yml (every PR) · deploy.yml · destroy.yml
                                 #   deploy and destroy are gated behind a protected environment
-                                #   and are never dispatched from here. Both must exist and both
+                                #   and have not been dispatched yet. Both must exist and both
                                 #   must be validated — a repository with a deploy path and no
                                 #   destroy path is how an estate gets left standing.
 ```
@@ -267,15 +287,18 @@ somebody does apply it — not budget management for a running system.
   product is a **cost model**. Say "modelled" every single time. A modelled figure that says
   so is worth more than a measured one nobody can reproduce, and infinitely more than a
   measured-sounding one that was never measured.
-- **What the cascade cannot claim, and must never imply.** The upper tiers are never called,
-  so there is no accuracy figure for the fraction that escalates and there cannot be one.
-  *"Accuracy held at X for Y% of the cost"* is unavailable in this repository. What the
-  cascade eval proves is two things and stops: the routing rule sends the low-confidence
+- **What the cascade cannot claim, and must never imply — until it can.** Before the first
+  apply the upper tiers have not been called, so there is no accuracy figure for the fraction
+  that escalates and there cannot be one.
+  *"Accuracy held at X for Y% of the cost"* is unavailable here until a real run measures it,
+  and a sentence that sounds like it is the single easiest way to make this repository dishonest.
+  What the cascade eval proves is two things and stops: the routing rule sends the low-confidence
   pages up, and the pages it **keeps** at tier 0 meet their fields' error budgets. The value
   of the escalated fraction is an assumption, it is labelled one, and the sensitivity of the
-  cost model to it is shown rather than hidden.
-- The **under €150** figure is a design ceiling for a hypothetical run, in this file, and must
-  never appear in the README as a result.
+  cost model to it is shown rather than hidden. After a real run the assumption may be replaced
+  by a measurement — with its N, its date, and the run it came from.
+- The **under €150** figure is a design ceiling, in this file. It may appear in the README as
+  a *ceiling*; it may not appear as a *result* until a bill exists to quote.
 
 ---
 

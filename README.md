@@ -10,15 +10,19 @@ Athena · Redshift Serverless · Terraform*
 
 ---
 
-> **Status: ready to deploy, not deployed.** `make preflight` runs **26 checks** — every claim
+> **Status: ready to deploy, not yet deployed.** `make preflight` runs **26 checks** — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas across
 > six layers, checkov at zero findings, and a check that the figures on this page are the ones
 > the run produced. All of them pass. **Nothing has been created in AWS.**
 >
 > There are no screenshots, no wall-clock figures and no euro amounts presented as measured,
-> because none of those exist here. The one cost figure in this repository is labelled
-> **modelled** everywhere it appears and says what it is built from. See
-> [`docs/DECISIONS.md`](docs/DECISIONS.md) 14 to 16.
+> because none of those exist yet. The one cost figure here is labelled **modelled** everywhere
+> it appears and says what it is built from. It becomes a measurement when a run produces one,
+> with that run's date beside it, and not before.
+>
+> Every claim below is scored **offline, with no AWS account**, and stays that way after the
+> first deploy. A claim that needs a running estate to check is a claim you cannot reproduce.
+> See [`docs/DECISIONS.md`](docs/DECISIONS.md) 14 to 16.
 
 ---
 
@@ -203,7 +207,7 @@ twelve headings chosen because this repository's own corpus falls under them. A 
 thousand headings and a real classifier meets goods nobody described in advance. What is proved
 is the *gate*: a contested heading abstains, and no score publishes anything.
 
-**The batch job has never run.** `pipelines/reprocess.py` is written, tested and defaults to a
+**The batch job has not been run yet.** `pipelines/reprocess.py` is written, tested and defaults to a
 dry run; claim 7 is proved against the pure planner it calls. The part that needs a cluster is
 one function, and keeping it that size is what stops the untested region growing.
 
@@ -238,7 +242,7 @@ data. No AWS account, no credentials, no network.
 | [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
 | [`recordings/ocr/`](recordings/ocr/) | The tier-0 reader's normalised output, with its version and fingerprint. Every threshold derives from here |
 | [`evals/`](evals/) | The seven claim harnesses, labelled and credential-free |
-| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` could apply from a laptop and has not; every other layer applies only from a gated workflow that has never been dispatched |
+| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` could apply from a laptop and has not; every other layer applies only from a gated workflow that has not been dispatched yet |
 | [`docs/adr/`](docs/adr/) | Five decisions, written before the code that assumes them |
 
 ---

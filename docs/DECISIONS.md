@@ -24,6 +24,10 @@ oversight.
 cheap to add at the end, but it is not a claim and it is not the point. Three projects already
 cover retrieval. If it costs time, cut it.
 
+*Outcome, 2026-08-10: built, and still not a claim.* It indexes published records — never raw
+document text, which is counterparty-authored and is treated as data everywhere else in this
+system. It appears on no scoreboard.
+
 **6 · Redshift is in scope here, and it has to earn it.** It answers questions a single
 document cannot: duty exposure by HS chapter, review-queue economics, extraction cost per
 client, error rate by document source and by carrier. If those marts are not built, drop
@@ -76,10 +80,16 @@ cost at Y% of single-engine)", which decision 14 had already made impossible.*
 Cheap engine first; escalate to the expensive one only where confidence is low. Which engines
 fill which tier is decided in Phase 0 against current documentation.
 
-The correction is about what the cascade eval is *able* to prove. The upper tiers are never
-called, so **there is no accuracy figure for the pages that escalate and there cannot be one**.
-Any sentence of the form "accuracy held at X for Y% of the cost" is unavailable here, and
-writing it would be exactly the fabricated result this repository exists to argue against.
+The correction is about what the cascade eval is *able* to prove **offline, which is where it
+is proved and where it stays proved**. The eval calls no upper tier, so **there is no accuracy
+figure for the pages that escalate and there cannot be one from the eval**. Any sentence of the
+form "accuracy held at X for Y% of the cost" is unavailable here, and writing it before a run
+produced it would be exactly the fabricated result this repository exists to argue against.
+
+Decision 14's revision does not soften this. When the estate runs, a real measurement of the
+escalated fraction becomes possible — and it is then a figure with a date, an N and a run
+behind it, reported separately from the offline eval rather than merged into it. The eval's
+job is to be reproducible by a stranger with no account; that job does not change.
 
 What the eval proves, and where it stops:
 
@@ -116,23 +126,52 @@ decisions on fields that *did* change are re-queued.
 part of the argument. The public dataset is the honesty check — the same role real VED
 telemetry plays in Fleet Risk. Verify the licence before committing anything.
 
-**14 · Nothing is ever applied to AWS. The author deploys, if and when he chooses.**
+**14 · This system is built to run on AWS. Nothing is applied yet, and the author dispatches
+the first deploy when he decides.** *(Revised 2026-08-10. The original text is kept below,
+because how it went wrong is the useful part.)*
 
-The session builds everything up to and including the deploy path, and stops there: all code,
-all local tests, all Terraform, `ci.yml`, `deploy.yml` and `destroy.yml` — validated, scanned,
-gated behind a protected environment, **never dispatched**. `infra/bootstrap/` is not applied
-either, despite being the one layer whose design permits a laptop apply. Posture: **ready to
-deploy, not deployed**, exactly as Attestor and as Watermark's revised decision 15.
+The order is: build everything up to and including the deploy path — all code, all local
+tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.yml` and
+`destroy.yml`, validated and scanned and gated behind a protected environment — and **then**
+deploy, deliberately, as a separate act. `infra/bootstrap/` applies from a laptop first;
+everything above it applies from CI.
 
-What this forbids, because these are the ways it gets softened by accident:
+What still holds, before the first apply:
 
-- No screenshot or console capture from a real estate. There is not one.
+- No screenshot or console capture from a real estate. There is not one yet.
 - No wall-clock time and no euro figure presented as measured. The €150 ceiling in `CLAUDE.md`
-  is a design constraint and never a result.
-- No sentence of the form "the estate was stood up and destroyed". What is claimed is
-  `terraform validate` against real provider schemas and checkov at zero findings, with the
-  limits of that stated: green means every attribute exists, not that every value is accepted.
-- No "measured cost per 1,000 pages". See decision 15.
+  is a design constraint, and it stays a constraint until a bill exists to quote.
+- No sentence of the form "the estate was stood up and destroyed" before one was. What is
+  claimed today is `terraform validate` against real provider schemas and checkov at zero
+  findings, with the limits of that stated: green means every attribute exists, not that every
+  value is accepted.
+- No "measured cost per 1,000 pages" until something measured it. See decision 15.
+
+What holds *permanently*, and does not relax on the day of the first apply:
+
+- **Every claim stays scored offline.** The seven claim harnesses run with no credentials, on
+  a laptop, forever. A claim that needs a running estate to check is a claim a reader cannot
+  reproduce, and an unreproducible claim is worth less than no claim.
+- **The core stays engine-free.** Deploying does not entitle `core/` to import a client.
+- **A figure changes category only with evidence.** "Modelled" becomes "measured" when a run
+  produced it, and carries that run's date and N. Never because the estate exists now.
+
+**What the original wording cost, recorded because it is the more useful half of this entry.**
+The first version of this decision read *"Nothing is ever applied to AWS"*, and that sentence
+was a misreading — the author's instruction was **build the code and do not deploy yet**, a
+statement about sequence, and it was written down as a permanent posture. The cost was not
+cosmetic:
+
+- The tier-2 and Bedrock Data Automation adapters were never written, because an adapter that
+  will never be called is hard to justify writing. `contracts/cascade/` declared them written
+  anyway, and the router sent Greek and Dutch pages to them.
+- No compute was written at all. The Step Functions machine called Textract directly and named
+  one Lambda that did not exist, so the pipeline had no step that ran this project's own logic.
+- `ReadAtTierZero` called Textract, because the local reader had nowhere to run in AWS —
+  which quietly deleted the cascade's entire reason for existing.
+
+A rule that says *never* stops work that a rule saying *not yet* would have required. That is
+the lesson, and it generalises past this project.
 
 **15 · The cost figure is a model, and it says so.** Tier-routing distribution measured over
 the corpus × published unit prices, each price cited with the pricing page and the date read.

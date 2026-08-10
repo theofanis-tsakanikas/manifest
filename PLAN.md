@@ -138,9 +138,16 @@ in the README rather than skipped.
 
 - [x] `src/manifest/extraction/local/` — the tier-0 open-source engine, **running**, over the
       real degraded corpus. This is where claims 1 and 2 get their real numbers.
-- [x] `src/manifest/extraction/aws/` — Textract / BDA / LLM adapters mapping to the same
+- [ ] `src/manifest/extraction/aws/` — Textract / BDA / Bedrock adapters mapping to the same
       normalised representation, tested against the documented response schema with authored
-      fixtures labelled as authored. Written, never called.
+      fixtures labelled as authored.
+
+      **This box was ticked and only one of the three adapters existed.** `textract.py` was
+      written; BDA and the tier-2 model were not, and the tick said otherwise for a phase and a
+      half. It is the same failure as the bulk-tick earlier in this file, and it mattered more:
+      `contracts/cascade/` declares tier 2 as "written as an adapter, schema-tested", and the
+      router sends every low-confidence Greek and Dutch page to it. A page routed to an adapter
+      that does not exist is the abstention path taken for a reason nobody declared.
 - [x] `src/manifest/cascade/` — tiered routing with the escalation rule from ADR-0004, the
       measured routing distribution, and the modelled cost that follows from it.
 - [x] `recordings/ocr/` and `make ocr-record` — the engine's normalised output over the
@@ -224,7 +231,7 @@ with zero false positives; every un-merge re-points every downstream record.
       declared capacity fails CI.
 - [x] `evals/review/` — **claim 5**, both halves: the decision cannot be bypassed, and the
       capacity/integrity checks bite.
-- [x] `infra/batch/` — written, validated, never run. The **planner** it executes is where
+- [x] `infra/batch/` — written and validated, not yet run. The **planner** it executes is where
       claim 7 lives (`core/scale.py`, `evals/scale/`), and `pipelines/reprocess.py` is the job
       that would run it: a thin adapter that decides nothing, defaults to a dry run, and keeps
       the part needing a cluster to one function.
@@ -250,7 +257,7 @@ with zero false positives; every un-merge re-points every downstream record.
       and it is the difference between a portfolio piece and a bill.
 
 **Done when:** `make preflight` is green, `deploy.yml` and `destroy.yml` exist and validate,
-nothing has ever been applied to AWS, and a stranger with no AWS account can reproduce every
+nothing has been applied to AWS yet, and a stranger with no AWS account can reproduce every
 number on the scoreboard.
 
 **Done, 2026-08-09.** `make preflight`: 26 passed, 0 failed, 0 skipped. Six Terraform layers,
@@ -291,7 +298,7 @@ gate was looking at:
   of adding a gate, silently, toward looking more finished than it is.
 
 Each is now refused by a gate with a mutation attacking it, and the run above is the run after
-the fixes. **Still never dispatched, still nothing applied to AWS.**
+the fixes. **Still not dispatched, still nothing applied to AWS.**
 
 Deliberately not done, and named rather than quietly dropped: the HS classification *model*
 (the contract declares `hs_code` always-review, which is the property claim 5 is about, and a
