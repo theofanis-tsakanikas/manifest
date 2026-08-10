@@ -1,0 +1,176 @@
+# The recording ceremony, run inside the image the estate runs.
+#
+# **Why this workflow exists at all, and what it cost to find out.**
+#
+# `recordings/ocr/manifest.json` was made on the author's laptop, by Homebrew's `tesseract
+# 5.5.2`. The estate reads with the image built from `Dockerfile`, which is Debian, and Debian
+# carries `5.5.0` — as does Debian sid, as does every Ubuntu up to and including the unreleased
+# one. **No Linux distribution ships 5.5.2.** The version the every threshold in this repository
+# was derived from is one the estate can never run.
+#
+# Nothing caught it. The image asserted the reader's *series* — `5.5` — on the documented
+# argument that a patch release does not move confidences, which is an assertion about a
+# distribution that nobody in this repository has measured. Every offline check reads
+# `recordings/` directly and so never met the deployed binary. The first document to reach the
+# deployed pipeline failed on `s3:ListBucket`, because the handler asked for
+# `thresholds/reference-ocr@tesseract-5.5.2.json` and the deploy had shipped exactly that, and
+# the *reading* in front of it came from 5.5.0.
+#
+# So the fix is not a better base image; there is no base image with 5.5.2 in it. The fix is
+# that **the recording and the estate must come from one binary**, and the only binary the
+# estate has is the one in the image. `Dockerfile` has claimed since it was written that "the
+# image is what both the laptop recording ceremony and the estate use". That sentence was false.
+# This workflow is what makes it true.
+#
+# **Why it is still a ceremony, and not a step in CI.**
+#
+# ADR-0005, decision 19: CI must never regenerate the recording. If it did, a threshold would
+# move because a runner image was updated, and claim 1 would spend its life going red for
+# reasons that have nothing to do with this repository. Three properties keep that rule intact
+# while moving the ceremony off the laptop:
+#
+#   - **`workflow_dispatch` only.** No push, no schedule, no pull request reaches it.
+#   - **It commits nothing and pushes nothing.** It has no write permission to do so. The new
+#     recording and the new thresholds leave as a downloadable artefact, and a human commits
+#     them — after reading the movement.
+#   - **The movement is printed in full, per field, old against new, with N.** That is the whole
+#     point of the ceremony and it is the one output of this workflow that matters. An engine
+#     upgrade that improves a field is good news; an engine upgrade that moves a threshold
+#     nobody looked at is claim 1 becoming decoration.
+#
+# **It needs no credentials.** The corpus regenerates from its committed seed, the image builds
+# from the committed Dockerfile, and the reader runs locally. A ceremony that decides every
+# number on the scoreboard should not also require an AWS account.
+name: record
+
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: >-
+          Read only this many pages. Empty means the whole corpus, which is what a real
+          recording is — a partial one derives thresholds from a subset and reports N as though
+          it were the set. Use it to check the plumbing, never to produce a recording anyone
+          commits.
+        required: false
+        type: string
+      confirm:
+        description: >-
+          Type "record" to confirm. This regenerates every threshold in the repository.
+        required: true
+        type: string
+
+# Read-only. The workflow cannot commit what it produces even if a future edit tries to: the
+# artefact goes out through `upload-artifact` and a human brings it back in.
+permissions:
+  contents: read
+
+jobs:
+  record:
+    name: the reader over the corpus, inside the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: confirm
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "record" ]; then
+            echo "::error::confirmation was '${{ inputs.confirm }}', not 'record'. This run"
+            echo "::error::would have moved every threshold in the repository."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: install
+        run: python -m pip install --quiet -e ".[dev]"
+
+      # The corpus is 2.5 GB of rendered pages and none of it is committed — it regenerates
+      # from a seed, and `--check` proves the regeneration reproduces the committed ground
+      # truth exactly. A recording made over a corpus that drifted is a recording of a
+      # different set of documents wearing the same fingerprint.
+      - name: regenerate the corpus and prove it reproduces
+        run: |
+          set -euo pipefail
+          python -m corpus.generate
+          python -m corpus.generate --check
+
+      # Built here rather than pulled from the registry, so that the recording is tied to the
+      # committed Dockerfile rather than to whatever was last pushed. Same file the deploy
+      # builds; if the two ever diverge, this is a build of the file in the tree.
+      - name: build the reader image
+        run: docker build --tag manifest-reader:ceremony .
+
+      # **The reader that runs here is the reader the estate runs.** The workspace is mounted so
+      # the recording lands in the tree; `PYTHONPATH` points at the mounted source rather than
+      # the copy baked into the image, so the ceremony runs this commit's code against this
+      # image's binary.
+      - name: run the reader over the corpus, inside the image
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            --env PYTHONPATH=/work/src \
+            --entrypoint /usr/local/bin/python \
+            manifest-reader:ceremony \
+            scripts/ocr_record.py --accept ${{ inputs.pages && format('--limit {0}', inputs.pages) || '' }}
+
+      # **The movement, which is the output of this workflow.** Run without `--write-baseline`
+      # first, so the derivation is compared against the committed thresholds and every field
+      # that moved is printed with its N. A non-zero exit here is the expected result of a
+      # reader change — it is claim 1 reporting that thresholds left their declared tolerance,
+      # which is precisely what a human is being asked to read. It does not fail the ceremony;
+      # it is the ceremony.
+      - name: the movement, per field, old against new
+        id: movement
+        continue-on-error: true
+        run: python -m evals.calibration
+
+      - name: derive the new baseline
+        run: |
+          set -euo pipefail
+          python -m evals.calibration --write-baseline
+          python scripts/thresholds_artefact.py --out thresholds-artefact.json
+          echo
+          echo "the artefact the estate will read:"
+          python scripts/thresholds_artefact.py --print-key
+
+      # **The reader's exact version, so the Dockerfile's assertion can be updated in the same
+      # commit as the recording.** `scripts/reader_version_check.py` fails the build when the
+      # two disagree; this prints what the new recording declares, so there is no step where
+      # somebody has to go and look it up.
+      - name: what to put in the Dockerfile
+        run: |
+          set -euo pipefail
+          version=$(python -c "import json,pathlib; print(json.loads(pathlib.Path('recordings/ocr/manifest.json').read_text())['reader_version'])")
+          echo "EXPECTED_READER_VERSION=${version}"
+          echo
+          echo "Set that in Dockerfile in the same commit as this recording."
+          echo "scripts/reader_version_check.py fails CI while they disagree."
+
+      - name: the recording, for a human to read and commit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: recording
+          path: |
+            recordings/ocr/
+            recordings/thresholds.json
+            thresholds-artefact.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: what happens next
+        run: |
+          echo "The recording is an artefact on this run. Nothing was committed."
+          echo
+          echo "  1. Download it and read the movement printed above, per field, with N."
+          echo "  2. If a threshold moved for a reason you can name, commit the recording,"
+          echo "     the thresholds and the Dockerfile version in one commit."
+          echo "  3. If a threshold moved and you cannot say why, that is the finding."
+          echo
+          echo "The movement step is expected to exit non-zero when a reader changes."
+          echo "It reported: ${{ steps.movement.outcome }}"

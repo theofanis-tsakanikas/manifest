@@ -214,7 +214,25 @@ def _thresholds(reader: ReaderIdentity) -> dict[str, float | None]:
     another: two readers' 0.8 are different events. A deployment carrying thresholds for a
     reader other than the one that produced this reading is refused rather than approximated.
     """
-    payload = _load_json(_env("RECORDS_BUCKET"), f"thresholds/{reader.slug}.json")
+    bucket = _env("RECORDS_BUCKET")
+    try:
+        payload = _load_json(bucket, f"thresholds/{reader.slug}.json")
+    except Exception as exc:
+        # **The refusal that has to name the disagreement, because the disagreement is the
+        # whole point.** A missing artefact here does not mean somebody forgot a file. It means
+        # the deployment is reading with one reader and carrying thresholds derived from
+        # another, and two readers' 0.8 are different events — so publishing on the wrong
+        # artefact would put a number on a customs record that no evidence supports.
+        #
+        # It is spelled out because of how it first appeared: `s3:ListBucket is not authorized`,
+        # from a handler whose grant was correct, on a deploy that was green, for a reader
+        # difference of one patch version. Nothing in that message contained the word "reader".
+        raise HandlerError(
+            f"no threshold artefact for {reader}. This deployment reads with {reader} and the "
+            f"thresholds shipped were derived from: {_shipped_for(bucket) or 'nothing found'}. "
+            f"A threshold derived for one reader says nothing about another, so this refuses "
+            f"rather than applying the nearest one. Underlying: {exc}"
+        ) from exc
     entries = payload.get("thresholds")
     if not isinstance(entries, dict):
         raise HandlerError(f"the threshold artefact for {reader} has no `thresholds` object")
@@ -274,6 +292,23 @@ def _reading(payload: dict[str, Any]) -> ReadDocument:
             f"{reading.fingerprint()}. The object changed after it was written"
         )
     return reading
+
+
+def _shipped_for(bucket: str) -> str:
+    """Which readers this deployment does carry thresholds for.
+
+    Best effort on purpose. It runs inside the handling of a failure, and a refusal that itself
+    raises tells the operator nothing at all — so a listing that is denied, throttled or empty
+    degrades to a shorter message rather than replacing the real one.
+    """
+    try:
+        listing = _s3().list_objects_v2(Bucket=bucket, Prefix="thresholds/")
+    except Exception:  # the message is the product; never let this throw
+        return ""
+    return ", ".join(
+        entry["Key"].removeprefix("thresholds/").removesuffix(".json")
+        for entry in listing.get("Contents", ())
+    )
 
 
 def _load_json(bucket: str, key: str) -> dict[str, Any]:

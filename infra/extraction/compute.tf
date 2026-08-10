@@ -115,6 +115,31 @@ data "aws_iam_policy_document" "publish" {
     ]
   }
 
+  # **Listing one prefix, so that a missing artefact can say it is missing.**
+  #
+  # Without this, S3 answers `AccessDenied` for an object that is simply not there — it will not
+  # confirm a key's absence to a caller that cannot list the bucket. That is the correct S3
+  # behaviour and it made the single most important failure of the first deploy unreadable: the
+  # handler asked for `thresholds/reference-ocr@tesseract-5.5.2.json`, the deployment had
+  # shipped exactly that, and the *reading* in front of it came from 5.5.0 — a reader mismatch
+  # that reported itself as an IAM error naming an action nobody had thought about.
+  #
+  # `scripts/reader_version_check.py` now makes that mismatch impossible to commit, so this is
+  # the second line rather than the first. It is still worth having: the diagnosis cost hours,
+  # the grant is one prefix, and it reads key names in a bucket this role already reads two
+  # prefixes of. A control that cannot say what is wrong gets muted by whoever is on call.
+  statement {
+    sid       = "ListTheThresholdsSoAMissingOneSaysSo"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.records_bucket}"]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["thresholds/*"]
+    }
+  }
+
   statement {
     sid       = "UseTheDataKey"
     effect    = "Allow"

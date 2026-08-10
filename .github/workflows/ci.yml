@@ -85,6 +85,15 @@ jobs:
       - name: the contract set loads and cross-checks
         run: python scripts/check_contracts.py
 
+      - name: the image's reader and the recording's reader are the same reader
+        # The check that would have caught the worst finding of the first deploy, offline, in
+        # two seconds. The recording was made by Homebrew's tesseract 5.5.2; the image is
+        # Debian, which carries 5.5.0; the image asserted only the *series* and let it through.
+        # The deploy went green and the first real document failed on `s3:ListBucket` — because
+        # the handler asks for its thresholds by the reader's exact identity, and nothing had
+        # shipped an artefact for the reader that was actually reading.
+        run: python scripts/reader_version_check.py
+
       - name: the corpus plants mismatches blind to the rules that will find them
         # Claim 4's independence, read off the import graph. A planter that knows the
         # reconciliation contract is a planter that can be tuned to it, and the harness would

@@ -88,8 +88,12 @@ ocr-record: ## Run the tier-0 reader over the corpus and record it (ACCEPT=1 to 
 #   claim 6  entity resolution is reversible                     — phase 3
 #   claim 7  bulk reprocessing is idempotent, cost modelled      — phase 4
 
+.PHONY: reader-version
+reader-version: ## The image's reader and the recording's reader are the same reader
+	$(PY) scripts/reader_version_check.py
+
 .PHONY: claims
-claims: core-pure planting-blind contracts-validate corpus-check envelope \
+claims: core-pure planting-blind contracts-validate corpus-check envelope reader-version \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
 	injection line-items classification marts ## Every claim gate that exists today
 
