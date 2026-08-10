@@ -244,6 +244,28 @@ jobs:
             --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
           echo "key=$key" >> "$GITHUB_OUTPUT"
           echo "hash=$(openssl dgst -sha256 -binary "$GITHUB_WORKSPACE/publish.zip" | base64)" >> "$GITHUB_OUTPUT"
+      - name: upload the derived thresholds
+        # **The artefact the extraction handler reads, and that nothing created.** Without this
+        # the first invocation after a deploy fails on `NoSuchKey` — the same family as the
+        # provenance gate that was invoked by a name no layer created, and just as invisible:
+        # every offline check reads `recordings/thresholds.json` directly, so every offline
+        # check passed.
+        #
+        # Rendered from the committed recording rather than recomputed here. Recomputing would
+        # let a threshold move because a runner image was updated, in the one place where it
+        # decides whether a value reaches a customer.
+        run: |
+          set -euo pipefail
+          python scripts/thresholds_artefact.py --out thresholds.json
+          key=$(python scripts/thresholds_artefact.py --print-key)
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "$key" \
+            --body thresholds.json \
+            --content-type application/json \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          echo "uploaded $key"
       - name: apply
         run: |
           terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
@@ -393,6 +415,42 @@ jobs:
             exit 1
           fi
           echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+      - name: resolve what extraction published
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/extraction" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/extraction/||"
+          )
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/extraction/ — apply the extraction layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/extraction/*"
+      - name: resolve what lakehouse published
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/lakehouse" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/lakehouse/||"
+          )
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/lakehouse/ — apply the lakehouse layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
       - name: apply
         run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
@@ -448,6 +506,24 @@ jobs:
             exit 1
           fi
           echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+      - name: resolve what lakehouse published
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/lakehouse" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/lakehouse/||"
+          )
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/lakehouse/ — apply the lakehouse layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
       - name: apply
         run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"

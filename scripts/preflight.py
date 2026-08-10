@@ -18,9 +18,10 @@ of it affects an offline run, and each one is otherwise a deploy that fails at m
 
 `--fast` skips the slow members of each group; CI runs the whole thing.
 
-**Green here does not mean deployed, and it never will.** `docs/DECISIONS.md` 14: nothing in
-this repository is ever applied to AWS. This command answers *"would this be ready?"* and that
-is the only question it is allowed to answer.
+**Green here does not mean deployed.** `docs/DECISIONS.md` 14: nothing has been applied yet, and
+the first apply is a deliberate, separate act. This command answers *"would this be ready?"* and
+that is the only question it is allowed to answer — a green run after a deploy still means the
+same thing, because every check in it is offline by construction.
 
 The list grows one line per phase. A check for a claim that is not yet provable would be a
 green tick over work that has not happened, so there are fewer lines here than there will be.
@@ -85,6 +86,16 @@ CHECKS: list[Check] = [
         "test suite",
         [PYTHON, "-m", "pytest", "-q"],
         "Every claim this repository makes is asserted by one of these.",
+    ),
+    Check(
+        "correctness",
+        "the engine adapter parses this build",
+        [PYTHON, "scripts/check_engine_adapter.py"],
+        "A reader upgrade that renamed a column breaks every reading silently: the committed "
+        "recording keeps deriving perfectly good thresholds from data nothing can produce any "
+        "more, and the first sign is an empty record. Derives nothing itself — see "
+        "docs/DECISIONS.md 19.",
+        needs="tesseract",
     ),
     Check(
         "correctness",

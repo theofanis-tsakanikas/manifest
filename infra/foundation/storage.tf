@@ -301,3 +301,24 @@ resource "aws_s3_bucket_policy" "zone" {
   bucket = each.value.id
   policy = data.aws_iam_policy_document.zone[each.key].json
 }
+
+# The landing zone emits to EventBridge, and nothing else here subscribes.
+#
+# This is the one notification setting that has to live with the bucket rather than with its
+# consumer: `eventbridge = true` is an attribute *of the bucket*, and only the layer that owns
+# the bucket can set it. What it deliberately does **not** do is name a target. A bucket
+# notification pointed straight at a state machine would make this layer reference a resource a
+# later layer creates — the cross-layer dependency in the wrong direction, and undeletable in
+# the right order, which is the property `destroy.yml` depends on.
+#
+# So foundation says "announce arrivals" and `infra/extraction` says "and I am listening". Each
+# layer owns one half, and either can be destroyed without the other becoming invalid.
+#
+# The checkov skip above says event notifications are configured by the consuming layer, and this
+# resource is what makes that true rather than aspirational: without it the rule in
+# `infra/extraction/trigger.tf` matches an event S3 never sends, and a document landing in the
+# bucket causes nothing at all — silently, with every check green.
+resource "aws_s3_bucket_notification" "landing" {
+  bucket      = aws_s3_bucket.zone["landing"].id
+  eventbridge = true
+}

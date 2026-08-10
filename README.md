@@ -10,7 +10,7 @@ Athena · Redshift Serverless · Terraform*
 
 ---
 
-> **Status: ready to deploy, not yet deployed.** `make preflight` runs **26 checks** — every claim
+> **Status: ready to deploy, not yet deployed.** `make preflight` runs **27 checks** — every claim
 > below, every consistency invariant, `terraform validate` against real provider schemas across
 > six layers, checkov at zero findings, and a check that the figures on this page are the ones
 > the run produced. All of them pass. **Nothing has been created in AWS.**
@@ -63,9 +63,9 @@ command in this repository, not a summary of one.
 | **injection** | **0 false positives** on 2,963 documents of ordinary trade prose; 4/4 planted strings recognised; the envelope refuses a forged delimiter rather than escaping it |
 | **line-item totals** | **252/252** deliberately truncated tables caught — 211 by direction, 41 as totals the reader mangled |
 | **classification** | 6/6 contested headings abstain; nothing publishes at any score |
-| `make gate-proof` | **26 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **30 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **383 passed, 0 findings** across six layers; 92 deliberate exceptions, each with a written reason beside the resource |
+| `checkov` | **517 passed, 0 findings** across six layers; 123 deliberate exceptions, each with a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
 | test suite | **236 passing**, offline, credential-free |
 
@@ -138,8 +138,10 @@ a `0`/`O` confusion reproduces on both passes. The gate also does **not** catch 
 at an identical string elsewhere on the page, stated in ADR-0003 in advance, with a fixture
 whose expected result is *not caught*.
 
-**No accuracy figure exists for the cascade's upper tiers.** They are never called. *"Accuracy
-held at X for Y% of the cost"* is unavailable here and does not appear.
+**No accuracy figure exists for the cascade's upper tiers.** No page has been sent to one, so
+there is nothing to report. *"Accuracy held at X for Y% of the cost"* is unavailable here and
+does not appear — and after a real run it would be a figure with a date and an N beside it,
+reported separately from the offline eval rather than merged into it.
 
 **The cost is a model.** The routing distribution is measured over the recording; the tier-1
 unit price is published, cited and dated. **Tier 2 carries no price at all** — it is charged per
@@ -219,7 +221,7 @@ one function, and keeping it that size is what stops the untested region growing
 make install       # venv + editable install
 make test          # 189 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 26 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 30 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)
@@ -238,7 +240,9 @@ data. No AWS account, no credentials, no network.
 | [`contracts/`](contracts/) | **The source of truth** — document types, agreement rules, the party model, review capacity, cascade routing. YAML, never imported by name |
 | [`corpus/`](corpus/) | The generator, its ground truth, and `envelope.yaml` — the declared operating range |
 | [`src/manifest/core/`](src/manifest/core/) | **Pure.** No cloud SDK, no engine, no clock, and no engine named anywhere — enforced by a gate and three mutations |
-| [`src/manifest/extraction/`](src/manifest/extraction/) | `local/` runs; `aws/` is written, schema-tested and never called |
+| [`src/manifest/extraction/`](src/manifest/extraction/) | `local/` runs; `aws/` is written and schema-tested against published schemas, not yet called |
+| [`src/manifest/handlers/`](src/manifest/handlers/) | The three functions that run in the estate. Each one calls `core` and decides nothing itself |
+| [`Dockerfile`](Dockerfile) | The tier-0 reader as an image — the same binary and language data that produced the recording, version asserted at build time |
 | [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
 | [`recordings/ocr/`](recordings/ocr/) | The tier-0 reader's normalised output, with its version and fingerprint. Every threshold derives from here |
 | [`evals/`](evals/) | The seven claim harnesses, labelled and credential-free |

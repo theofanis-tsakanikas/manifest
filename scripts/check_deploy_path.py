@@ -202,24 +202,53 @@ def _check_permissions_exist() -> list[str]:
     ]
 
 
+def _variable_blocks(text: str) -> list[tuple[str, str]]:
+    """Every `variable "name" { ... }` and its body, found by matching braces.
+
+    A regex was used here and it missed **27 declarations across four layers** — every variable
+    written on a single line, `variable "vpc_id" { type = string }`, because the pattern looked
+    for a closing brace at the start of a line. Those are exactly the cross-layer references,
+    so the check that exists to prove a layer can evaluate was silently skipping the variables
+    most likely to be missing.
+
+    Brace matching rather than a cleverer regex: HCL nests (`validation`, `dynamic`), and a
+    pattern that handles one level of nesting is a pattern that fails on two.
+    """
+    blocks: list[tuple[str, str]] = []
+    for match in re.finditer(r'variable\s+"([^"]+)"\s*\{', text):
+        depth, index = 0, match.end() - 1
+        while index < len(text):
+            if text[index] == "{":
+                depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        blocks.append((match.group(1), text[match.end() : index]))
+    return blocks
+
+
 def _required_variables(layer: str) -> set[str]:
     """Variables the layer declares with no default — the ones a run must supply.
 
-    A default is matched as an **assignment** at the start of a line, never as the word.
+    Two bugs lived in the earlier versions of this function, and both under-reported, which is
+    the direction that matters: a gate that misses a problem is worse than no gate, because the
+    green is what people act on.
 
-    The first version searched the block for the string `default`, and that is a false-negative
-    machine: three variables whose own descriptions said "there is no default" were read as
-    having one and were never checked. It was found by adding those three, watching the gate
-    report one problem instead of four, and asking why. A gate that under-reports is worse than
-    no gate, because the green is the part people act on.
+    The first searched each block for the *word* `default`, so three variables whose own
+    descriptions said "there is no default" were read as having one. The second used a regex
+    that required the closing brace at the start of a line, so every single-line declaration was
+    invisible — 27 of them, and all the cross-layer references among them.
     """
     variables = ROOT / "infra" / layer / "variables.tf"
     if not variables.exists():
         return set()
-    blocks = re.findall(
-        r'variable "([^"]+)" \{(.*?)\n\}', variables.read_text(encoding="utf-8"), re.S
-    )
-    return {name for name, body in blocks if not re.search(r"^\s*default\s*=", body, re.M)}
+    return {
+        name
+        for name, body in _variable_blocks(variables.read_text(encoding="utf-8"))
+        if not re.search(r"(^|\n)\s*default\s*=", body)
+    }
 
 
 def _check_every_layer_can_evaluate() -> list[str]:
@@ -359,6 +388,118 @@ def _check_nothing_names_what_nothing_creates() -> list[str]:
     return problems
 
 
+def _check_a_trigger_can_actually_fire() -> list[str]:
+    """An event target's role grants the action that target needs.
+
+    The deploy-role check above asks whether the estate can be *built*. This asks whether it can
+    *run*, which is a different question and was not being asked at all: a rule with a target and
+    a role that cannot invoke it deploys cleanly, reports healthy, and does nothing. There is no
+    error anywhere — the documents simply sit in the bucket.
+
+    Narrow on purpose. It knows one pairing: a target that is a state machine needs
+    `states:StartExecution`. A general "does this role permit this target" check would need to
+    model IAM, which nothing offline can do honestly; what it can do is refuse the one wiring
+    this repository actually has, and refuse a new pairing it does not recognise rather than
+    passing it silently.
+    """
+    problems: list[str] = []
+
+    for definition in sorted(ROOT.glob("infra/*/*.tf")):
+        text = definition.read_text(encoding="utf-8")
+        for target in re.finditer(
+            r'resource\s+"aws_cloudwatch_event_target"\s+"(\w+)"\s*\{(.*?)\n\}', text, re.S
+        ):
+            name, body = target.group(1), target.group(2)
+            if "aws_sfn_state_machine" not in body:
+                continue
+            if "role_arn" not in body:
+                problems.append(
+                    f"{definition.relative_to(ROOT)}: event target `{name}` starts a state "
+                    f"machine and names no role. It deploys cleanly and never fires"
+                )
+                continue
+            # The role's policy is in the same layer; a grant elsewhere would be a cross-layer
+            # dependency this repository does not have.
+            layer = "\n".join(
+                path.read_text(encoding="utf-8") for path in sorted(definition.parent.glob("*.tf"))
+            )
+            if "states:StartExecution" not in layer:
+                problems.append(
+                    f"{definition.relative_to(ROOT)}: event target `{name}` starts a state "
+                    f"machine and nothing in this layer grants `states:StartExecution`. The "
+                    f"estate deploys, every resource reports healthy, and no document is ever "
+                    f"processed — the hardest of these failures to see, because nothing errors"
+                )
+
+    return problems
+
+
+def _check_the_runtime_artefacts_are_deployed() -> list[str]:
+    """Every object prefix a handler *reads* is written by a handler or by the deploy.
+
+    **The family of failure this closes has now produced six findings in this repository**, and
+    every one of them had the same shape: something names an artefact — a function, a parameter,
+    an object — that nothing creates. Terraform is content, checkov is content, `terraform
+    validate` is content, and the failure arrives at the first invocation, after the approval,
+    usually inside a `Catch` that turns it into a document quietly going to a human.
+
+    Two of the six were object prefixes, and they are why this check reads the handlers rather
+    than a hand-maintained list:
+
+    - `thresholds/` — the extraction handler read it and nothing wrote it. The deploy now
+      renders and uploads it, so a *step* satisfies the requirement.
+    - `renders/` — the provenance gate read it and nothing wrote it, because the reader
+      rasterised to a temporary directory and let it go. Every field would have been reported
+      uncheckable, which is a refusal, and the pipeline would have queued 100% of its volume
+      while reporting success. Another *handler* satisfies it.
+
+    A hand-maintained list of "artefacts to check" would have contained neither, because both
+    were written and forgotten in the same commit as the code that reads them. Reading the
+    handlers means a new prefix is covered the moment somebody adds one.
+    """
+    problems: list[str] = []
+    deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+
+    #: A prefix a *deploy step* may satisfy instead of a handler, and the producer that must
+    #: appear in the workflow for it to count.
+    deployed = {"thresholds/": "scripts/thresholds_artefact.py"}
+
+    #: Only strings used as an object key or a key prefix. Matching bare `word/` anywhere would
+    #: collect `application/json` and `image/png` from content types — a check that reports
+    #: three imaginary problems is a check somebody turns off before it finds the real one.
+    key_context = re.compile(
+        r"(?:Key=|prefix=|key\s*=\s*|_load_json\([^,]+,\s*)f?\"([a-z][a-z0-9_]*)/"
+    )
+
+    written: set[str] = set()
+    read: set[str] = set()
+    for path in sorted(ROOT.glob("src/manifest/handlers/*.py")):
+        source = path.read_text(encoding="utf-8")
+        prefixes = set(key_context.findall(source))
+        # A file that puts objects is credited with the prefixes it names; a file that fetches
+        # them is charged with them. `read_tier0` does both, and its own prefixes are written by
+        # it, so it settles its own account — which is correct and is why the sets are unioned
+        # rather than partitioned by file.
+        if "put_object(" in source:
+            written |= prefixes
+        if "get_object(" in source or "download_file(" in source or "prefix=" in source:
+            read |= prefixes
+
+    for prefix in sorted(read - written):
+        key = f"{prefix}/"
+        producer = deployed.get(key)
+        if producer and producer in deploy:
+            continue
+        problems.append(
+            f"a handler reads objects under `{key}` and nothing writes them — no handler puts "
+            f"an object there and no deploy step produces one. The first invocation after the "
+            f"deploy fails on a missing object, inside a Catch, as a document quietly going to "
+            f"a human"
+        )
+
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -381,6 +522,8 @@ def main() -> int:
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())
+    problems.extend(_check_the_runtime_artefacts_are_deployed())
+    problems.extend(_check_a_trigger_can_actually_fire())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

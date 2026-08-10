@@ -23,11 +23,15 @@ Two lessons carried over from Watermark — read them before Phase 0:
   is Phase 0; the Terraform for each layer is written in the phase that uses it, because
   parallelism, batch sizes and schemas are decided by the code.
 
-**And the rule that shapes every phase: nothing is ever applied to AWS.** Everything up to and
-including the deploy path gets built — all code, all local tests, all Terraform, `ci.yml`,
-`deploy.yml`, `destroy.yml`, validated and scanned and gated — and then it stops. The author
-deploys, if he chooses. The corollary is that **every claim must be provable by something that
-actually runs on the machine**, which is why the cascade's bottom tier is a local OCR engine
+**And the rule that shapes every phase: build everything, then deploy — deliberately, as a
+separate act.** Everything up to and including the deploy path gets built first: all code, all
+local tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.yml`,
+`destroy.yml`, validated and scanned and gated. Nothing is applied until the author dispatches
+it. *(Revised 2026-08-10 — see `docs/DECISIONS.md` 14 for how the earlier wording, "nothing is
+**ever** applied", cost this project its adapters and its compute.)*
+
+The corollary survives the revision unchanged and is the more important half: **every claim must
+be provable by something that actually runs on the machine**, which is why the cascade's bottom tier is a local OCR engine
 (decision 16) rather than a mock. See `docs/DECISIONS.md` 14–16.
 
 ---

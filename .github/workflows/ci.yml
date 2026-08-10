@@ -175,14 +175,45 @@ jobs:
         # anything.
         run: checkov -d infra --compact --quiet
 
-  # An `engine` job — running the tier-0 OCR binary over a slice of the corpus and asserting the
-  # adapter still parses what it emits — arrives in phase 2 with `src/manifest/extraction/local/`.
-  # It is deliberately absent rather than present and vacuous.
-  #
-  # Note what that job will and will not do. It will **not** recompute confidences: the binary's
-  # version differs between this runner and the machine that produced `recordings/ocr/`, so a
-  # threshold derived here would move for reasons that have nothing to do with the code, claim 1
-  # would go red at random, and the check would be switched off within a month. Thresholds are
-  # derived from the committed recording. What this job checks is that the adapter still reads
-  # the binary's output format — a different failure, and one that must stay distinguishable
-  # from the first. See `docs/DECISIONS.md` 19.
+  engine:
+    name: the adapter still parses what the binary emits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install the reader and the languages the scenario needs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-ell tesseract-ocr-nld
+      - run: pip install -e ".[dev]"
+      - name: read a page here and check the adapter maps it
+        # **This job does not recompute a single threshold, and that is the point.**
+        #
+        # The binary on this runner is a different build from the one that produced
+        # `recordings/ocr/`. Deriving a threshold here would move it because a runner image was
+        # updated, claim 1 would go red for reasons that have nothing to do with this
+        # repository, and the check would be switched off within a month. Thresholds come from
+        # the committed recording, under the ceremony in `make ocr-record`.
+        #
+        # What this checks is a *different* failure and one that must stay distinguishable: that
+        # the adapter still understands the binary's output format. A version bump that changed
+        # the TSV columns would break every reading silently, and no amount of committed
+        # recording would notice. See `docs/DECISIONS.md` 19.
+        run: python scripts/check_engine_adapter.py
+
+  image:
+    name: the reader image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build it
+        # Built on every pull request, pushed by nothing. A Dockerfile is code, and a broken one
+        # discovered by the deploy is discovered after the environment approval has been given —
+        # the same class of failure as a missing IAM grant, and just as avoidable.
+        #
+        # The build itself asserts the reader version and every language pack, so this job also
+        # catches a base image whose publisher moved the binary underneath it. That would move
+        # every derived threshold in this repository on the next deploy, silently.
+        run: docker build -t manifest-reader:ci .

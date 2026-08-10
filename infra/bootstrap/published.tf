@@ -22,8 +22,8 @@
 
 locals {
   published = {
-    state_bucket      = aws_s3_bucket.state.id
-    state_kms_key_arn = aws_kms_key.state.arn
+    state_bucket         = aws_s3_bucket.state.id
+    state_kms_key_arn    = aws_kms_key.state.arn
     deploy_role_arn      = aws_iam_role.deploy.arn
     escalation_model_arn = var.escalation_model_arn
     # Computed here rather than in `foundation`, because the deploy needs it *before* foundation

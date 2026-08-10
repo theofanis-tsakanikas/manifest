@@ -338,11 +338,11 @@ resource "aws_lambda_function" "publish" {
   #checkov:skip=CKV_AWS_115:Reserved concurrency is set on this resource below.
   #checkov:skip=CKV_AWS_116:As on the reader — these are synchronous invocations from the state machine, and a dead-letter queue only receives from asynchronous ones.
   #checkov:skip=CKV_AWS_272:Code signing would need a signing profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
-  function_name    = "${var.project}-publish"
-  description      = "Extraction and the derived thresholds — this project's own logic"
-  role             = aws_iam_role.publish.arn
-  runtime          = "python3.12"
-  handler          = "manifest.handlers.publish.handler"
+  function_name = "${var.project}-publish"
+  description   = "Extraction and the derived thresholds — this project's own logic"
+  role          = aws_iam_role.publish.arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.publish.handler"
   # From object storage, not from a local path.
   #
   # `filename` with `filebase64sha256()` reads the file at plan time — including during

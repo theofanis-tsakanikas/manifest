@@ -191,7 +191,7 @@ def _thresholds(reader: ReaderIdentity) -> dict[str, float | None]:
     another: two readers' 0.8 are different events. A deployment carrying thresholds for a
     reader other than the one that produced this reading is refused rather than approximated.
     """
-    payload = _load_json(_env("RECORDS_BUCKET"), f"thresholds/{reader.name}@{reader.version}.json")
+    payload = _load_json(_env("RECORDS_BUCKET"), f"thresholds/{reader.slug}.json")
     entries = payload.get("thresholds")
     if not isinstance(entries, dict):
         raise HandlerError(f"the threshold artefact for {reader} has no `thresholds` object")

@@ -266,7 +266,7 @@ resource "aws_sfn_state_machine" "extraction" {
           "FunctionName" : aws_lambda_function.publish.arn,
           "Payload" : {
             "reading.$" : "$.tier0.reading.reading",
-            "document_type.$" : "$.document_type",
+            "document_type.$" : "$.tier0.reading.document_type",
             "language.$" : "$.tier0.reading.language"
           }
         }

@@ -21,7 +21,7 @@ from manifest.handlers import provenance_gate, publish, read_tier0
 
 class TestTheReaderRefusesWhatItCannotSafelyAssume:
     def test_an_event_missing_its_required_keys_is_refused(self) -> None:
-        with pytest.raises(read_tier0.HandlerError, match="missing"):
+        with pytest.raises(read_tier0.HandlerError, match="bucket and a key"):
             read_tier0.Request.of({})
 
     @pytest.mark.parametrize("key", ["../../etc/passwd", "/absolute", "a/../../b"])
@@ -33,28 +33,37 @@ class TestTheReaderRefusesWhatItCannotSafelyAssume:
         object key is counterparty content.
         """
         with pytest.raises(read_tier0.HandlerError, match="traverses"):
-            read_tier0.Request.of({"bucket": "b", "key": key, "document_id": "d", "language": "en"})
+            read_tier0.Request.of({"bucket": "b", "key": key})
 
-    @pytest.mark.parametrize("language", [None, "", "   "])
-    def test_a_missing_language_is_refused_rather_than_defaulted_to_english(
-        self, language: str | None
-    ) -> None:
-        """The most consequential default this handler could have.
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "incoming/SHP1.pdf",
+            "incoming/el/SHP1.pdf",
+            "incoming/greek/bill_of_lading/SHP1.pdf",
+            "incoming/el/bill_of_lading/SHP1.tiff",
+            "elsewhere/el/bill_of_lading/SHP1.pdf",
+        ],
+    )
+    def test_a_key_outside_the_convention_is_refused_rather_than_guessed(self, key: str) -> None:
+        """The language and the document type arrive **only** through the key.
 
-        A Greek page read as English does not fail. It returns confident text in the wrong
-        alphabet, that confidence enters a threshold derived on the assumption that it means
-        something, and `contracts/cascade/` routes on the language it was told.
+        There is no default for either, and this is the most consequential pair of defaults this
+        handler could have had. A Greek page read as English does not fail — it returns confident
+        text in the wrong alphabet, and that confidence then enters a threshold derived on the
+        assumption that it means something. A document thresholded against the wrong contract is
+        the same failure from the other side.
         """
-        with pytest.raises(read_tier0.HandlerError, match="no default"):
-            read_tier0.Request.of(
-                {"bucket": "b", "key": "k", "document_id": "d", "language": language}
-            )
+        with pytest.raises(read_tier0.HandlerError, match="landing convention"):
+            read_tier0.Request.of({"bucket": "b", "key": key})
 
-    def test_a_complete_event_parses(self) -> None:
+    def test_a_key_in_the_convention_yields_the_language_and_the_type(self) -> None:
         request = read_tier0.Request.of(
-            {"bucket": "landing", "key": "in/SHP1.pdf", "document_id": "SHP1/bol", "language": "el"}
+            {"bucket": "landing", "key": "incoming/el/bill_of_lading/SHP00001.pdf"}
         )
-        assert (request.bucket, request.language) == ("landing", "el")
+        assert request.language == "el"
+        assert request.document_type == "bill_of_lading"
+        assert request.document_id == "SHP00001"
 
     def test_the_required_language_set_covers_the_two_no_managed_service_reads(self) -> None:
         """Greek and Dutch are the scenario's whole argument for a local tier 0."""

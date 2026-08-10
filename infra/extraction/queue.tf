@@ -6,6 +6,31 @@
 # that reviewer integrity is measured. Those are properties of a queue's *design*, and a managed
 # worker pool supplies none of them.
 
+# **This queue has no consumer in this estate, and that is a decision rather than an omission.**
+#
+# Stated here because "a queue nothing reads" is indistinguishable, from the outside, from the
+# gap this repository has now found five times: something written, validated, scanned clean and
+# inert. The difference is that the others were accidents and this one is not.
+#
+# The consumer of a review queue is a **reviewing interface** — a screen showing a human the page
+# crop, the proposed value, the field's contract and the reason it was queued, and recording what
+# they decided and how long they looked at it. That is an application, and building one here would
+# be building a product this project is not about.
+#
+# What the project *does* claim about review is claim 5, and every part of it is proved offline in
+# `evals/review/`: nothing publishes below its threshold without a recorded decision, a field with
+# no provenance cannot be approved into existence, the queue's declared capacity is measured
+# against, and rubber-stamping is detected. Those are properties of the decision *record* and the
+# capacity *model*, and they hold whether the screen exists or not.
+#
+# So the queue is the interface, deliberately: it holds the item, its reason, its provenance and
+# its contract, encrypted, for fourteen days, with a dead-letter queue behind it. A consumer
+# reads it — and until one does, items accumulate visibly rather than disappearing, which is the
+# right failure for a system whose doctrine says abstention is the safe state and that a queue
+# past capacity is a failure of the system rather than of the reviewers.
+#
+# **What would be dishonest** is a Lambda here that auto-approved anything, or a consumer that
+# drained the queue to keep a dashboard green. Doctrine rule 5: nothing approves itself.
 resource "aws_sqs_queue" "review" {
   name                              = "${var.project}-review"
   kms_master_key_id                 = var.data_key_arn

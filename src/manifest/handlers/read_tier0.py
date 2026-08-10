@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,22 @@ from manifest.extraction.local import reader as local_reader
 #: it were English and returns confident text in the wrong alphabet, and every threshold derived
 #: from that is a statement about a language nobody read. Fail-closed is the only safe posture.
 REQUIRED_LANGUAGES: frozenset[str] = frozenset({"eng", "ell", "nld", "deu", "fra"})
+
+#: The object-key convention the landing zone declares, and the only way a document's language
+#: and type reach this system.
+#:
+#: `incoming/<language>/<document_type>/<document-id>.pdf`
+#:
+#: Parsed here, in Python, rather than in an EventBridge input transformer — which cannot split
+#: a string, so the alternative was either a rule per document type or a default. Both are worse
+#: than a convention that fails closed: an object whose key does not match is refused, by name,
+#: instead of being read in a language nobody chose.
+#:
+#: There is no fallback and no guess. A page read in the wrong language returns confident text in
+#: an alphabet the reader never saw, and `contracts/cascade/` routes on that language.
+KEY_CONVENTION: re.Pattern[str] = re.compile(
+    r"^incoming/(?P<language>[a-z]{2})/(?P<document_type>[a-z][a-z0-9_]*)/(?P<document_id>[^/]+)\.pdf$"
+)
 
 #: Render resolution. Declared here, once, because it is a number the whole system depends on:
 #: `docs/AWS-CONSTRAINTS.md` records a 15-pixel character-height floor below which the managed
@@ -61,12 +78,14 @@ class Request:
     key: str
     document_id: str
     language: str
+    document_type: str
 
     @classmethod
     def of(cls, event: dict[str, Any]) -> Request:
-        missing = [name for name in ("bucket", "key", "document_id") if not event.get(name)]
-        if missing:
-            raise HandlerError(f"the event is missing {missing}; this is not the documented input")
+        if not event.get("bucket") or not event.get("key"):
+            raise HandlerError(
+                "the event must carry a bucket and a key; this is not the documented input"
+            )
 
         key = str(event["key"])
         if ".." in key or key.startswith("/"):
@@ -75,19 +94,21 @@ class Request:
                 f"and it becomes a local path when the object is downloaded"
             )
 
-        language = str(event.get("language") or "").strip()
-        if not language:
+        matched = KEY_CONVENTION.match(key)
+        if not matched:
             raise HandlerError(
-                f"no language on the event for {key!r}. There is no default: a page read in the "
-                f"wrong language returns confident text in an alphabet the reader never saw, "
-                f"and `contracts/cascade/` routes on that language"
+                f"{key!r} does not match the landing convention "
+                f"`incoming/<language>/<document_type>/<id>.pdf`. Refused rather than guessed: "
+                f"the language decides which reader may see the page and the document type "
+                f"decides which contract applies, and neither has a safe default"
             )
 
         return cls(
             bucket=str(event["bucket"]),
             key=key,
-            document_id=str(event["document_id"]),
-            language=language,
+            document_id=str(event.get("document_id") or matched.group("document_id")),
+            language=matched.group("language"),
+            document_type=matched.group("document_type"),
         )
 
 
@@ -114,6 +135,25 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
                 f"successful one is a document that silently contributes nothing"
             )
         reading = local_reader.read_document(source_id=request.document_id, pages=pages)
+
+        # **The renders go with the reading, and this is not an optimisation.**
+        #
+        # The provenance gate re-opens the page to check that the recorded box carries ink and
+        # that the crop re-reads to the published value. It cannot do that from a temporary
+        # directory in a process that has already exited, and a reviewer shown a queued field
+        # needs the same crop. Without this upload the gate finds no page, reports every field
+        # uncheckable — which is a refusal — and the pipeline sends 100% of its volume to a
+        # human while reporting success. The sixth time in this repository that something read
+        # an artefact nothing wrote.
+        for path, number, _, _ in pages:
+            _s3().put_object(
+                Bucket=records,
+                Key=f"renders/{request.document_id}/page-{number:04d}.png",
+                Body=path.read_bytes(),
+                ContentType="image/png",
+                ServerSideEncryption="aws:kms",
+                SSEKMSKeyId=_env("DATA_KEY_ARN"),
+            )
 
     payload = {
         "document_id": reading.source_id,
@@ -155,7 +195,7 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     # Keyed by reader version. Claim 3 is "same document, same reader version, identical record",
     # and a key that omitted the version would have one reader's reading overwrite another's —
     # which is the silent overwrite doctrine rule 4 exists to forbid.
-    key = f"readings/{reading.reader.name}@{reading.reader.version}/{request.document_id}.json"
+    key = f"readings/{reading.reader.slug}/{request.document_id}.json"
     _s3().put_object(
         Bucket=records,
         Key=key,
@@ -173,6 +213,11 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         "reading": {"bucket": records, "key": key},
         "fingerprint": reading.fingerprint(),
         "language": request.language,
+        # Carried out of here rather than taken from the trigger's payload, so that the type the
+        # contract is chosen by and the language the page was read in come from one parse of one
+        # key. Two parses in two places is how a document gets read as Greek and thresholded as
+        # a bill of lading.
+        "document_type": request.document_type,
         "tier": 0,
         "pages": len(reading.pages),
         # `None` where any word was unscored, and `None` survives into the state machine as

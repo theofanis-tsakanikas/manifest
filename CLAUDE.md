@@ -225,6 +225,9 @@ manifest/
 │   ├── entities/               # entity resolution, merge/unmerge, lineage
 │   ├── review/                 # the queue, capacity model, reviewer-integrity metrics
 │   ├── versioning/             # document versions, re-extraction diffs, supersession
+│   ├── handlers/               # the three functions that run in the estate — read_tier0,
+│   │                           #   publish, provenance_gate. Adapters: they may import boto3,
+│   │                           #   they call core, and they decide nothing themselves
 │   ├── gates/                  # one module per claim
 │   └── observability/          # OTEL spans, cost per document and per 1,000 pages
 ├── evals/                      # the seven claim harnesses — labelled, credential-free
@@ -240,6 +243,9 @@ manifest/
 │   ├── batch/                  # EMR Serverless for bulk reprocessing
 │   └── analytics/              # Redshift marts
 ├── pipelines/                  # ingestion, reprocessing, dbt models
+├── Dockerfile                  # the tier-0 reader as an image: the same binary and language data
+│                               #   that produced recordings/ocr/, with the version asserted at
+│                               #   build time. Shared by read_tier0 and provenance_gate
 ├── scripts/                    # gate_proof.py, preflight.py, check_core_is_pure.py, tf_validate.py
 ├── docs/                       # adr/ · SCENARIO · REGULATORY · DECISIONS · PORTFOLIO-CONTEXT · AWS-CONSTRAINTS · DAY-ONE
 └── .github/workflows/          # ci.yml (every PR) · deploy.yml · destroy.yml

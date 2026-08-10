@@ -499,6 +499,91 @@ def _name_a_function_that_nothing_creates(root: Path) -> bool:
     )
 
 
+def _write_a_variable_on_one_line(root: Path) -> bool:
+    """Collapse a required variable's declaration onto one line.
+
+    Not a behaviour change at all — `variable "x" { type = string }` and the three-line form are
+    identical to Terraform. It is a change to how the *gate* sees it, and the gate used to see
+    nothing: its pattern required a closing brace at the start of a line, so every single-line
+    declaration was invisible.
+
+    **This was the repository's actual state on 27 declarations across four layers**, and they
+    were the cross-layer references — precisely the variables most likely to go unsupplied. The
+    check that exists to prove a layer can evaluate was skipping the ones that mattered, and
+    reporting green.
+    """
+    path = root / "infra/batch/variables.tf"
+    text = path.read_text(encoding="utf-8")
+    marker = 'variable "expires_at" {'
+    if marker not in text:
+        return False
+    # Give the layer a *new* required variable in the collapsed form. If the gate still parses
+    # single-line blocks it reports it; if the regex came back, it sees nothing.
+    path.write_text(
+        text + '\nvariable "unsupplied_by_anything" { type = string }\n', encoding="utf-8"
+    )
+    return True
+
+
+def _stop_deploying_the_threshold_artefact(root: Path) -> bool:
+    """Remove the step that uploads the thresholds the handler reads.
+
+    **This was the repository's actual state.** The extraction handler read a threshold artefact
+    keyed by reader identity and nothing anywhere created one, so the first document after a
+    deploy would have failed on `NoSuchKey`, been caught by the state machine, and gone to
+    review. Every offline check passed, because every offline check reads
+    `recordings/thresholds.json` directly and never asks how it reaches the estate.
+
+    The mutation is a deletion of one workflow step, which is also how it would happen: an
+    upload step reads like build scaffolding next to a `terraform apply`.
+    """
+    path = root / ".github/workflows/deploy.yml"
+    text = path.read_text(encoding="utf-8")
+    if "scripts/thresholds_artefact.py" not in text:
+        return False
+    kept = [line for line in text.splitlines(keepends=True) if "thresholds_artefact.py" not in line]
+    path.write_text("".join(kept), encoding="utf-8")
+    return True
+
+
+def _stop_starting_the_pipeline(root: Path) -> bool:
+    """Delete the rule that starts an execution.
+
+    **Also the repository's actual state.** The machine, the queue, the tables and the buckets
+    all existed and a document landing in the landing zone caused nothing whatever. It is the
+    hardest of these to see, because there is no error anywhere: the estate is up, everything
+    reports healthy, and the documents simply sit in the bucket.
+    """
+    path = root / "infra/extraction/trigger.tf"
+    text = path.read_text(encoding="utf-8")
+    if "aws_cloudwatch_event_target" not in text:
+        return False
+    path.write_text(
+        text.replace("states:StartExecution", "states:DescribeExecution"), encoding="utf-8"
+    )
+    return True
+
+
+def _stop_uploading_the_pages_the_gate_re_reads(root: Path) -> bool:
+    """Let the reader rasterise to a temporary directory and let it go.
+
+    **This was the repository's actual state, and it was found last.** The provenance gate
+    re-opens the page to check that the recorded box carries ink and that the crop re-reads to
+    the published value — claim 2's whole argument — and the pages existed only inside a
+    `TemporaryDirectory` in a process that had already exited.
+
+    Nothing would have errored. The gate would have found no page, reported every field
+    *uncheckable* — which is a refusal, correctly — and the pipeline would have queued 100% of
+    its volume while reporting success. The sixth instance of one shape: something reads an
+    artefact nothing writes.
+    """
+    return _replace(
+        root / "src/manifest/handlers/read_tier0.py",
+        '                Key=f"renders/{request.document_id}/page-{number:04d}.png",',
+        '                Key=f"scratch/{request.document_id}/page-{number:04d}.png",',
+    )
+
+
 MUTATIONS: tuple[Mutation, ...] = (
     Mutation(
         "reach for the cloud from inside the core",
@@ -740,6 +825,44 @@ MUTATIONS: tuple[Mutation, ...] = (
         _name_a_function_that_nothing_creates,
         "The repository's actual state: the provenance gate was invoked by a name no layer "
         "created, and the step's Catch turned that into every document going to a human.",
+    ),
+    Mutation(
+        "declare a required variable on one line",
+        "deploy evaluability",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "requires the variable `unsupplied_by_anything`",
+        _write_a_variable_on_one_line,
+        "The repository's actual state on 27 declarations across four layers: the gate's "
+        "pattern needed a closing brace at line start, so the cross-layer references — the "
+        "ones most likely to be missing — were the ones it never saw.",
+    ),
+    Mutation(
+        "stop deploying the artefact the handler reads",
+        "deploy artefacts",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "reads objects under `thresholds/` and nothing writes them",
+        _stop_deploying_the_threshold_artefact,
+        "The repository's actual state: the handler read a threshold artefact nothing wrote, "
+        "and every offline check passed because each reads the committed file directly.",
+    ),
+    Mutation(
+        "take away the trigger's permission to start anything",
+        "trigger wiring",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "nothing in this layer grants `states:StartExecution`",
+        _stop_starting_the_pipeline,
+        "Related to the repository's actual state, in which nothing started the pipeline at "
+        "all: no error anywhere, every resource healthy, and the documents simply sitting.",
+    ),
+    Mutation(
+        "stop uploading the pages the provenance gate re-reads",
+        "deploy artefacts",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "reads objects under `renders/` and nothing writes them",
+        _stop_uploading_the_pages_the_gate_re_reads,
+        "The repository's actual state, found last: the gate re-opened pages that lived only "
+        "in a temporary directory, so every field would have been uncheckable and every "
+        "document queued — while the pipeline reported success.",
     ),
 )
 

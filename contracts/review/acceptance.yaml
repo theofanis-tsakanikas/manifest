@@ -38,8 +38,11 @@ acceptances:
 
     response: >-
       ADR-0001's second permitted response: escalate more. The cascade's upper tiers are the
-      designed answer and they are never called in this repository, so their effect is an
-      assumption and is labelled one. What is NOT being done is ADR-0001's forbidden move —
+      designed answer and no page has yet been sent to one, so their effect is an assumption and
+      is labelled one. Two facts verified since this was written sharpen it rather than soften
+      it: neither upper tier reports a confidence, so escalating past the per-page OCR tier
+      *adds* to this queue rather than reducing it. The acceptance therefore understates the
+      pressure rather than overstating it, which is the safe direction for it to be wrong. What is NOT being done is ADR-0001's forbidden move —
       raising a confidence threshold to reduce queue volume without changing the error budget,
       which inverts the derivation and turns a derived number into a chosen one.
 

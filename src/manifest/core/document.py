@@ -90,6 +90,24 @@ class ReaderIdentity:
     def __str__(self) -> str:
         return f"{self.name}@{self.version}"
 
+    @property
+    def slug(self) -> str:
+        """The identity as one token safe for a key, a path or a filename.
+
+        Here rather than at each call site because two places building this string is two
+        places it can drift — and the drift is silent: an artefact written under one spelling
+        and looked up under another is a `NoSuchKey` at the first request after a deploy, which
+        reads as a missing artefact rather than as a naming disagreement.
+
+        A reader version is a vendor's string and routinely carries a space between the product
+        and the number. A space in an object key is legal, and is a permanent nuisance in every
+        shell, URL and log line that touches it.
+        """
+        return "".join(
+            character if character.isalnum() or character in "-._@" else "-"
+            for character in f"{self.name}@{self.version}"
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Word:
