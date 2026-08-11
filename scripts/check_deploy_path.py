@@ -31,6 +31,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
+sys.path.insert(0, str(ROOT / "scripts"))
+from destroy_references import PLACEHOLDERS as _RESOLVER_PLACEHOLDERS  # noqa: E402
+
 #: Layers `deploy.yml` is allowed to apply without a matching destroy job, and why. Empty, and
 #: it stays empty: the moment there is an entry here, the teardown is incomplete by design.
 EXEMPT: frozenset[str] = frozenset()
@@ -126,6 +129,57 @@ def _check_resolution() -> list[str]:
             "layer ever writes"
         )
     return problems
+
+
+def _resolver_covers_what_layers_publish() -> list[str]:
+    """The resolver stands in for everything a layer publishes, not a subset of it.
+
+    `destroy_references.py` fills in placeholders for references a partial teardown has already
+    removed. If it knows fewer names than `infra/<layer>/published.tf` publishes, the gap is
+    invisible until a destroy stops at an input prompt with no terminal to appear on — which is
+    exactly how `ledger_table_arn` was found, one variable at a time, on the run that needed it.
+
+    Two lists that must agree is one list that will drift, so this compares them.
+    """
+    problems: list[str] = []
+    for layer, names in _RESOLVER_PLACEHOLDERS.items():
+        published = ROOT / "infra" / layer / "published.tf"
+        if not published.exists():
+            continue
+        text = published.read_text(encoding="utf-8")
+        block = re.search(r"published = \{(.*?)\n  \}", text, re.DOTALL)
+        if not block:
+            continue
+        declared = set(re.findall(r"^\s*(\w+)\s*=", block.group(1), re.MULTILINE))
+        missing = declared - set(names)
+        if missing:
+            problems.append(
+                f"infra/{layer}/published.tf publishes {sorted(missing)} and "
+                f"scripts/destroy_references.py has no placeholder for them. A teardown re-run "
+                f"after a partial failure stops at an input prompt with no terminal to appear on"
+            )
+    return problems
+
+
+def _resolver_supplies(steps: str) -> set[str]:
+    """The variable names `scripts/destroy_references.py` sets, for the layers a job resolves.
+
+    **Read from the resolver rather than assumed.** The teardown used to set every reference
+    with a literal `TF_VAR_x=` line, which this check could see. Those seven blocks are one
+    script now — it reads the same SSM paths and stands in for whatever a partial teardown has
+    already removed, because a teardown that cannot run after failing once is the worst property
+    a teardown can have.
+
+    Trusting the script's mere presence would make this check decoration: a resolver that
+    quietly stopped publishing one name would pass, and the deploy would stop at a prompt with
+    no terminal to appear on. So the names come from `PLACEHOLDERS`, which is the same structure
+    the script iterates when it fills them in.
+    """
+    supplied: set[str] = set()
+    for layer, names in _RESOLVER_PLACEHOLDERS.items():
+        if f"--layer {layer}" in steps:
+            supplied |= set(names)
+    return supplied
 
 
 def _check_permissions_exist() -> list[str]:
@@ -317,6 +371,12 @@ def _check_every_layer_can_evaluate() -> list[str]:
                             "get-parameters-by-path" in steps
                             and variable in _parameters_published_by_layers()
                         )
+                        # Or supplied by the teardown's resolver, which reads the same SSM paths
+                        # and stands in for whatever a partial teardown already removed. The
+                        # names it supplies are read from the script itself rather than assumed:
+                        # a resolver that stopped publishing one of them would go undetected if
+                        # this check simply trusted its presence.
+                        or variable in _resolver_supplies(steps)
                     )
                     if not supplied:
                         problems.append(
@@ -696,8 +756,10 @@ def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
                 # and it is precisely the shape that fails: with nothing assigned, the echo
                 # writes `VAR=` and the variable is defined as the empty string for every later
                 # step. The check counted the export and called it a value.
-                assigned = bool(re.search(rf"^\s*{variable}=", steps, re.M)) or (
-                    f"TF_VAR_{variable}" in steps
+                assigned = (
+                    bool(re.search(rf"^\s*{variable}=", steps, re.M))
+                    or f"TF_VAR_{variable}" in steps
+                    or variable in _resolver_supplies(steps)
                 )
                 if not assigned:
                     problems.append(

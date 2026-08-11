@@ -90,49 +90,41 @@ jobs:
           echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
-        # A destroy still has to evaluate the configuration, so every required variable still
-        # has to resolve. `terraform validate` never asked for one, which is why this was
-        # missing and looked fine.
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/foundation" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/foundation/||"
-          )
-          # An empty path is not an empty result, it is a missing foundation — and `set -e`
-          # cannot see it, because reading nothing is a successful read. Left unchecked this
-          # job would carry on, set no variables, and stop at an input prompt with no terminal
-          # to appear on: the same failure the required-variable gate was written to close,
-          # arriving through a different door.
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer foundation \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - name: resolve what lakehouse published
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/lakehouse" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/lakehouse/||"
-          )
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/lakehouse/ — apply the lakehouse layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer lakehouse \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/analytics destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
@@ -168,67 +160,59 @@ jobs:
           echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
-        # A destroy still has to evaluate the configuration, so every required variable still
-        # has to resolve. `terraform validate` never asked for one, which is why this was
-        # missing and looked fine.
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/foundation" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/foundation/||"
-          )
-          # An empty path is not an empty result, it is a missing foundation — and `set -e`
-          # cannot see it, because reading nothing is a successful read. Left unchecked this
-          # job would carry on, set no variables, and stop at an input prompt with no terminal
-          # to appear on: the same failure the required-variable gate was written to close,
-          # arriving through a different door.
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer foundation \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - name: resolve what extraction published
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/extraction" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/extraction/||"
-          )
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/extraction/ — apply the extraction layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/extraction/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer extraction \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - name: resolve what lakehouse published
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/lakehouse" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/lakehouse/||"
-          )
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/lakehouse/ — apply the lakehouse layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer lakehouse \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/batch destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
@@ -266,31 +250,23 @@ jobs:
           echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
-        # A destroy still has to evaluate the configuration, so every required variable still
-        # has to resolve. `terraform validate` never asked for one, which is why this was
-        # missing and looked fine.
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/foundation" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/foundation/||"
-          )
-          # An empty path is not an empty result, it is a missing foundation — and `set -e`
-          # cannot see it, because reading nothing is a successful read. Left unchecked this
-          # job would carry on, set no variables, and stop at an input prompt with no terminal
-          # to appear on: the same failure the required-variable gate was written to close,
-          # arriving through a different door.
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer foundation \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - name: empty the lake before destroying it
         # A versioned bucket with objects in it refuses to be destroyed, and a teardown that
         # fails on that leaves the bucket, its storage cost and the KMS key it needs. The
@@ -362,23 +338,23 @@ jobs:
             --query 'Parameter.Value' --output text)
           echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN" >> "$GITHUB_ENV"
       - name: resolve what foundation published
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
         run: |
           set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/foundation" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/foundation/||"
-          )
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer foundation \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
       - name: release deletion protection on the record tables
         # The decision table and the ledger carry `deletion_protection_enabled`, which is right
         # for every day except this one. Released explicitly here so that the protection is a
