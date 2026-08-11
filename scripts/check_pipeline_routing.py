@@ -102,7 +102,7 @@ def main() -> int:
             "capacity model measuring the empty set"
         )
     for name in deciders:
-        target = re.search(r'Next\s+=\s+"(\w+)"', states[name])
+        target = re.search(r'Next\s*=\s*"(\w+)"', states[name])
         if target is None or target.group(1) not in queueing:
             problems.append(
                 f"{name} branches on `queued_count` and its positive branch goes to "
@@ -114,8 +114,13 @@ def main() -> int:
     # silent loss for another: the publishable fields would be queued and never written.
     for name in queueing:
         body = states[name]
-        continues = re.search(r'Next\s+=\s+"(\w+)"', body)
-        ends = "End = true" in body or "End       = true" in body
+        continues = re.search(r'Next\s*=\s*"(\w+)"', body)
+        # **Matched as a pattern, not as a literal.** The first version looked for the exact
+        # strings `End = true` and `End       = true`, which is a check on alignment: adding
+        # `ResultPath` to this state made `terraform fmt` re-align the block, and the gate
+        # reported that a state which plainly ends does not end. A control that fails on
+        # whitespace is a control somebody edits until it stops complaining.
+        ends = re.search(r"End\s*=\s*true", body) is not None
         if not continues and not ends:
             problems.append(f"{name} neither ends nor names a Next state")
         if continues and continues.group(1) == "Publish" and "ResultPath = null" not in body:
