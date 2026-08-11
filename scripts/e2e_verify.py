@@ -481,9 +481,18 @@ def _edge_cases(estate: Estate, document: Path) -> None:
             if key in described.get("input", ""):
                 started_for[key] = described["status"]
 
-    # The two that must never start a machine at all. A refusal that costs an execution is a
-    # refusal that costs money, and the cheapest place to reject a key is before the trigger.
-    for key in ("incoming/E2E-FLATKEY.pdf", "elsewhere/en/bill_of_lading/E2E-WRONGPREFIX.pdf"):
+    # **One key must never start a machine, and it is not the one I first assumed.**
+    #
+    # This expected `incoming/E2E-FLATKEY.pdf` to be rejected before any compute ran. It is not,
+    # and the system is right: the EventBridge rule filters on the `incoming/` prefix, a flat key
+    # is genuinely under that prefix, and the convention itself is checked in `read_tier0` —
+    # where a refusal can name what was wrong with the key instead of being a rule that silently
+    # did not match. The stricter expectation was mine and nothing declared it.
+    #
+    # What it costs is one execution and one cold start per malformed object, which is the price
+    # of a legible refusal. Worth revisiting if malformed keys ever arrive in volume; not worth
+    # trading a named error for silence today.
+    for key in ("elsewhere/en/bill_of_lading/E2E-WRONGPREFIX.pdf",):
         estate.check(
             f"edge · {key} starts nothing",
             key not in started_for,
@@ -492,8 +501,9 @@ def _edge_cases(estate: Estate, document: Path) -> None:
             else f"an execution started and ended {started_for[key]} — the rule is too wide",
         )
 
-    # And the three that must start, and must then fail by name rather than publish.
-    for key, why in cases[:3]:
+    # And the four that start, and must then be refused by name rather than published — the
+    # three malformed documents and the key that does not follow the convention.
+    for key, why in (*cases[:3], cases[3]):
         status = started_for.get(key)
         estate.check(
             f"edge · {key.split('/')[-1]} is refused, not published",
