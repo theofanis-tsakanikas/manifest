@@ -137,7 +137,26 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         for entry in fields:
             checked.append(_check(entry, contract, language, raster))
 
-    refused = [entry for entry in checked if entry["verdict"] != "verified"]
+    # **`not_applicable` is not a refusal, and reading it as one stopped the estate publishing
+    # anything at all.**
+    #
+    # A field already bound for the queue is not checked — `_check` marks it `not_applicable`
+    # and says so. This line used to be `!= "verified"`, which swept those in: any document with
+    # a single abstaining field came out `verified: false`, the state machine took the queue
+    # branch, and nothing was ever written to the records bucket. With 31 of 36 fields declared
+    # always-review, that is every document.
+    #
+    # It was invisible from inside. The execution succeeded, the queue received the document,
+    # the record was simply absent — and absent is what a fully-abstaining document is supposed
+    # to look like. The first bill of lading through the deployed pipeline had two fields clear
+    # their thresholds and seven abstain, and both published fields verified against the page;
+    # the run still ended in the queue.
+    #
+    # `uncheckable` stays a refusal, deliberately: a field nothing could look at has not been
+    # verified, and publishing on "we could not check" is the laundering the verdict vocabulary
+    # exists to prevent. Only "we did not check this, because it was never going to publish"
+    # is excluded.
+    refused = [entry for entry in checked if entry["verdict"] not in ("verified", "not_applicable")]
     return {
         **event,
         "fields": checked,

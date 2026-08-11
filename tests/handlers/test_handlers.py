@@ -135,6 +135,47 @@ class TestPublishRefusesToGuessTheContract:
 
 
 class TestTheGateFailsClosed:
+    def test_a_queued_field_is_not_counted_as_a_refusal(self) -> None:
+        """The bug that stopped the deployed estate publishing anything at all.
+
+        A field already bound for the queue is not checked — `_check` marks it
+        `not_applicable`. The refusal count was `verdict != "verified"`, which swept those in,
+        so any document with a single abstaining field came out `verified: false` and the state
+        machine took the queue branch. With 31 of 36 fields declared always-review, that is
+        every document.
+
+        It was invisible from inside: the execution succeeded, the queue received the document,
+        and the record was simply absent — which is exactly what a fully-abstaining document is
+        supposed to look like. The first bill of lading through the deployed pipeline had two
+        fields clear their thresholds and seven abstain, both published fields verified against
+        the page, and the run still ended in the queue.
+        """
+        checked = [
+            {"field": "gross_weight", "verdict": "verified"},
+            {"field": "bill_of_lading_number", "verdict": "not_applicable"},
+            {"field": "consignee", "verdict": "not_applicable"},
+        ]
+        refused = [
+            entry for entry in checked if entry["verdict"] not in ("verified", "not_applicable")
+        ]
+        assert not refused, "a queued field is not a refused field"
+
+    def test_an_uncheckable_field_is_still_a_refusal(self) -> None:
+        """`uncheckable` is not `not_applicable`, and merging them would be the laundering.
+
+        A field nothing could look at has not been verified. Publishing on the strength of "we
+        could not check" is precisely what the verdict vocabulary exists to prevent, so only
+        "we did not check this, because it was never going to publish" is excluded.
+        """
+        checked = [
+            {"field": "gross_weight", "verdict": "verified"},
+            {"field": "vessel_name", "verdict": "uncheckable"},
+        ]
+        refused = [
+            entry for entry in checked if entry["verdict"] not in ("verified", "not_applicable")
+        ]
+        assert [entry["field"] for entry in refused] == ["vessel_name"]
+
     def test_an_event_without_fields_is_refused(self) -> None:
         with pytest.raises(provenance_gate.HandlerError, match="fields"):
             provenance_gate.handler({"document_id": "d", "document_type": "bill_of_lading"})

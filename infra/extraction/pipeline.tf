@@ -433,7 +433,18 @@ resource "aws_sfn_state_machine" "extraction" {
           "QueueUrl" : aws_sqs_queue.review.url,
           "MessageBody.$" : "$"
         }
-        End = true
+        # **Discard the send's result, exactly as `QueueTheAbstentions` does.**
+        #
+        # Without this the execution's output is an SQS receipt — a message id and a set of HTTP
+        # headers — and everything the document actually did is gone. The record of what was
+        # read, what cleared its threshold and what the gate said is replaced by proof that a
+        # queue accepted a message.
+        #
+        # It cost an hour of the first end-to-end run: the verifier read the execution output,
+        # found no reading and no fields, and reported five failures whose real cause was that
+        # the terminal state had overwritten the evidence.
+        ResultPath = null
+        End        = true
       }
 
       # Two distinct failure states rather than one.
