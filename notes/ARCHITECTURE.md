@@ -142,12 +142,12 @@ the local reader is not the cheap option — **it is the only one**.
 |---|---|---|
 | **S3** | landing zone, records, renders, Iceberg lake | ✅ running |
 | **Lambda** (container) | the tier-0 reader and the provenance gate | ✅ running |
-| **Step Functions** | one execution per document; the escalation belongs here | ✅ running, ⚠️ no escalation state |
+| **Step Functions** | one execution per document; the escalation lives here | ✅ **escalation states written**, never dispatched |
 | **SQS + DynamoDB** | the review queue and the recorded decisions | ✅ running |
 | **ECR** | the reader image — 3.7 GB, two functions run *from* it | ✅ running |
-| **Textract** | tier 1, for the six documented languages | ⚠️ adapter written, never called |
-| **Bedrock Data Automation** | tier 2, reading order and tables | ⚠️ adapter written, never called |
-| **Bedrock** | tier 3, the only escalation for Greek and Dutch | ⚠️ adapter written, never called |
+| **Textract** | tier 1, for the six documented languages | ✅ **wired**, ⚠️ never called |
+| **Bedrock Data Automation** | tier 2, reading order and tables | ✅ **wired**, ⚠️ never called |
+| **Bedrock** | tier 3, the only escalation for Greek and Dutch | ✅ **wired**, ⚠️ never called |
 | **Glue · Athena · Iceberg** | the record lake and its catalogue | ✅ applied |
 | **OpenSearch** | search over *published records*, never raw document text | ✅ applied |
 | **Redshift** | duty exposure by HS chapter, queue economics, cost per client | ⚠️ opt-in, never applied |
@@ -187,6 +187,12 @@ flowchart LR
     style N5 fill:#e8ffe8
 ```
 
+**As of 2026-08-11 the escalation is written and unrun.** `src/manifest/handlers/escalate.py`
+routes each abstaining field through `core.cascade.route`, calls the tier that field's language
+makes eligible, and re-thresholds only what came back with a score. It is off by default behind
+`enable_escalation_tiers`: with the flag down the states are not in the machine, the function
+does not exist, and no grant to Textract or Bedrock exists anywhere in the account.
+
 Today the estate demonstrates tier 0 end to end and nothing above it. The routing rule is real
 and proved offline against the corpus; what has never happened is a page actually going up. The
 sentence *"the upper tiers are written and have never been called"* is honest and weak. The
@@ -195,5 +201,6 @@ and it is a few cents of Textract away.
 
 Redshift is the same argument for the analytics half: `contracts/` declares the marts and
 `scripts/check_marts.py` proves they only read columns the warehouse has, offline. Standing the
-workgroup up for an hour turns that from a design into an answered question — at roughly €2.90
-an hour, which is why it is opt-in and stays opt-in.
+workgroup up for an hour turns that from a design into an answered question — and it is cheaper than this note first claimed: an idle workgroup bills no
+compute at all (`docs/AWS-CONSTRAINTS.md`, read 2026-08-11). Eight RPUs for ten minutes of
+marts is well under a euro. What does bill continuously is a transaction nobody closed.

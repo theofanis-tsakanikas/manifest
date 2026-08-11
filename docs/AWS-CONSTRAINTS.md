@@ -270,6 +270,21 @@ states 8 RPUs as its floor. This is exactly the class of fact that is discovered
 otherwise, and it is decided in Phase 4 when `infra/analytics/` is written — recorded here so
 that it is decided rather than defaulted.
 
+**Third, and it corrects a figure this project had been quoting: an idle workgroup does not
+bill for compute.** [Billing for Amazon Redshift Serverless](https://docs.aws.amazon.com/redshift/latest/mgmt/serverless-billing.html),
+read 2026-08-11, states that capacity is *"charged in terms of RPUs used over a specific time
+interval"*, that the *"minimum charge is for 60 seconds"*, and that storage is billed separately
+per GB-month. A workgroup that exists and runs nothing consumes no RPUs.
+
+So "€2.90 an hour while it stands" — which this project had been saying — is wrong. The cost of
+standing the analytics layer up for an afternoon is the storage plus the seconds of query time,
+and eight RPUs for ten minutes of marts is well under a euro.
+
+**The trap on the same page is the opposite one, and it is worse.** *"If there's an open
+transaction, Amazon Redshift Serverless continues to use RPUs"* — a session left open bills
+continuously at the full rate whether or not anybody is waiting on it. The expensive mistake
+here is not standing the workgroup up; it is a query nobody closed.
+
 Also noted, because it appears in a sibling project's stack: **Redshift Python UDFs reach end of
 support after 2026-06-30**. Nothing here plans to use one; recorded so nobody adds one.
 

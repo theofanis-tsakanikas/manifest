@@ -96,6 +96,10 @@ reader-version: ## The image's reader and the recording's reader are the same re
 pipeline-routing: ## A document that publishes some of itself still owes the rest to a human
 	$(PY) scripts/check_pipeline_routing.py
 
+.PHONY: optional-layers
+optional-layers: ## Every optional feature plans with its flag on and off (needs credentials)
+	$(PY) scripts/check_optional_layers_plan.py
+
 .PHONY: claims
 claims: core-pure planting-blind contracts-validate corpus-check envelope reader-version \
 	pipeline-routing \

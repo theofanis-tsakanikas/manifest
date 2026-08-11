@@ -369,3 +369,165 @@ resource "aws_lambda_function" "publish" {
   depends_on = [aws_cloudwatch_log_group.publish]
   tags       = { "${var.project}:expires-at" = var.expires_at }
 }
+
+# ── The escalation reader ─────────────────────────────────────────────────────
+#
+# **The function that makes the cascade a measurement rather than a design.** Everything above
+# tier 0 was written, schema-tested and never called; this is what calls it. It is a zip rather
+# than the reader image because it renders nothing — it reads a page raster the tier-0 step
+# already wrote to storage, and hands the response to an adapter.
+#
+# `count` rather than a flag inside the function: when escalation is off there is no function,
+# no role, and no grant to Textract or Bedrock anywhere in the account. A disabled feature that
+# still holds permissions is a permission nobody remembers to remove.
+
+data "aws_iam_policy_document" "escalate" {
+  # **`count` on the data source, not just on the resources it feeds.**
+  #
+  # A data source without one is evaluated whatever the flag says, and this one interpolates the
+  # log group's ARN — which is null when the group does not exist, and null does not go into a
+  # string. The plan failed with the feature merely switched off, which is the worst kind of
+  # optional: one that breaks the configuration it is absent from.
+  count = var.enable_escalation_tiers ? 1 : 0
+
+  statement {
+    sid     = "ReadTheReadingTheRenderAndTheThresholds"
+    effect  = "Allow"
+    actions = ["s3:GetObject"]
+    resources = [
+      "arn:aws:s3:::${var.records_bucket}/readings/*",
+      "arn:aws:s3:::${var.records_bucket}/renders/*",
+      "arn:aws:s3:::${var.records_bucket}/thresholds/*",
+    ]
+  }
+
+  # Document automation writes its output to storage rather than returning it inline, so this
+  # tier needs somewhere to put it. Scoped to one prefix that holds nothing else.
+  statement {
+    sid       = "WriteWhereDocumentAutomationDelivers"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["arn:aws:s3:::${var.records_bucket}/escalated/*"]
+  }
+
+  statement {
+    sid       = "UseTheDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = [var.data_key_arn]
+  }
+
+  # Textract's document APIs take no resource ARN — the constraint is the narrowness of this
+  # role, which exists only when escalation is enabled and can do nothing else.
+  #checkov:skip=CKV_AWS_111:The Textract document APIs are documented as not resource-scoped.
+  #checkov:skip=CKV_AWS_356:As above — "*" is the only expressible form for an API with no resource ARNs.
+  statement {
+    sid       = "ReadAPageAtTierOne"
+    effect    = "Allow"
+    actions   = ["textract:DetectDocumentText", "textract:AnalyzeDocument"]
+    resources = ["*"]
+  }
+
+  # Scoped to the model this system may call, by ARN. `bedrock:InvokeModel` on `*` is permission
+  # to invoke every model in the account — different prices, different data-handling terms,
+  # different regional footprints. Naming one is what makes the budget guard a guard.
+  dynamic "statement" {
+    for_each = length(var.escalation_model_arns) > 0 ? [1] : []
+    content {
+      sid       = "ReadAPageAtTierThree"
+      effect    = "Allow"
+      actions   = ["bedrock:InvokeModel", "bedrock:Converse"]
+      resources = var.escalation_model_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.document_automation_arns) > 0 ? [1] : []
+    content {
+      sid       = "ReadAPageAtTierTwo"
+      effect    = "Allow"
+      actions   = ["bedrock:InvokeDataAutomationAsync", "bedrock:GetDataAutomationStatus"]
+      resources = var.document_automation_arns
+    }
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    # `one(...)` for the same reason the state machine uses it: this data source has no `count`,
+    # so it is evaluated even when the log group does not exist, and `[0]` on an empty list is a
+    # plan-time failure with the feature merely switched off.
+    resources = ["${aws_cloudwatch_log_group.escalate[0].arn}:*"]
+  }
+}
+
+resource "aws_iam_role" "escalate" {
+  count              = var.enable_escalation_tiers ? 1 : 0
+  name               = "${var.project}-escalate"
+  description        = "Calls the upper tiers of the cascade. Reads a page; writes no record."
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_iam_role_policy" "escalate" {
+  count  = var.enable_escalation_tiers ? 1 : 0
+  name   = "escalate"
+  role   = aws_iam_role.escalate[0].id
+  policy = data.aws_iam_policy_document.escalate[0].json
+}
+
+resource "aws_cloudwatch_log_group" "escalate" {
+  count = var.enable_escalation_tiers ? 1 : 0
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate; the record itself has no expiry.
+  name              = "/aws/lambda/${var.project}-escalate"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+}
+
+resource "aws_lambda_function" "escalate" {
+  count = var.enable_escalation_tiers ? 1 : 0
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Synchronous invocations from the state machine; a dead-letter queue receives only from asynchronous ones.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  function_name = "${var.project}-escalate"
+  description   = "Routes an abstaining field to the cheapest tier that can read it"
+  role          = aws_iam_role.escalate[0].arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.escalate.handler"
+  s3_bucket     = var.records_bucket
+  s3_key        = var.publish_package_key
+  # Same artefact as `publish`, deliberately: both are this project's own logic over the same
+  # contracts, and two zips built from one commit are two chances for them to diverge.
+  source_code_hash = var.publish_package_hash
+
+  # Longer than `publish` because it waits on somebody else's service. Bounded well under the
+  # state machine's own patience so that a hung upper tier fails here, by name, rather than as a
+  # timeout three layers up.
+  timeout     = 300
+  memory_size = 1024
+
+  # **Lower than the reader's, and that is the cost control.** Every concurrent execution here is
+  # a billed call to a metered service; the reader's concurrency costs nothing per page. This
+  # number is the ceiling on how fast this estate can spend money.
+  reserved_concurrent_executions = 5
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  environment {
+    variables = {
+      RECORDS_BUCKET      = var.records_bucket
+      CONTRACTS_DIR       = "/var/task/contracts"
+      ESCALATION_MODEL_ID = var.escalation_model_id
+      BDA_PROFILE_ARN     = var.bda_profile_arn
+    }
+  }
+
+  kms_key_arn = var.data_key_arn
+  depends_on  = [aws_cloudwatch_log_group.escalate]
+
+  tags = { "${var.project}:expires-at" = var.expires_at }
+}

@@ -178,3 +178,31 @@ variable "reader_repository_url" {
   EOT
   type        = string
 }
+
+# **Off by default, and the default is the point — same rule as the endpoints it needs.**
+#
+# When this is false the escalation states are not in the state machine, the function that calls
+# the upper tiers is not created, and the VPC endpoints those services answer on are not stood
+# up (`infra/foundation`). Nothing is present-and-disabled: a page cannot escalate because there
+# is nowhere for it to go.
+#
+# Turning it on is what a deploy that intends to spend money on reading does, and it is also the
+# deploy that can finally produce an accuracy figure for the escalated fraction — which does not
+# exist today and may not be implied until one does.
+variable "enable_escalation_tiers" {
+  description = "Create the escalation function and its states. Off: the cascade stops at tier 0."
+  type        = bool
+  default     = false
+}
+
+variable "escalation_model_id" {
+  description = "The model the tier-3 escalation invokes. Named, never a wildcard."
+  type        = string
+  default     = ""
+}
+
+variable "bda_profile_arn" {
+  description = "The Bedrock Data Automation profile tier 2 submits to. Empty disables that tier."
+  type        = string
+  default     = ""
+}

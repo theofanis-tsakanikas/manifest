@@ -47,9 +47,17 @@ def _state_bodies(text: str) -> dict[str, str]:
     regex that stopped at the first `}` would read half of every state and report whatever it
     found there.
     """
+    #: What makes a block a *state* rather than any other nested object: it declares a `Type`
+    #: from Amazon States Language. Matching on indentation instead — which this did, at exactly
+    #: six spaces — is matching on formatting, and it broke the moment the states were wrapped in
+    #: a `merge(...)` and `terraform fmt` moved them two columns right. A control that fails on
+    #: whitespace is a control somebody edits until it stops complaining. Twice now.
+    kinds = "Task|Choice|Fail|Succeed|Pass|Wait|Parallel|Map"
     states: dict[str, str] = {}
-    for match in re.finditer(r"^      (\w+) = \{$", text, re.MULTILINE):
-        name = match.group(1)
+    # `[ \t]+`, not `\s+`: `\s` matches newlines too, so a greedy run would start on an
+    # earlier line and every indentation measured from it would be wrong.
+    for match in re.finditer(r"^([ \t]+)(\w+) = \{$", text, re.MULTILINE):
+        name = match.group(2)
         depth = 0
         index = match.end() - 1
         for position in range(index, len(text)):
@@ -58,7 +66,13 @@ def _state_bodies(text: str) -> dict[str, str]:
             elif text[position] == "}":
                 depth -= 1
                 if depth == 0:
-                    states[name] = text[index : position + 1]
+                    body = text[index : position + 1]
+                    # `Type` at *this* block's own level, not anywhere inside it. Without the
+                    # indentation anchor the `locals` block that holds the escalation states
+                    # matched too, because one of the states nested in it declares a `Type`.
+                    inner = match.group(1) + "  "
+                    if re.search(rf'\n{inner}Type\s*=\s*"({kinds})"', body):
+                        states[name] = body
                     break
     return states
 
@@ -101,14 +115,22 @@ def main() -> int:
             "nobody — the failure the estate shipped with, and the one that leaves claim 5's "
             "capacity model measuring the empty set"
         )
-    for name in deciders:
-        target = re.search(r'Next\s*=\s*"(\w+)"', states[name])
-        if target is None or target.group(1) not in queueing:
-            problems.append(
-                f"{name} branches on `queued_count` and its positive branch goes to "
-                f"{target.group(1) if target else 'nothing'}, which does not send to the review "
-                f"queue. The decision is there and the consequence is not"
-            )
+    # **At least one, not every one.** There are two decisions on `queued_count` and they have
+    # different jobs: one sends the page up a tier, the other sends what still abstains to a
+    # human. Requiring every decider to lead to the queue would have made adding the escalation
+    # branch look like a regression — and the honest property was always "a document that
+    # abstains reaches a person", not "every mention of queued_count means the queue".
+    reaching_the_queue = [
+        name
+        for name in deciders
+        if (found := re.search(r'Next\s*=\s*"(\w+)"', states[name])) and found.group(1) in queueing
+    ]
+    if deciders and not reaching_the_queue:
+        problems.append(
+            f"{len(deciders)} state(s) branch on `queued_count` and none of them sends to the "
+            f"review queue: {', '.join(sorted(deciders))}. The decision is there and the "
+            f"consequence is not"
+        )
 
     # The abstention path must continue to `Publish` rather than end, or the fix trades one
     # silent loss for another: the publishable fields would be queued and never written.

@@ -12,11 +12,15 @@ it does not default, does not guess, and does not let a failure through as a pas
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
+import yaml
 
 from manifest.core.fields import Extracted
 from manifest.core.review import Reason
-from manifest.handlers import provenance_gate, publish, read_tier0
+from manifest.handlers import escalate, provenance_gate, publish, read_tier0
+from manifest.handlers.escalate import SCORING_TIERS
 
 
 class TestTheReaderRefusesWhatItCannotSafelyAssume:
@@ -243,3 +247,55 @@ class TestTheGateFailsClosed:
 
         result = provenance_gate._check(entry, _Contract(), "en", raster=None)
         assert result["verdict"] == "refused"
+
+
+class TestEscalation:
+    """The cascade's own rules, asserted where a mutation can reach them."""
+
+    def test_only_the_scoring_tiers_may_publish(self) -> None:
+        """The fact that decides the cascade's economics, kept in one place.
+
+        Tiers 0 and 1 report a confidence per value; tiers 2 and 3 report none anywhere. A page
+        routed above tier 1 therefore comes back better read and with no score to publish on —
+        it reaches a human. If this set ever grew to include 2 or 3, a field would publish on a
+        number nothing measured, which is the fabricated result the whole project argues against.
+        """
+        assert frozenset({0, 1}) == SCORING_TIERS
+
+    def test_the_contract_agrees_about_which_tiers_report_a_score(self) -> None:
+        """The handler's constant and the routing contract's prose must say the same thing.
+
+        The contract describes each tier in a sentence a human reads, so the handler cannot
+        derive this from it. Two places holding one fact is one place drifting, so the test
+        reads the contract's own words: tiers 2 and 3 say they report no confidence, and the
+        handler's set must exclude exactly those.
+        """
+
+        root = pathlib.Path(__file__).resolve().parents[2]
+        contract = yaml.safe_load((root / "contracts/cascade/routing.yaml").read_text())
+        for tier, prose in contract["tiers"].items():
+            says_no_confidence = "no confidence" in prose.lower()
+            assert says_no_confidence != (int(tier) in SCORING_TIERS), (
+                f"tier {tier}: the contract says "
+                f"{'no confidence' if says_no_confidence else 'it reports one'} and the handler "
+                f"{'excludes' if int(tier) not in SCORING_TIERS else 'includes'} it"
+            )
+
+    def test_an_event_without_an_outcome_is_refused(self) -> None:
+        with pytest.raises(escalate.HandlerError, match="outcome"):
+            escalate.handler({})
+
+    def test_a_missing_language_is_refused_rather_than_guessed(self) -> None:
+        """Language decides which tiers may read the page at all — there is no default."""
+        with pytest.raises(escalate.HandlerError, match="language"):
+            escalate.handler(
+                {
+                    "extraction": {
+                        "outcome": {
+                            "document_id": "d",
+                            "document_type": "bill_of_lading",
+                            "fields": [],
+                        }
+                    }
+                }
+            )

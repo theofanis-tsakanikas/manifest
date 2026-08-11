@@ -126,6 +126,22 @@ def _point_the_corpus_acceptance_at_a_different_figure(root: Path) -> bool:
     )
 
 
+def _let_an_unscored_tier_publish(root: Path) -> bool:
+    """Add the document-automation tier to the set allowed to publish.
+
+    The single most valuable line in the cascade. Tiers 2 and 3 report no confidence anywhere —
+    the contract says so in its own prose — so a field they read has no score to compare against
+    a threshold. Including one here would publish a value on a number nothing measured, which is
+    the fabricated result this repository exists to argue against, arriving through the door
+    marked "the expensive tier read it better".
+    """
+    return _replace(
+        root / "src/manifest/handlers/escalate.py",
+        "SCORING_TIERS: frozenset[int] = frozenset({0, 1})",
+        "SCORING_TIERS: frozenset[int] = frozenset({0, 1, 2})",
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -838,6 +854,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         "One figure is outside its band under a named, dated acceptance. If the acceptance "
         "covered anything but that figure it would be a switch with a date on it, and while "
         "only one thing is broken the difference is invisible.",
+    ),
+    Mutation(
+        "let a tier that reports no confidence publish",
+        "cascade tiers",
+        ["pytest", "-q", "tests/handlers/test_handlers.py", "-x"],
+        # The first test to fire on this mutation, not the most interesting one: `-x` stops at
+        # the first failure, so naming a later test would have `gate-proof` report "something
+        # failed, but not the named gate" — which is the harness refusing to accept a pass it
+        # cannot attribute, and it was right to.
+        "test_only_the_scoring_tiers_may_publish",
+        _let_an_unscored_tier_publish,
+        "Only tiers 0 and 1 report a score. Admitting an unscored tier to the publishing set "
+        "would put a value into a customs record on a number nothing measured — and it would "
+        "look like an improvement, because the page really was read better.",
     ),
     Mutation(
         "read the clock inside the core",

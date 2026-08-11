@@ -180,6 +180,15 @@ CHECKS: list[Check] = [
     ),
     Check(
         "correctness",
+        "cascade tiers",
+        [PYTHON, "-m", "pytest", "-q", "tests/handlers/test_handlers.py", "-k", "Escalation"],
+        "Only tiers 0 and 1 report a confidence, and the handler's set agrees with the routing "
+        "contract's own prose. Admitting an unscored tier would publish a value on a number "
+        "nothing measured — and it would look like an improvement, because the page really was "
+        "read better.",
+    ),
+    Check(
+        "correctness",
         "planting is blind",
         [PYTHON, "scripts/check_planting_is_blind.py"],
         "The corpus plants mismatches in the vocabulary of shipment facts and knows nothing "

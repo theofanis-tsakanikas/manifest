@@ -146,11 +146,17 @@ data "aws_iam_policy_document" "pipeline" {
     sid     = "InvokeThePipelineFunctions"
     effect  = "Allow"
     actions = ["lambda:InvokeFunction"]
-    resources = [
-      aws_lambda_function.read_tier0.arn,
-      aws_lambda_function.publish.arn,
-      aws_lambda_function.provenance_gate.arn,
-    ]
+    # The escalation function is in this list only when it exists. `concat` with a conditional
+    # slice rather than a ternary, for the same reason the states use a filtered comprehension:
+    # a list of three ARNs and a list of four are different shapes to Terraform.
+    resources = concat(
+      [
+        aws_lambda_function.read_tier0.arn,
+        aws_lambda_function.publish.arn,
+        aws_lambda_function.provenance_gate.arn,
+      ],
+      aws_lambda_function.escalate[*].arn,
+    )
   }
 
   statement {
@@ -205,6 +211,56 @@ resource "aws_iam_role_policy" "pipeline" {
 # `contracts/cascade/routing.yaml` declares, and the Choice state below is the *adapter* over
 # `manifest.core.cascade`, not a second copy of the rule. A second copy is how the deployed
 # behaviour and the tested behaviour drift apart while both look right.
+# **The escalation states, present only when the tiers they call are.**
+#
+# Merged into the machine rather than written into it, so that when `enable_escalation_tiers` is
+# false they do not exist at all — not present-and-skipped. A dead state is a state somebody
+# maintains, and an execution history full of branches that never fire is one nobody reads.
+locals {
+  escalation_states = {
+    # Only the fields that abstained can be rescued, so a document where nothing abstained
+    # never spends a billed call. `queued_count` is computed in `publish`, in Python, where a
+    # test can reach it — a Choice that had to scan the field list would be a rule expressed
+    # in Amazon States Language, which nothing in this repository can attack.
+    AnythingEscalatable = {
+      Type = "Choice"
+      Choices = [{
+        Variable           = "$.extraction.outcome.queued_count"
+        NumericGreaterThan = 0
+        Next               = "Escalate"
+      }]
+      Default = "AnythingPublishable"
+    }
+
+    # **No `Catch`, deliberately.** An escalation that fails must stop the execution rather
+    # than fall through to the publish decision: falling through would publish a document on
+    # tier-0 evidence while the history recorded that it had been escalated, and the two
+    # would disagree with nobody watching. The fields that abstained are still abstaining;
+    # the correct outcome of a broken escalation is a loud stop, not a quiet queue.
+    Escalate = {
+      Type     = "Task"
+      Resource = "arn:aws:states:::lambda:invoke"
+      Parameters = {
+        # `one(...)` rather than `[0]`: a local is evaluated whether or not the states it builds are
+        # merged in, so indexing a resource with `count = 0` fails at plan time with the flag
+        # off — a configuration that cannot even be planned when its optional feature is
+        # disabled. `one` yields null there, and the state is filtered out before it is used.
+        "FunctionName" : one(aws_lambda_function.escalate[*].arn),
+        "Payload.$" : "$"
+      }
+      ResultSelector = { "outcome.$" : "$.Payload.extraction.outcome", "escalation.$" : "$.Payload.escalation" }
+      ResultPath     = "$.extraction"
+      Retry = [{
+        ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+        IntervalSeconds = 2
+        MaxAttempts     = 3
+        BackoffRate     = 2
+      }]
+      Next = "AnythingPublishable"
+    }
+  }
+}
+
 resource "aws_sfn_state_machine" "extraction" {
   # The scanner wants `include_execution_data = true`, and it is false here on purpose.
   #
@@ -236,247 +292,263 @@ resource "aws_sfn_state_machine" "extraction" {
   definition = jsonencode({
     Comment = "Read at tier 0 with the local reader, extract and threshold, gate on provenance, then publish or queue."
     StartAt = "ReadAtTierZero"
-    States = {
-      # **Tier 0 is the local reference reader, not a metered service.**
-      #
-      # This step used to invoke the per-page OCR API under this name. That is tier 1 wearing
-      # tier 0's name, and it deletes the cascade's reason for existing: the local reader is
-      # precisely what keeps the metered engine off the pages that do not need it. A cost model
-      # whose cheapest tier is a paid service is a cost model for a different system.
-      #
-      # It is also the same build, from the same image, that produced `recordings/ocr/` — which
-      # is what makes every derived threshold in this repository a statement about the reader
-      # that actually runs here rather than about a laptop nobody else has.
-      ReadAtTierZero = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::lambda:invoke"
-        Parameters = {
-          "FunctionName" : aws_lambda_function.read_tier0.arn,
-          "Payload.$" : "$"
-        }
-        ResultSelector = { "reading.$" : "$.Payload" }
-        ResultPath     = "$.tier0"
-        Retry = [{
-          # Only the transport, never the logic. `Lambda.ServiceException` and its siblings are
-          # the runtime failing to deliver the invocation; a `HandlerError` is this system
-          # refusing something and retrying it would just refuse it again, three times, slower.
-          ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
-          IntervalSeconds = 2
-          MaxAttempts     = 3
-          BackoffRate     = 2
-        }]
-        Catch = [{ ErrorEquals = ["States.ALL"], Next = "ReadingFailed", ResultPath = "$.error" }]
-        Next  = "ExtractAndThreshold"
-      }
-
-      # **The step that did not exist.** Every derived threshold, every contract and every
-      # abstention rule lived in `src/manifest/core/` and ran only on a laptop; the deployed
-      # pipeline had no state that executed any of it. A pipeline whose extraction logic never
-      # runs publishes whatever the reader said.
-      ExtractAndThreshold = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::lambda:invoke"
-        Parameters = {
-          "FunctionName" : aws_lambda_function.publish.arn,
-          "Payload" : {
-            "reading.$" : "$.tier0.reading.reading",
-            "document_type.$" : "$.tier0.reading.document_type",
-            "language.$" : "$.tier0.reading.language"
-          }
-        }
-        ResultSelector = { "outcome.$" : "$.Payload" }
-        ResultPath     = "$.extraction"
-        Retry = [{
-          ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
-          IntervalSeconds = 2
-          MaxAttempts     = 3
-          BackoffRate     = 2
-        }]
-        Catch = [{ ErrorEquals = ["States.ALL"], Next = "ExtractionFailed", ResultPath = "$.error" }]
-        Next  = "AnythingPublishable"
-      }
-
-      # Nothing cleared its threshold, so there is nothing for the gate to check. Straight to the
-      # queue — and *not* through the gate, because a gate invoked on an empty set returns
-      # `verified: true`, and a run that verified nothing must not be recorded as a run that
-      # verified everything.
-      AnythingPublishable = {
-        Type = "Choice"
-        Choices = [{
-          Variable           = "$.extraction.outcome.publishable_count"
-          NumericGreaterThan = 0
-          Next               = "VerifyProvenance"
-        }]
-        Default = "QueueForReview"
-      }
-
-      # Claim 2's gate, in the path rather than beside it. A field whose box does not verify
-      # never reaches the record — the machine cannot publish past this state, which is what
-      # makes "a published field that cannot be located is a build failure" a property of the
-      # pipeline rather than of a report somebody reads afterwards.
-      #
-      # **There is no `Catch` here, on purpose.** The previous version caught `States.ALL` and
-      # sent the document to review — which meant a gate that was not deployed at all failed
-      # invisibly and every document went to a human while the machine reported success. The
-      # gate itself fails closed field by field; a failure to *invoke* it must stop the
-      # execution, loudly, where an alarm can see it.
-      VerifyProvenance = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::lambda:invoke"
-        Parameters = {
-          "FunctionName" : aws_lambda_function.provenance_gate.arn,
-          "Payload" : {
-            "document_id.$" : "$.extraction.outcome.document_id",
-            "document_type.$" : "$.extraction.outcome.document_type",
-            "language.$" : "$.tier0.reading.language",
-            "fields.$" : "$.extraction.outcome.fields"
-          }
-        }
-        ResultSelector = { "checked.$" : "$.Payload" }
-        ResultPath     = "$.provenance"
-        Retry = [{
-          ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
-          IntervalSeconds = 2
-          MaxAttempts     = 3
-          BackoffRate     = 2
-        }]
-        Next = "PublishableOrReview"
-      }
-
-      # One boolean, computed inside the gate. A Choice that had to scan the per-field list
-      # would be a rule expressed in Amazon States Language, where no test in this repository
-      # can reach it and no mutation can attack it.
-      PublishableOrReview = {
-        Type = "Choice"
-        Choices = [{
-          Variable      = "$.provenance.checked.verified"
-          BooleanEquals = true
-          Next          = "AnythingAbstained"
-        }]
-        Default = "QueueForReview"
-      }
-
-      # **The state that was missing, and the reason it matters more than anything else here.**
-      #
-      # `Publish` and `QueueForReview` used to be the only two terminal states, and they are
-      # mutually exclusive. So a document with twelve fields where eight cleared their thresholds
-      # and four abstained took the publish path — and the four that abstained **never reached a
-      # human**. They were written into the record object marked as queued, and nothing was sent
-      # to the queue.
-      #
-      # Nothing failed. The execution succeeded, the record was correct about what it did and did
-      # not contain, and the queue stayed empty. In a system whose first doctrine rule is
-      # *"abstention is the safe state — and abstention is not free"*, a pipeline where the
-      # common case of abstention costs the queue nothing makes the capacity model a measurement
-      # of the empty set. Claim 5's build-fails-on-overload check would have been scored against
-      # a queue that only ever received documents where **every** field abstained.
-      #
-      # Found by reading this definition against the doctrine, not by running it — an execution
-      # that drops four abstentions looks exactly like an execution that had none.
-      #
-      # Queue *before* publish, deliberately. If the queue send fails the execution stops and
-      # nothing is published, which is the safe direction; the reverse would publish and then
-      # lose the abstentions to a failure, which is the state this fixes.
-      AnythingAbstained = {
-        Type = "Choice"
-        Choices = [{
-          Variable           = "$.extraction.outcome.queued_count"
-          NumericGreaterThan = 0
-          Next               = "QueueTheAbstentions"
-        }]
-        Default = "Publish"
-      }
-
-      # The same queue and the same message shape as `QueueForReview`. It is a separate state
-      # rather than a shared one because a state can have exactly one `Next`, and this one
-      # continues to `Publish` while the other ends — the difference between "this document
-      # abstained entirely" and "this document published some of itself and owes a human the
-      # rest".
-      QueueTheAbstentions = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::sqs:sendMessage"
-        Parameters = {
-          "QueueUrl" : aws_sqs_queue.review.url,
-          "MessageBody.$" : "$"
-        }
-        # **Discard the send's result.** Without this the SQS response replaces the state's
-        # output and `Publish` loses `$.provenance.checked` — it would then write a message id
-        # into the records bucket where a customs record belongs, and the execution would still
-        # report success.
-        ResultPath = null
-        Next       = "Publish"
-      }
-
-      Publish = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:s3:putObject"
-        Parameters = {
-          "Bucket" : var.records_bucket,
-          # Keyed by document *and* fingerprint. Doctrine rule 4: a correction never erases what
-          # was previously published, so a re-extraction writes a new object beside the old one
-          # rather than over it, and both stay retrievable.
-          "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
-          # **The object, not a string of it.** This used to be
-          # `States.JsonToString($.provenance.checked)`, on the reasoning that `s3:PutObject`
-          # takes a string body. It does — and the SDK integration serialises the parameter as
-          # well, so the record landed in the bucket **double-encoded**: a JSON string literal
-          # whose contents are the JSON.
-          #
-          #     "{\"language\":\"en\",\"document_id\":\"E2E-PROOF2\",\"fields\":[...]}"
-          #
-          # Nothing failed. The execution succeeded, the object was written, its key was right
-          # and its bytes were valid JSON — of a string. Every consumer downstream — Athena over
-          # the lakehouse, Glue's crawler, a human opening the file — reads text where a customs
-          # record should be, and the first one to notice would be whichever query returned a
-          # column of escaped quotes.
-          #
-          # Found by the end-to-end verifier failing to call `.get` on a `str`, which is a
-          # cheaper way to learn it than a mart that silently has one column.
-          "Body.$" : "$.provenance.checked",
-          "ServerSideEncryption" : "aws:kms",
-          "SsekmsKeyId" : var.data_key_arn
-        }
-        End = true
-      }
-
-      QueueForReview = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::sqs:sendMessage"
-        Parameters = {
-          "QueueUrl" : aws_sqs_queue.review.url,
-          "MessageBody.$" : "$"
-        }
-        # **Discard the send's result, exactly as `QueueTheAbstentions` does.**
+    # A filtered comprehension rather than a ternary: Terraform requires both branches of a
+    # conditional to have the same type, and an object with two attributes is not the same type
+    # as an empty one. `for ... if` yields nothing when the flag is false, which is what "these
+    # states do not exist" has to mean.
+    States = merge(
+      { for name, state in local.escalation_states : name => state if var.enable_escalation_tiers },
+      {
+        # **Tier 0 is the local reference reader, not a metered service.**
         #
-        # Without this the execution's output is an SQS receipt — a message id and a set of HTTP
-        # headers — and everything the document actually did is gone. The record of what was
-        # read, what cleared its threshold and what the gate said is replaced by proof that a
-        # queue accepted a message.
+        # This step used to invoke the per-page OCR API under this name. That is tier 1 wearing
+        # tier 0's name, and it deletes the cascade's reason for existing: the local reader is
+        # precisely what keeps the metered engine off the pages that do not need it. A cost model
+        # whose cheapest tier is a paid service is a cost model for a different system.
         #
-        # It cost an hour of the first end-to-end run: the verifier read the execution output,
-        # found no reading and no fields, and reported five failures whose real cause was that
-        # the terminal state had overwritten the evidence.
-        ResultPath = null
-        End        = true
-      }
+        # It is also the same build, from the same image, that produced `recordings/ocr/` — which
+        # is what makes every derived threshold in this repository a statement about the reader
+        # that actually runs here rather than about a laptop nobody else has.
+        ReadAtTierZero = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::lambda:invoke"
+          Parameters = {
+            "FunctionName" : aws_lambda_function.read_tier0.arn,
+            "Payload.$" : "$"
+          }
+          ResultSelector = { "reading.$" : "$.Payload" }
+          ResultPath     = "$.tier0"
+          Retry = [{
+            # Only the transport, never the logic. `Lambda.ServiceException` and its siblings are
+            # the runtime failing to deliver the invocation; a `HandlerError` is this system
+            # refusing something and retrying it would just refuse it again, three times, slower.
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }]
+          Catch = [{ ErrorEquals = ["States.ALL"], Next = "ReadingFailed", ResultPath = "$.error" }]
+          Next  = "ExtractAndThreshold"
+        }
 
-      # Two distinct failure states rather than one.
-      #
-      # A document that could not be *read* and a document whose *extraction* failed are
-      # different operational problems — the first is a corrupt file or a missing language, the
-      # second is a contract or a threshold artefact that does not match the deployment. Merging
-      # them into one `Fail` would put both in the same alarm and make neither actionable.
-      ReadingFailed = {
-        Type  = "Fail"
-        Error = "ReadingFailed"
-        Cause = "The tier-0 reader could not produce a reading. The document is not published and is not queued: there is nothing to review."
-      }
+        # **The step that did not exist.** Every derived threshold, every contract and every
+        # abstention rule lived in `src/manifest/core/` and ran only on a laptop; the deployed
+        # pipeline had no state that executed any of it. A pipeline whose extraction logic never
+        # runs publishes whatever the reader said.
+        ExtractAndThreshold = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::lambda:invoke"
+          Parameters = {
+            "FunctionName" : aws_lambda_function.publish.arn,
+            "Payload" : {
+              "reading.$" : "$.tier0.reading.reading",
+              "document_type.$" : "$.tier0.reading.document_type",
+              "language.$" : "$.tier0.reading.language"
+            }
+          }
+          ResultSelector = { "outcome.$" : "$.Payload" }
+          ResultPath     = "$.extraction"
+          Retry = [{
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }]
+          Catch = [{ ErrorEquals = ["States.ALL"], Next = "ExtractionFailed", ResultPath = "$.error" }]
+          # **Where the cascade actually happens, and it is opt-in.**
+          #
+          # Escalation runs *before* the publish decision, because its whole purpose is to turn a
+          # field that abstained into one that can publish. Running it afterwards would mean the
+          # machine had already sent the document to a human, and the better reading would arrive
+          # for a decision already made.
+          #
+          # When `enable_escalation_tiers` is false the states below are not in the machine at
+          # all — not present-and-skipped. A dead state is a state somebody maintains, and an
+          # execution history full of skipped branches is one nobody reads.
+          Next = var.enable_escalation_tiers ? "AnythingEscalatable" : "AnythingPublishable"
+        }
 
-      ExtractionFailed = {
-        Type  = "Fail"
-        Error = "ExtractionFailed"
-        Cause = "Extraction or thresholding failed. Most often a contract or threshold artefact that does not match this deployment."
-      }
-    }
+        # Nothing cleared its threshold, so there is nothing for the gate to check. Straight to the
+        # queue — and *not* through the gate, because a gate invoked on an empty set returns
+        # `verified: true`, and a run that verified nothing must not be recorded as a run that
+        # verified everything.
+        AnythingPublishable = {
+          Type = "Choice"
+          Choices = [{
+            Variable           = "$.extraction.outcome.publishable_count"
+            NumericGreaterThan = 0
+            Next               = "VerifyProvenance"
+          }]
+          Default = "QueueForReview"
+        }
+
+        # Claim 2's gate, in the path rather than beside it. A field whose box does not verify
+        # never reaches the record — the machine cannot publish past this state, which is what
+        # makes "a published field that cannot be located is a build failure" a property of the
+        # pipeline rather than of a report somebody reads afterwards.
+        #
+        # **There is no `Catch` here, on purpose.** The previous version caught `States.ALL` and
+        # sent the document to review — which meant a gate that was not deployed at all failed
+        # invisibly and every document went to a human while the machine reported success. The
+        # gate itself fails closed field by field; a failure to *invoke* it must stop the
+        # execution, loudly, where an alarm can see it.
+        VerifyProvenance = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::lambda:invoke"
+          Parameters = {
+            "FunctionName" : aws_lambda_function.provenance_gate.arn,
+            "Payload" : {
+              "document_id.$" : "$.extraction.outcome.document_id",
+              "document_type.$" : "$.extraction.outcome.document_type",
+              "language.$" : "$.tier0.reading.language",
+              "fields.$" : "$.extraction.outcome.fields"
+            }
+          }
+          ResultSelector = { "checked.$" : "$.Payload" }
+          ResultPath     = "$.provenance"
+          Retry = [{
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }]
+          Next = "PublishableOrReview"
+        }
+
+        # One boolean, computed inside the gate. A Choice that had to scan the per-field list
+        # would be a rule expressed in Amazon States Language, where no test in this repository
+        # can reach it and no mutation can attack it.
+        PublishableOrReview = {
+          Type = "Choice"
+          Choices = [{
+            Variable      = "$.provenance.checked.verified"
+            BooleanEquals = true
+            Next          = "AnythingAbstained"
+          }]
+          Default = "QueueForReview"
+        }
+
+        # **The state that was missing, and the reason it matters more than anything else here.**
+        #
+        # `Publish` and `QueueForReview` used to be the only two terminal states, and they are
+        # mutually exclusive. So a document with twelve fields where eight cleared their thresholds
+        # and four abstained took the publish path — and the four that abstained **never reached a
+        # human**. They were written into the record object marked as queued, and nothing was sent
+        # to the queue.
+        #
+        # Nothing failed. The execution succeeded, the record was correct about what it did and did
+        # not contain, and the queue stayed empty. In a system whose first doctrine rule is
+        # *"abstention is the safe state — and abstention is not free"*, a pipeline where the
+        # common case of abstention costs the queue nothing makes the capacity model a measurement
+        # of the empty set. Claim 5's build-fails-on-overload check would have been scored against
+        # a queue that only ever received documents where **every** field abstained.
+        #
+        # Found by reading this definition against the doctrine, not by running it — an execution
+        # that drops four abstentions looks exactly like an execution that had none.
+        #
+        # Queue *before* publish, deliberately. If the queue send fails the execution stops and
+        # nothing is published, which is the safe direction; the reverse would publish and then
+        # lose the abstentions to a failure, which is the state this fixes.
+        AnythingAbstained = {
+          Type = "Choice"
+          Choices = [{
+            Variable           = "$.extraction.outcome.queued_count"
+            NumericGreaterThan = 0
+            Next               = "QueueTheAbstentions"
+          }]
+          Default = "Publish"
+        }
+
+        # The same queue and the same message shape as `QueueForReview`. It is a separate state
+        # rather than a shared one because a state can have exactly one `Next`, and this one
+        # continues to `Publish` while the other ends — the difference between "this document
+        # abstained entirely" and "this document published some of itself and owes a human the
+        # rest".
+        QueueTheAbstentions = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::sqs:sendMessage"
+          Parameters = {
+            "QueueUrl" : aws_sqs_queue.review.url,
+            "MessageBody.$" : "$"
+          }
+          # **Discard the send's result.** Without this the SQS response replaces the state's
+          # output and `Publish` loses `$.provenance.checked` — it would then write a message id
+          # into the records bucket where a customs record belongs, and the execution would still
+          # report success.
+          ResultPath = null
+          Next       = "Publish"
+        }
+
+        Publish = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::aws-sdk:s3:putObject"
+          Parameters = {
+            "Bucket" : var.records_bucket,
+            # Keyed by document *and* fingerprint. Doctrine rule 4: a correction never erases what
+            # was previously published, so a re-extraction writes a new object beside the old one
+            # rather than over it, and both stay retrievable.
+            "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
+            # **The object, not a string of it.** This used to be
+            # `States.JsonToString($.provenance.checked)`, on the reasoning that `s3:PutObject`
+            # takes a string body. It does — and the SDK integration serialises the parameter as
+            # well, so the record landed in the bucket **double-encoded**: a JSON string literal
+            # whose contents are the JSON.
+            #
+            #     "{\"language\":\"en\",\"document_id\":\"E2E-PROOF2\",\"fields\":[...]}"
+            #
+            # Nothing failed. The execution succeeded, the object was written, its key was right
+            # and its bytes were valid JSON — of a string. Every consumer downstream — Athena over
+            # the lakehouse, Glue's crawler, a human opening the file — reads text where a customs
+            # record should be, and the first one to notice would be whichever query returned a
+            # column of escaped quotes.
+            #
+            # Found by the end-to-end verifier failing to call `.get` on a `str`, which is a
+            # cheaper way to learn it than a mart that silently has one column.
+            "Body.$" : "$.provenance.checked",
+            "ServerSideEncryption" : "aws:kms",
+            "SsekmsKeyId" : var.data_key_arn
+          }
+          End = true
+        }
+
+        QueueForReview = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::sqs:sendMessage"
+          Parameters = {
+            "QueueUrl" : aws_sqs_queue.review.url,
+            "MessageBody.$" : "$"
+          }
+          # **Discard the send's result, exactly as `QueueTheAbstentions` does.**
+          #
+          # Without this the execution's output is an SQS receipt — a message id and a set of HTTP
+          # headers — and everything the document actually did is gone. The record of what was
+          # read, what cleared its threshold and what the gate said is replaced by proof that a
+          # queue accepted a message.
+          #
+          # It cost an hour of the first end-to-end run: the verifier read the execution output,
+          # found no reading and no fields, and reported five failures whose real cause was that
+          # the terminal state had overwritten the evidence.
+          ResultPath = null
+          End        = true
+        }
+
+        # Two distinct failure states rather than one.
+        #
+        # A document that could not be *read* and a document whose *extraction* failed are
+        # different operational problems — the first is a corrupt file or a missing language, the
+        # second is a contract or a threshold artefact that does not match the deployment. Merging
+        # them into one `Fail` would put both in the same alarm and make neither actionable.
+        ReadingFailed = {
+          Type  = "Fail"
+          Error = "ReadingFailed"
+          Cause = "The tier-0 reader could not produce a reading. The document is not published and is not queued: there is nothing to review."
+        }
+
+        ExtractionFailed = {
+          Type  = "Fail"
+          Error = "ExtractionFailed"
+          Cause = "Extraction or thresholding failed. Most often a contract or threshold artefact that does not match this deployment."
+        }
+    })
   })
 }

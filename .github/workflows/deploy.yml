@@ -41,11 +41,24 @@ on:
         description: "ISO date after which the reaper may destroy this estate. No default."
         required: true
         type: string
-      include_expensive_layers:
+      include_analytics:
         description: >-
-          Also stand up EMR Serverless and the Redshift workgroup. Off by default, and the
-          default is the point: these two are the estate's cost, and an estate that stands them
-          up because a deploy ran is an estate whose bill is decided by a default.
+          Stand up the Redshift workgroup and its marts. Off by default. Separate from `batch`
+          because they are different costs answering different questions, and one flag for two
+          bills is a flag nobody can reason about.
+        type: boolean
+        default: false
+      include_batch:
+        description: >-
+          Stand up EMR Serverless for bulk reprocessing. Off by default.
+        type: boolean
+        default: false
+      enable_escalation_tiers:
+        description: >-
+          Call Textract, Bedrock Data Automation and Bedrock when tier 0 abstains — the first
+          billed reading this project performs. Off by default: with it off the escalation
+          states are not in the machine, the function is not created, and the VPC endpoints
+          those services answer on are not stood up. Nothing is present-and-disabled.
         type: boolean
         default: false
       confirm:
@@ -156,7 +169,8 @@ jobs:
         run: |
           terraform -chdir=infra/foundation plan -out=tfplan \
             -var 'expires_at=${{ inputs.expires_at }}' \
-            -var "budget_notification_email=$BUDGET_EMAIL"
+            -var "budget_notification_email=$BUDGET_EMAIL" \
+            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}"
       - name: apply
         run: terraform -chdir=infra/foundation apply -auto-approve tfplan
 
@@ -315,12 +329,21 @@ jobs:
       - name: apply
         run: |
           terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
+          # **Both shapes plan before either applies.** An optional feature that breaks the
+          # configuration it is absent from is one every ordinary deploy trips over, and
+          # `terraform validate` cannot see it: both shapes are type-correct. This costs seconds
+          # and it is the only check in this repository that needs credentials, which is why it
+          # runs here rather than in the offline suite.
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check_optional_layers_plan.py
           terraform -chdir=infra/extraction apply -auto-approve \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
             -var "publish_package_key=${{ steps.package.outputs.key }}" \
             -var "publish_package_hash=${{ steps.package.outputs.hash }}" \
-            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]"
+            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
+            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
+            -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
 
   lakehouse:
     name: "apply · lakehouse"
@@ -420,7 +443,7 @@ jobs:
   # thing from written, validated and not run.
   batch:
     name: "apply · batch (opt-in)"
-    if: inputs.include_expensive_layers
+    if: inputs.include_batch
     needs: lakehouse
     runs-on: ubuntu-latest
     environment: deploy
@@ -511,7 +534,7 @@ jobs:
 
   analytics:
     name: "apply · analytics (opt-in)"
-    if: inputs.include_expensive_layers
+    if: inputs.include_analytics
     needs: batch
     runs-on: ubuntu-latest
     environment: deploy
