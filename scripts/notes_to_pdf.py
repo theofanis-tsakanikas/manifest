@@ -46,10 +46,10 @@ for index, block in enumerate(blocks):
     # Mermaid reads HTML inside a label, not markdown, so `**bold**` arrives as four asterisks
     # on the page. Converted before escaping: the browser turns `&lt;b&gt;` back into literal
     # `<b>` in textContent, which is exactly what mermaid then parses.
-    block = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", block)
+    with_bold = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", block)
     body = body.replace(
         f"<p>@@MERMAID{index}@@</p>",
-        f'<div class="mermaid">{html.escape(block)}</div>',
+        f'<div class="mermaid">{html.escape(with_bold)}</div>',
     )
 
 page = f"""<!doctype html>
@@ -84,8 +84,17 @@ page = f"""<!doctype html>
 </head><body>
 {body}
 <script>
-  mermaid.initialize({{ startOnLoad: false, theme: "base", flowchart: {{ htmlLabels: true, curve: "basis", rankSpacing: 26, nodeSpacing: 26, padding: 6 }},
-    themeVariables: {{ fontFamily: "-apple-system, Helvetica Neue, Arial, sans-serif", fontSize: "15px" }} }});
+  mermaid.initialize({{
+    startOnLoad: false,
+    theme: "base",
+    // Ranks compressed and the chart kept nearer square: a tall flowchart scaled to A4
+    // leaves its type at four points, and that is an aspect-ratio problem, not a font one.
+    flowchart: {{ htmlLabels: true, curve: "basis", rankSpacing: 26, nodeSpacing: 26, padding: 6 }},
+    themeVariables: {{
+      fontFamily: "-apple-system, Helvetica Neue, Arial, sans-serif",
+      fontSize: "15px",
+    }},
+  }});
   mermaid.run().then(() => {{ document.title = "ready:" + document.title; }});
 </script>
 </body></html>"""
