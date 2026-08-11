@@ -104,19 +104,36 @@ jobs:
       # trade: the alternative is passing 2.5 GB between jobs through an artefact, and a shard
       # that read a corpus it did not verify is a shard whose pages nobody can vouch for.
       # `--check` proves the regeneration reproduces the committed ground truth exactly.
-      - name: regenerate the corpus and prove it reproduces
-        run: |
-          set -euo pipefail
-          # **Order reversed, and it is the whole of a finding.** This used to generate first
-          # and check second, so the check compared the corpus it had just written against
-          # itself. `load_committed` reads the ground truth from git now, so the order no longer
-          # decides the answer — but checking *before* generating is the honest sequence anyway:
-          # prove the generator still reproduces what is committed, then build the pages.
-          python -m corpus.generate --check
-          python -m corpus.generate
-
       - name: build the reader image
         run: docker build --tag manifest-reader:ceremony .
+
+      # **The corpus is generated inside the image, and that is a finding rather than a
+      # convenience.**
+      #
+      # `corpus/sheet.py` picks the first font it finds on the machine. On the author's laptop
+      # that is `/System/Library/Fonts/Supplemental/Arial Unicode.ttf`; on a Linux runner it is
+      # something else. Box geometry comes from font metrics, so a different font is a different
+      # ground truth — the generator says exactly that, in its own error message, and the check
+      # never fired because it compared the runner's corpus against the copy the runner had just
+      # written.
+      #
+      # The first honest comparison in this repository's life was `ocr_merge.py` refusing a
+      # merge: the shards had recorded a corpus whose fingerprint is not the one committed. Same
+      # shape as the reader version, one layer deeper — an artefact whose identity depends on
+      # which machine made it, and a check that could not see it.
+      #
+      # So the corpus comes from the image, exactly like the reading does. One image, one font,
+      # one set of boxes, on a laptop and in the estate alike.
+      - name: generate the corpus inside the image
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            --env PYTHONPATH=/work/src \
+            --entrypoint /usr/local/bin/python \
+            manifest-reader:ceremony \
+            -m corpus.generate
 
       # **The reader that runs here is the reader the estate runs.** The workspace is mounted so
       # the shard's recording lands in the tree; `PYTHONPATH` points at the mounted source rather
@@ -143,6 +160,19 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # One shard carries the ground truth out, because the merge needs the corpus fingerprint,
+      # the seed and the page count to check the shards against — and regenerating it there
+      # would spend another hour producing a file eight jobs already made. Shard 0 rather than
+      # all eight: they are byte-identical by construction, and eight copies of the same file is
+      # eight chances for a mismatch nobody expected to be possible.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: matrix.shard == 0
+        with:
+          name: ground-truth
+          path: corpus/ground_truth/
+          if-no-files-found: error
+          retention-days: 30
+
   merge:
     name: merge, derive, and print the movement
     needs: read
@@ -156,19 +186,14 @@ jobs:
       - name: install
         run: python -m pip install --quiet -e ".[dev]"
 
-      # The ground truth is what the merge checks the shards against — the corpus fingerprint,
-      # the seed, and the page count that proves no shard came back short. Regenerated rather
-      # than carried, for the same reason each shard regenerates it.
-      - name: regenerate the corpus
-        run: |
-          set -euo pipefail
-          # **Order reversed, and it is the whole of a finding.** This used to generate first
-          # and check second, so the check compared the corpus it had just written against
-          # itself. `load_committed` reads the ground truth from git now, so the order no longer
-          # decides the answer — but checking *before* generating is the honest sequence anyway:
-          # prove the generator still reproduces what is committed, then build the pages.
-          python -m corpus.generate --check
-          python -m corpus.generate
+      # **Carried, not regenerated.** This step used to run the generator again — an hour, to
+      # produce a file the eight shards had already made, and to produce it with *this* runner's
+      # font rather than the image's. It comes from shard 0 now, which generated it inside the
+      # image alongside the pages it read.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ground-truth
+          path: corpus/ground_truth/
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -223,6 +248,7 @@ jobs:
           path: |
             recordings/ocr/
             recordings/thresholds.json
+            corpus/ground_truth/
             thresholds-artefact.json
           if-no-files-found: error
           retention-days: 30
