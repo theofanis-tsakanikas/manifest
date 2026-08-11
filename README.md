@@ -10,22 +10,31 @@ Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageM
 
 ---
 
-> **Status: ready to deploy, not yet deployed.** `make preflight` runs **32 checks** — every claim
-> below, every consistency invariant, `terraform validate` against real provider schemas across
-> six layers, checkov at zero findings, and a check that the figures on this page are the ones
-> the run produced. All of them pass.
+> **Status: applied, verified end to end, and torn down.** `make preflight` runs **36 checks** —
+> every claim below, every consistency invariant, `terraform validate` against real provider
+> schemas across six layers, checkov at zero findings, and a check that the figures on this page
+> are the ones the run produced. All of them pass, in the reader image the recording came from.
 >
-> **`infra/bootstrap` was applied on 2026-08-10** — the state backend, its key, the OIDC role
-> and the budget guard. Thirty-one resources, in one account, in `eu-central-1`. The other five
-> layers have not been applied and neither workflow has been dispatched.
+> **The estate was deployed on 2026-08-10, verified on 2026-08-11 and destroyed the same day.**
+> `scripts/e2e_verify.py` put documents through the running pipeline and asserted what came out —
+> **13 of 13 checks**, five edge cases refused by name. Then `destroy.yml` tore all five layers
+> down in reverse, and what is standing now is `infra/bootstrap` alone: the state backend, its
+> key, the OIDC role and the budget guard, applied from a laptop on 2026-08-10.
 >
-> There are no screenshots, no wall-clock figures and no euro amounts presented as measured,
-> because none of those exist yet. The one cost figure here is labelled **modelled** everywhere
-> it appears and says what it is built from. It becomes a measurement when a run produces one,
-> with that run's date beside it, and not before.
+> An earlier revision of this block said "not yet deployed" and "neither workflow has been
+> dispatched". Both were true when written and false the moment the first apply succeeded, and a
+> repository describing a posture it no longer holds is the same defect whichever way the error
+> points.
 >
-> Every claim below is scored **offline, with no AWS account**, and stays that way after the
-> first deploy. A claim that needs a running estate to check is a claim you cannot reproduce.
+> **What the first deploy did not license.** No managed extraction engine has ever been called —
+> the escalation tiers stayed off, so every page was read by the local tier-0 image. There is no
+> accuracy figure for the escalated fraction and there cannot be one until a page goes up a tier.
+> No distributed job has run. There are no screenshots and no wall-clock figures. The one cost
+> figure here is labelled **modelled** everywhere it appears and says what it is built from; it
+> becomes a measurement when a run produces one, with that run's date beside it, and not before.
+>
+> Every claim below is scored **offline, with no AWS account**, and stayed that way through the
+> deploy. A claim that needs a running estate to check is a claim you cannot reproduce.
 > See [`docs/DECISIONS.md`](docs/DECISIONS.md) 14 to 16.
 
 ---
@@ -72,14 +81,14 @@ command in this repository, not a summary of one.
 | **production drift** | the declared envelope fires on a −0.25 shift **and** on a +0.25 one; a 9-document window returns **undecided**, never *inside* |
 | **out of distribution** | on 100 pages of **real photographed paper** nobody here designed (CC BY 4.0, `corpus/external/LICENCE.md`): ECE **0.0592** against **0.0371** on the generated corpus. The reader's confidences transport — which is the only answer to *"did you tune the generator until the claims passed?"* that does not come from the generator's author |
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
-| `make gate-proof` | **40 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **45 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **517 passed, 0 findings** across six layers; 123 deliberate exceptions, each with a written reason beside the resource |
+| `checkov` | **606 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
 | test suite | **295 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
-does; `gate-proof` breaks 40 controls on purpose and requires the **named** gate to refuse
+does; `gate-proof` breaks 45 controls on purpose and requires the **named** gate to refuse
 each one, for the right reason.
 
 ---
@@ -230,7 +239,7 @@ one function, and keeping it that size is what stops the untested region growing
 make install       # venv + editable install
 make test          # 295 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 40 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 45 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)
@@ -255,7 +264,7 @@ data. No AWS account, no credentials, no network.
 | [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
 | [`recordings/ocr/`](recordings/ocr/) | The tier-0 reader's normalised output, with its version and fingerprint. Every threshold derives from here |
 | [`evals/`](evals/) | The seven claim harnesses, labelled and credential-free |
-| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` **is applied** (2026-08-10, 31 resources); every other layer applies only from a workflow that has not been dispatched yet |
+| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` **is applied** and stays applied; the other five were applied from `deploy.yml` on 2026-08-10, verified, and destroyed on 2026-08-11 |
 | [`docs/adr/`](docs/adr/) | Five decisions, written before the code that assumes them |
 
 ---
