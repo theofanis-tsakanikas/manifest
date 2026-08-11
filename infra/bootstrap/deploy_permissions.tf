@@ -161,6 +161,24 @@ data "aws_iam_policy_document" "deploy_storage" {
       "logs:DeleteSubscriptionFilter",
       "kms:DisableKey",
       "iam:DeletePolicyVersion",
+
+      # **And the reads a delete performs, which are a different gap in the same wall.**
+      #
+      # The second teardown attempt failed on `iam:ListInstanceProfilesForRole`: the provider
+      # checks a role's instance profiles before removing it. That is not a `Delete` anybody
+      # would think to grant — it is a *read*, and a deploy never performs it, because creating
+      # a thing does not require reading what you are about to remove.
+      #
+      # So the list below is the answer to a second question, asked the same way: which reads
+      # does a `terraform destroy` of this estate perform that the role does not hold? Six more,
+      # out of forty-nine checked, and five of them are tag or membership lookups the provider
+      # does while planning a removal.
+      "iam:ListInstanceProfilesForRole",
+      "iam:ListEntitiesForPolicy",
+      "iam:ListRoleTags",
+      "iam:ListPolicyTags",
+      "logs:ListTagsLogGroup",
+      "ecr:ListImages",
       "s3:PutBucketVersioning",
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketOwnershipControls",
