@@ -107,17 +107,22 @@ def _send_a_partly_published_document_straight_to_publish(root: Path) -> bool:
     )
 
 
-def _let_the_corpus_acceptance_outlive_its_expiry(root: Path) -> bool:
-    """Push the envelope acceptance's expiry into the far future.
+def _point_the_corpus_acceptance_at_a_different_figure(root: Path) -> bool:
+    """Make the envelope acceptance name a figure other than the one that is breached.
 
-    Doctrine rule 6: exceptions expire, and on expiry the finding returns. An acceptance whose
-    date can be pushed out without anybody re-deciding is not an acceptance — it is the band
-    widened in a file nobody opens.
+    **The property under test is that an acceptance covers exactly what it names.** One figure
+    on arrival notices sits outside its band under a named, dated acceptance; every other figure
+    must still fail. An acceptance that excused "the envelope" rather than one number would be a
+    switch with a date on it, and while only one thing is broken the difference is invisible.
+
+    The first version of this mutation pushed the expiry out to 2099, and `gate-proof` reported
+    it as *accepted* — correctly, because a longer expiry makes an acceptance more valid rather
+    than less, so there was nothing for the check to refuse. The harness caught the harness.
     """
     return _replace(
         root / "contracts/corpus/acceptance.yaml",
-        '    expires_on: "2026-09-22"',
-        '    expires_on: "2099-01-01"',
+        '    figure: "arrival_notice.error_rate_of_located"',
+        '    figure: "overall.error_rate_of_located"',
     )
 
 
@@ -825,14 +830,14 @@ MUTATIONS: tuple[Mutation, ...] = (
         "was left measuring the empty set.",
     ),
     Mutation(
-        "let the corpus envelope's acceptance outlive its expiry",
+        "let the corpus acceptance excuse a figure it does not name",
         "corpus envelope",
         [sys.executable, "scripts/check_corpus_envelope.py"],
-        "2026-09-22",
-        _let_the_corpus_acceptance_outlive_its_expiry,
-        "One figure is outside the declared band under a named, dated acceptance. An expiry "
-        "that can be pushed out without anybody re-deciding is the band widened in a file "
-        "nobody opens — which is exactly what the envelope exists to catch.",
+        "arrival_notice.error_rate_of_located",
+        _point_the_corpus_acceptance_at_a_different_figure,
+        "One figure is outside its band under a named, dated acceptance. If the acceptance "
+        "covered anything but that figure it would be a switch with a date on it, and while "
+        "only one thing is broken the difference is invisible.",
     ),
     Mutation(
         "read the clock inside the core",
