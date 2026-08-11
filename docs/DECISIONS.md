@@ -253,6 +253,44 @@ distribution and the acceptable band for the abstention rate. A test computes th
 figures from the recording and goes red when the generator leaves the band. Without it, the
 degradation parameters get tuned — not dishonestly, just gradually — until the claims pass.
 
+**21 · The corpus is generated inside the reader image, for the same reason the recording is.**
+*(Added 2026-08-11, after the first deploy.)*
+
+`corpus/sheet.py` took the first font it found on the machine, from a list of three. On the
+author's laptop that is Arial Unicode. On a Linux runner it was DejaVu — which covers Latin and
+Greek and **not CJK** — so the thirteen Chinese characters in the corpus's party names rendered
+as empty boxes.
+
+Box geometry comes from font metrics. A different font is therefore a different ground truth,
+and the generator already said so, in an error message written for exactly this case. That
+error had never fired, because `--check` compared the runner's regenerated corpus against the
+`corpus.json` the runner had just written — a tautology, in the one place the property was
+supposed to be proved. Nothing else ran the check at all: it was in `make claims` and in no
+workflow.
+
+The first honest comparison in this project's life was `scripts/ocr_merge.py` refusing to
+merge, because the shards had recorded a corpus whose fingerprint was not the committed one.
+
+So the corpus, the reader binary and the reading now come from one image. One font, one
+version, one set of boxes, on a laptop and in the estate alike. Three consequences, stated
+rather than discovered:
+
+- The committed ground truth is the **image's**, not the author's laptop's. Every offline
+  figure re-derives against it.
+- `corpus-check` on a macOS laptop now fails, correctly. That machine cannot produce this
+  corpus, and a check that passed there would be the same lie in the other direction. It runs
+  in CI, inside the image, as a job of its own.
+- `register_fonts(strict=False)` exists for `tests/corpus/` and nowhere else, because those
+  tests assert structural properties — a table breaking across a page, every placement carrying
+  a box — that no font decides, and a suite that only runs inside a container is a suite a
+  reader cannot run.
+
+**What it cost to find, recorded because the pattern repeats.** This is the same defect as
+decision 19's, one layer down: an artefact whose identity depended on which machine made it,
+with a check that could not see the difference. The reader version was found by a deployed
+Lambda failing on a missing threshold artefact. The font was found by a merge refusing. Neither
+was found by anything designed to look.
+
 ## Deliberately deferred, or out of scope
 
 - **Live capture and screenshots — out of scope, not deferred.** See decision 14.
