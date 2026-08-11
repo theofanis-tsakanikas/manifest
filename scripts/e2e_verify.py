@@ -8,8 +8,16 @@ whose abstentions reached nobody succeeds. A record whose boxes point at the wro
 page succeeds. A pipeline that published everything because a threshold artefact was empty
 succeeds, twice as fast.
 
-So the answer to "does it work?" is a command with an exit code. Eight checks, each able to
-fail on its own, and the last is the only one that separates this from a demo.
+So the answer to "does it work?" is a command with an exit code. Eight checks on the happy path
+and five on documents that must be refused, each able to fail on its own, and the box-against-
+the-page one is what separates this from a demo.
+
+**An edge case is only a check if it can fail.** The five refusals asserted that an execution
+reached a terminal state, which is every state an execution can reach — a document that sailed
+through and published a record passed under the name of the check written to catch it. They
+assert the absence of a published record now, which is the property, and `SUCCEEDED` stays a
+legitimate outcome because a document whose every field abstains ends successfully with nothing
+published and everything queued.
 
 **It needs credentials, and that is the one thing it is allowed to need.** Every claim in this
 repository is scored offline; this is not one of the claims. It is the check that the estate
@@ -152,13 +160,43 @@ def _from_history(execution_arn: str) -> dict:
                 continue
             if not isinstance(payload, dict):
                 continue
-            if "reading" in payload:
+            if "escalation" in payload:
+                # **The escalation's outcome supersedes the one before it, and must.**
+                #
+                # `Escalate` re-thresholds every rescued field and returns new counts and a new
+                # fingerprint at `extraction.outcome`; the earlier `ExtractAndThreshold` payload
+                # carries the pre-escalation ones. Reading the earlier of the two is not a
+                # cosmetic error — the fingerprint names the published record's key, so a
+                # verifier holding the stale one looks for a record that was never written and
+                # reports a publish step that did not run.
+                #
+                # Events arrive in order, so a later assignment is the later state by
+                # construction rather than by a rule this function has to enforce.
+                assembled["escalation"] = payload["escalation"]
+                outcome = (payload.get("extraction") or {}).get("outcome")
+                if isinstance(outcome, dict):
+                    assembled["extraction"] = {"outcome": outcome}
+            elif "reading" in payload:
                 assembled["tier0"] = payload
             elif "publishable_count" in payload:
                 assembled["extraction"] = {"outcome": payload}
             elif "verified" in payload:
                 assembled["provenance"] = {"checked": payload}
     return assembled
+
+
+def _escalation_is_deployed(estate: Estate) -> bool:
+    """Whether this estate has the escalation states at all.
+
+    Read from the deployed definition rather than from an input to this script. The tiers are an
+    opt-in flag on the deploy, so both shapes are legitimate estates, and a verifier that assumed
+    one would either demand an escalation from a machine that has none or pass silently over a
+    machine that has one and never used it.
+    """
+    definition = _client("stepfunctions").describe_state_machine(
+        stateMachineArn=estate.state_machine
+    )["definition"]
+    return "Escalate" in json.loads(definition).get("States", {})
 
 
 def _json_object(bucket: str, key: str) -> dict | None:
@@ -262,6 +300,35 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
         f"where everything passes proves no threshold was consulted, and one where everything "
         f"abstains proves the thresholds are unreachable",
     )
+
+    # **The tier that had never been called, and the one check that can tell.**
+    #
+    # With the tiers deployed, an escalation that never fires is indistinguishable from one that
+    # works: the document still publishes what tier 0 could read and queues the rest, the
+    # execution still succeeds, and every other check on this page still passes. The states are
+    # in the machine or they are not, and if they are, something must have gone up.
+    if _escalation_is_deployed(estate):
+        escalation = output.get("escalation") or {}
+        attempted = bool(escalation.get("attempted"))
+        estate.check(
+            "3b · a page that abstained actually went up a tier",
+            attempted and escalation.get("tier") is not None and bool(escalation.get("fields")),
+            f"tier {escalation.get('tier')} was called for {len(escalation.get('fields') or [])} "
+            f"field(s): {', '.join(escalation.get('fields') or [])}. "
+            f"reports_confidence={escalation.get('reports_confidence')} — a tier that scores "
+            f"nothing may rescue a reading for a human and may never publish on it"
+            if attempted
+            else f"nothing escalated: "
+            f"{escalation.get('reason') or 'the state produced no result'}. "
+            f"The states are deployed, {queued} field(s) abstained, and the ladder was not "
+            f"climbed — which is the cascade being a design rather than a measurement, in the "
+            f"one estate where it could have stopped being one",
+        )
+    else:
+        print(
+            f"  {DIM}skip  the escalation states are not in this machine — deployed with "
+            f"enable_escalation_tiers off. Nothing here is evidence about a managed reader.{RESET}"
+        )
 
     checked = (output.get("provenance") or {}).get("checked") or {}
     per_field = checked.get("fields") or []
@@ -503,13 +570,45 @@ def _edge_cases(estate: Estate, document: Path) -> None:
 
     # And the four that start, and must then be refused by name rather than published — the
     # three malformed documents and the key that does not follow the convention.
+    #
+    # **"Reached a terminal state" was the whole of this assertion, and it asserted nothing.**
+    # `FAILED` or `SUCCEEDED` is every outcome an execution can end in, so the only things it
+    # could catch were a machine that never started and one still running fifteen minutes later.
+    # A document that sailed through and published a record read as *refused* — which is the
+    # exact failure the edge cases exist to detect, passing under the name of the check written
+    # to detect it.
+    #
+    # The property is in the second half: **no record exists**. `SUCCEEDED` is a legitimate
+    # outcome here — a Greek packing list whose every field abstains ends successfully with
+    # everything in the queue and nothing published — so the status alone can never separate the
+    # two, and the records bucket can.
     for key, why in (*cases[:3], cases[3]):
         status = started_for.get(key)
+        document_id = key.rsplit("/", 1)[-1].removesuffix(".pdf")
+        records = _records_under(estate, document_id)
         estate.check(
             f"edge · {key.split('/')[-1]} is refused, not published",
-            status in {"FAILED", "SUCCEEDED"},
-            f"{why} — execution {status or 'never started'}",
+            status in {"FAILED", "SUCCEEDED"} and not records,
+            f"{why} — execution {status or 'never started'}, "
+            + (
+                f"and nothing under records/{document_id}/"
+                if not records
+                else f"and it PUBLISHED {len(records)} record(s): {records[:3]}"
+            ),
         )
+
+
+def _records_under(estate: Estate, document_id: str) -> list[str]:
+    """Every published record for a document id.
+
+    Listed rather than fetched by name: the happy path knows the fingerprint it is looking for
+    and a refused document has none, so the question here is not *is this record there* but
+    *is there anything at all*.
+    """
+    listing = _client("s3").list_objects_v2(
+        Bucket=estate.records, Prefix=f"records/{document_id}/", MaxKeys=10
+    )
+    return [entry["Key"] for entry in listing.get("Contents", [])]
 
 
 def main() -> int:
