@@ -169,11 +169,6 @@ data "aws_iam_policy_document" "deploy_storage" {
       # the one teardown that matters. The five below were found by asking, in one pass, which
       # actions a `terraform destroy` of *this* estate calls that the role does not hold.
       "s3:DeleteBucketPolicy",
-      "ecr:BatchDeleteImage",
-      "lambda:DeleteEventSourceMapping",
-      "logs:DeleteSubscriptionFilter",
-      "kms:DisableKey",
-      "iam:DeletePolicyVersion",
 
       # **And the reads a delete performs, which are a different gap in the same wall.**
       #
@@ -186,13 +181,6 @@ data "aws_iam_policy_document" "deploy_storage" {
       # does a `terraform destroy` of this estate perform that the role does not hold? Six more,
       # out of forty-nine checked, and five of them are tag or membership lookups the provider
       # does while planning a removal.
-      "iam:ListInstanceProfilesForRole",
-      "iam:ListEntitiesForPolicy",
-      "iam:ListRoleTags",
-      "iam:ListPolicyTags",
-      "logs:ListTagsLogGroup",
-      "ecr:ListImages",
-      "kms:DeleteAlias",
       "s3:PutBucketVersioning",
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketOwnershipControls",
@@ -901,6 +889,97 @@ resource "aws_iam_policy" "deploy_references" {
 resource "aws_iam_role_policy_attachment" "deploy_references" {
   role       = aws_iam_role.deploy.name
   policy_arn = aws_iam_policy.deploy_references.arn
+}
+
+
+# ── The teardown's own permissions ────────────────────────────────────────────
+#
+# **Fifteen actions no deploy ever performs, found in three passes and then misplaced once.**
+#
+# A deploy exercises `Put` and never `Delete`, so a permission set can be complete for every
+# apply anybody runs and short for the one teardown that gets the money back. The first real
+# teardown found that in three distinct shapes: deletes whose `Put` twin was granted, *reads*
+# the provider performs while planning a removal, and resources a service created on our behalf.
+#
+# They are here rather than appended to the layer statements because that is where the second
+# mistake happened: `iam:ListInstanceProfilesForRole` was added to a statement whose resources
+# are S3 bucket ARNs, where an IAM action can never match, and `ec2:DeleteNetworkInterface` to
+# one conditioned on `manifest:project` — a tag Lambda's own ENIs do not carry. Both were
+# granted and both were denied, which is the least useful combination available.
+data "aws_iam_policy_document" "deploy_teardown" {
+  # IAM reads and deletes, scoped by name. Roles and policies this project creates are named
+  # `manifest-*`; nothing else in the account is in reach.
+  statement {
+    sid    = "RemoveThisProjectsIdentities"
+    effect = "Allow"
+    actions = [
+      "iam:ListInstanceProfilesForRole",
+      "iam:ListEntitiesForPolicy",
+      "iam:ListRoleTags",
+      "iam:ListPolicyTags",
+      "iam:DeletePolicyVersion",
+    ]
+    resources = [
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-*",
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project}-*",
+    ]
+  }
+
+  # **The network interfaces Lambda made, and why they carry no condition.**
+  #
+  # A function attached to a VPC gets ENIs allocated by the Lambda service. They are in no state
+  # file, no resource block mentions them, and — the part that matters here — **they carry none
+  # of this project's tags**, because this project did not create them. A `ResourceTag`
+  # condition therefore never matches, and the teardown stops at the subnets with the whole
+  # network behind them: two subnets, a security group, the VPC and every endpoint on it.
+  #
+  # The boundary that remains is the deploy role's trust — `workflow_dispatch` from one
+  # environment in one repository — plus the narrowness of the action itself. Deleting a network
+  # interface is not a way to reach anything; it is a way to remove one.
+  #checkov:skip=CKV_AWS_111:Lambda-created ENIs carry no project tag, so a ResourceTag condition matches nothing and leaves the network undeletable.
+  #checkov:skip=CKV_AWS_356:As above — the API offers no resource pattern for an ENI this role can predict.
+  statement {
+    sid       = "RemoveTheInterfacesLambdaMade"
+    effect    = "Allow"
+    actions   = ["ec2:DeleteNetworkInterface", "ec2:DetachNetworkInterface"]
+    resources = ["*"]
+  }
+
+  # An alias has no tags of its own, so it is scoped by name instead of by condition.
+  statement {
+    sid       = "RemoveThisProjectsAliases"
+    effect    = "Allow"
+    actions   = ["kms:DeleteAlias", "kms:DisableKey"]
+    resources = ["arn:aws:kms:*:${data.aws_caller_identity.current.account_id}:alias/${var.project}-*"]
+  }
+
+  statement {
+    sid    = "RemoveWhatTheLayersLeave"
+    effect = "Allow"
+    actions = [
+      "ecr:BatchDeleteImage",
+      "ecr:ListImages",
+      "lambda:DeleteEventSourceMapping",
+      "logs:DeleteSubscriptionFilter",
+      "logs:ListTagsLogGroup",
+    ]
+    resources = [
+      "arn:aws:ecr:*:${data.aws_caller_identity.current.account_id}:repository/${var.project}-*",
+      "arn:aws:lambda:*:${data.aws_caller_identity.current.account_id}:function:${var.project}-*",
+      "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:*",
+    ]
+  }
+}
+
+resource "aws_iam_policy" "deploy_teardown" {
+  name        = "${var.project}-deploy-teardown"
+  description = "Deploy role: the actions only a teardown performs."
+  policy      = data.aws_iam_policy_document.deploy_teardown.json
+}
+
+resource "aws_iam_role_policy_attachment" "deploy_teardown" {
+  role       = aws_iam_role.deploy.name
+  policy_arn = aws_iam_policy.deploy_teardown.arn
 }
 
 # ── The budget brake ─────────────────────────────────────────────────────────
