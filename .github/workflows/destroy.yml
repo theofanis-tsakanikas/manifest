@@ -291,8 +291,19 @@ jobs:
           terraform -chdir=infra/lakehouse init \
             -backend-config="bucket=$TF_STATE_BUCKET" \
             -backend-config="region=${{ env.AWS_REGION }}"
-          LAKE_BUCKET=$(terraform -chdir=infra/lakehouse output -raw lake_bucket)
-          python3 scripts/empty_bucket.py "$LAKE_BUCKET" --project "${{ env.PROJECT }}" --missing-ok
+          # **From the resolver, not from a Terraform output.**
+          #
+          # This read `terraform output -raw lake_bucket`, which is empty once the layer's state
+          # has been emptied by an earlier attempt — and an earlier attempt is the only reason
+          # anybody runs this twice. `empty_bucket.py` then refused the empty name, correctly:
+          # its whole job is to never act on a bucket outside this project's prefix, and `''` is
+          # outside every prefix.
+          #
+          # The refusal was right and the input was wrong. `TF_VAR_lake_bucket` comes from the
+          # same resolver every other reference does, and stands in with the deterministic name
+          # when the layer is already gone — which `--missing-ok` then handles.
+          python3 scripts/empty_bucket.py "$TF_VAR_lake_bucket" \
+            --project "${{ env.PROJECT }}" --missing-ok
       - run: |
           terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
