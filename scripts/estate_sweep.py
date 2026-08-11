@@ -148,10 +148,22 @@ def _still_exists(session, arn: str) -> bool:
     kind, _, identifier = tail.partition("/")
 
     def gone(call, **kwargs) -> bool:
+        """Absent if the call refuses **or** answers with nothing.
+
+        Both halves are needed and the second was missing. Some of these APIs raise `NotFound`
+        for an id that does not exist; others — `describe_flow_logs`,
+        `describe_security_group_rules` — return an empty list and no error at all. Checking
+        only for an exception reported a deleted flow log as surviving, which is a phantom in
+        the one report whose entire value is that it can be believed.
+        """
         try:
-            call(**kwargs)
+            answer = call(**kwargs)
         except Exception as error:
             return "NotFound" in error.__class__.__name__ or "NotFound" in str(error)
+        if isinstance(answer, dict):
+            listed = [value for value in answer.values() if isinstance(value, list)]
+            if listed and not any(listed):
+                return True
         return False
 
     ec2 = None
