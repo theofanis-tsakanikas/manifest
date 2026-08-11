@@ -84,13 +84,15 @@ FROM public.ecr.aws/docker/library/python:3.12-slim-trixie
 # and every check stayed green.
 #
 # Box geometry comes from font metrics, so the font is part of the ground truth exactly as the
-# reader's version is part of the recording. Noto Sans CJK covers all three scripts in one file,
-# the distribution pins it, and `sheet.py` will now accept nothing else — a corpus that cannot
-# be generated outside this image is a corpus whose boxes mean one thing everywhere.
+# reader's version is part of the recording. `sheet.py` accepts this path and nothing else — a
+# corpus that cannot be generated outside this image is a corpus whose boxes mean one thing
+# everywhere.
 #
-# It costs roughly 200 MB of image, paid by a function that never renders a page. That is the
-# price of the corpus and the reading coming from the same machine, and it is cheaper than a
-# claim scored against tofu.
+# **WQY Zen Hei rather than Noto Sans CJK, and the reason is a format.** Noto Sans CJK was the
+# first choice and the build got as far as generating pages before reportlab refused it:
+# *"postscript outlines are not supported"*. Noto CJK is OpenType with CFF outlines; reportlab's
+# TTFont reads TrueType `glyf` outlines only. WQY Zen Hei is TrueType and covers Latin, Greek
+# and CJK in one collection.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       tesseract-ocr \
@@ -102,7 +104,7 @@ RUN apt-get update \
       poppler-utils \
       libgl1 \
       libglib2.0-0 \
-      fonts-noto-cjk \
+      fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 # **The version and the languages, asserted rather than hoped for.**
@@ -169,6 +171,20 @@ COPY contracts/ ${LAMBDA_TASK_ROOT}/contracts/
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir "${LAMBDA_TASK_ROOT}[corpus]" \
     && python -m pip install --no-cache-dir awslambdaric boto3
+
+# **The corpus font loads, and covers what the corpus contains — asserted here.**
+#
+# Two ceremonies died discovering this the slow way: one built the image, started eight jobs and
+# failed on `No module named 'reportlab'`; the next got further and failed on *"postscript
+# outlines are not supported"*. Each cost an hour, an hour into a run. `scripts/check_corpus_font.py`
+# asks the font for a glyph in each script the corpus draws, in seconds, and says why when there
+# is none — a font missing a script does not error at render time, it draws an empty box.
+# The generator travels with the image now, because the image is where the corpus is made. Same
+# argument as the contracts above: a deployment whose code and data came from different commits
+# applies one version's rules to another version's pages — and the corpus is the pages.
+COPY corpus/ ${LAMBDA_TASK_ROOT}/corpus/
+COPY scripts/check_corpus_font.py ${LAMBDA_TASK_ROOT}/scripts/
+RUN PYTHONPATH=${LAMBDA_TASK_ROOT} python ${LAMBDA_TASK_ROOT}/scripts/check_corpus_font.py
 
 ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/src" \
     CONTRACTS_DIR="${LAMBDA_TASK_ROOT}/contracts"

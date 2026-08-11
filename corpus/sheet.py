@@ -61,10 +61,14 @@ PAGE_WIDTH, PAGE_HEIGHT = A4
 #: So the font is the image's, exactly like the reader binary, and there is nothing to fall back
 #: to. A corpus that cannot be generated outside the image is a corpus whose boxes mean the same
 #: thing on a laptop and in the estate.
-_FONT_CANDIDATES: Final = ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",)
+_FONT_CANDIDATES: Final = ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",)
 
-#: Noto ships as a TrueType *collection*; index 0 is the regular face. Named rather than left as
+#: WQY ships as a TrueType *collection*; index 0 is the regular face. Named rather than left as
 #: a bare zero because a collection with a different order would silently change every glyph.
+#:
+#: It is TrueType rather than OpenType on purpose: reportlab reads `glyf` outlines only, and Noto
+#: Sans CJK — the first choice — is CFF. That was discovered by a ceremony that built an image,
+#: started eight jobs and failed on `postscript outlines are not supported`.
 _FONT_SUBFONT_INDEX: Final = 0
 
 BODY = "corpus-body"
