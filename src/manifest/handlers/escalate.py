@@ -140,10 +140,19 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     #: *page*, and asking twice for two fields on the same page pays twice for the same work.
     target = min(decision.to_tier for _, decision in going_up if decision.to_tier is not None)
 
+    # **The pages the abstaining fields are actually on, not page one.**
+    #
+    # 255 of this corpus's 3,000 documents run to a second page, and the first version of this
+    # handler read `page-0001.png` unconditionally. A field on page two would have been
+    # "escalated" against the wrong image and come back empty — the most expensive way to
+    # produce nothing, and silent, because an empty answer is indistinguishable from a tier that
+    # could not read it either.
+    pages = sorted({int(entry["page"]) for entry, _ in going_up if entry.get("page")}) or [1]
     escalated = _read_at(
         tier=target,
         document_id=document_id,
         language=language,
+        pages=pages,
         grounding=_reading(event),
     )
 
@@ -272,7 +281,9 @@ def _proposal_for(escalated: Any, field: str) -> dict[str, Any]:
     return {}
 
 
-def _read_at(*, tier: int, document_id: str, language: str, grounding: ReadDocument) -> Any:
+def _read_at(
+    *, tier: int, document_id: str, language: str, pages: list[int], grounding: ReadDocument
+) -> Any:
     """Call the service this tier names, and hand its response to that tier's adapter.
 
     The call is here and the mapping is in `extraction/aws/`, which is the same split the tier-0
@@ -280,13 +291,26 @@ def _read_at(*, tier: int, document_id: str, language: str, grounding: ReadDocum
     representation, and `core` never learns which of them produced a value.
     """
     records = _env("RECORDS_BUCKET")
-    page_key = f"renders/{document_id}/page-0001.png"
-    raster = _s3().get_object(Bucket=records, Key=page_key)["Body"].read()
+    # One call per page that has work on it. A document whose abstentions are all on page one
+    # costs one call; a two-page invoice with a truncated table costs two. Reading every page
+    # regardless would pay for pages nothing asked about, which is the same waste as escalating
+    # a field that already published.
+    keys = [f"renders/{document_id}/page-{number:04d}.png" for number in pages]
+    rasters = [_s3().get_object(Bucket=records, Key=key)["Body"].read() for key in keys]
+    # Document automation takes a storage location rather than bytes, and submits one page.
+    page_key = keys[0]
 
     if tier == TIER_MANAGED_OCR:
         from manifest.extraction.aws import textract  # noqa: PLC0415
 
-        response = _client("textract").detect_document_text(Document={"Bytes": raster})
+        # Textract takes one document per call, so the pages are read one at a time and the
+        # responses concatenated. `Blocks` is the only key the adapter reads, and a page number
+        # rides on each block, so joining them is joining lists rather than merging structures.
+        blocks: list[Any] = []
+        for image in rasters:
+            answer = _client("textract").detect_document_text(Document={"Bytes": image})
+            blocks.extend(answer.get("Blocks", ()))
+        response = {"Blocks": blocks}
         return textract.to_document(
             source_id=document_id,
             source_digest=grounding.source_digest,
@@ -321,7 +345,10 @@ def _read_at(*, tier: int, document_id: str, language: str, grounding: ReadDocum
                 {
                     "role": "user",
                     "content": [
-                        {"image": {"format": "png", "source": {"bytes": raster}}},
+                        *(
+                            {"image": {"format": "png", "source": {"bytes": image}}}
+                            for image in rasters
+                        ),
                         {"text": _prompt()},
                     ],
                 }

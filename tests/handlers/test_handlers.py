@@ -281,6 +281,32 @@ class TestEscalation:
                 f"{'excludes' if int(tier) not in SCORING_TIERS else 'includes'} it"
             )
 
+    def test_it_escalates_the_pages_the_fields_are_on(self) -> None:
+        """Not page one, which is what the first version of this handler read.
+
+        255 of this corpus's 3,000 documents run to a second page. A field on page two
+        escalated against `page-0001.png` comes back empty — and empty is indistinguishable
+        from a tier that could not read it either, so the failure is both expensive and silent.
+
+        Asserted on the source rather than by invoking the handler, because reaching the call
+        needs S3, Textract and a threshold artefact. What is being protected is one decision:
+        which page numbers become object keys.
+        """
+        raw = (
+            pathlib.Path(__file__).resolve().parents[2] / "src/manifest/handlers/escalate.py"
+        ).read_text(encoding="utf-8")
+        # **Comments stripped before searching.** The first version of this test failed on the
+        # handler's own comment, which names `page-0001.png` while explaining why it is wrong.
+        # A check that reads prose as though it were code is the same defect that once had
+        # `check_deploy_path` matching the *word* "default" in a description — and it fails in
+        # the direction that looks like rigour.
+        source = "\n".join(line for line in raw.splitlines() if not line.lstrip().startswith("#"))
+        assert "page-{number:04d}.png" in source, "the key must be built from a page number"
+        assert "page-0001.png" not in source, (
+            "a hard-coded first page ignores every field on page two, silently"
+        )
+        assert 'entry["page"]' in source, "the pages must come from the fields that abstained"
+
     def test_an_event_without_an_outcome_is_refused(self) -> None:
         with pytest.raises(escalate.HandlerError, match="outcome"):
             escalate.handler({})
