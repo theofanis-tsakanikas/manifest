@@ -93,7 +93,33 @@ def _truth(rendered: Rendered, placements, pages: int) -> DocumentTruth:
 
 
 def build(seed: int, shipments: int, write_images: bool) -> dict[str, object]:
-    """Generate the corpus, returning the ground-truth payload."""
+    """Generate the corpus, returning the ground-truth payload.
+
+    **Sequential, and it has to be. Read this before trying to parallelise it.**
+
+    Generating 3,255 pages at 300 dpi takes about an hour, and during the recording ceremony
+    that hour is most of the wall clock — the reading itself is minutes. The obvious fix is a
+    process pool over the shipments. It would break the corpus.
+
+    One `random.Random` instance below is threaded through every shipment, every builder and
+    every degradation, in order. Each draw depends on how many draws came before it. Split the
+    loop across processes and the draw order changes, so the same seed produces different
+    documents, different planted mismatches and different boxes — and `--check` goes red, which
+    is the gate working rather than a problem to route around.
+
+    A parallel version is possible: derive a generator per document from `(seed, shipment,
+    document type)` so each one draws from its own stream. That is a *different corpus*, with a
+    different fingerprint, which means new ground truth and a full re-record of `recordings/` —
+    every threshold in this repository moves. To save forty-five minutes on an act that is meant
+    to be rare, it would spend a whole ceremony. Worth doing the next time the corpus changes for
+    a reason that already requires re-recording; not worth doing on its own.
+
+    **What is *not* the problem**, recorded because it was the first guess and it was wrong: the
+    ceremony has each of its eight shards regenerate the whole corpus rather than generating it
+    once and passing it along. That looks like eightfold waste and is not — the eight run
+    simultaneously, so it costs one hour of wall clock, once. Centralising it would add an upload
+    of 2.5 GB and eight downloads to the same hour, and be slower.
+    """
     font = register_fonts()
     world, parties = build_world(seed, shipments)
     generator = random.Random(seed ^ 0x5EED)
