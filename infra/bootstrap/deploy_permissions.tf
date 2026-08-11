@@ -108,6 +108,19 @@ data "aws_iam_policy_document" "deploy_network" {
       "ec2:DeleteVpcEndpoints",
       "ec2:DeleteSecurityGroup",
       "ec2:DeleteFlowLogs",
+      # **The network interfaces Lambda made, which no Terraform in this repository created.**
+      #
+      # A function attached to a VPC gets ENIs, allocated by the Lambda service. They are not in
+      # any state file, no resource block mentions them, and a permission audit driven by the
+      # resource list cannot see them — which is exactly how the first teardown got as far as
+      # the subnets and then stopped: *deleting Lambda ENI (eni-0a0c…): 403*.
+      #
+      # The subnet cannot go while they are in it, so a teardown that cannot delete them leaves
+      # the whole network standing: two subnets, a security group, the VPC, and every endpoint
+      # attached to it. The most expensive thing in the estate, held up by an object nothing
+      # declared.
+      "ec2:DeleteNetworkInterface",
+      "ec2:DetachNetworkInterface",
     ]
     resources = ["*"]
     condition {
@@ -179,6 +192,7 @@ data "aws_iam_policy_document" "deploy_storage" {
       "iam:ListPolicyTags",
       "logs:ListTagsLogGroup",
       "ecr:ListImages",
+      "kms:DeleteAlias",
       "s3:PutBucketVersioning",
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketOwnershipControls",
