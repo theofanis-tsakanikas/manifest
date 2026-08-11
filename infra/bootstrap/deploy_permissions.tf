@@ -142,6 +142,25 @@ data "aws_iam_policy_document" "deploy_storage" {
       "s3:CreateBucket",
       "s3:DeleteBucket",
       "s3:PutBucketPolicy",
+      # **Setting a policy is not removing it**, and only a teardown ever needs the second.
+      #
+      # The first real destroy failed here with a 403 on `DeleteBucketPolicy` for the lake
+      # bucket, four layers into a teardown. It is the fourth time this distinction has cost a
+      # cycle — managing a key is not using it, administering a bucket is not writing into it,
+      # deleting an object is not deleting its versions, and now setting a policy is not
+      # deleting one. IAM never merges the pair and the administrative half always reads as the
+      # larger.
+      #
+      # What makes this family invisible is that a deploy exercises the `Put` and never the
+      # `Delete`, so a permission set can be complete for every apply anybody runs and short for
+      # the one teardown that matters. The five below were found by asking, in one pass, which
+      # actions a `terraform destroy` of *this* estate calls that the role does not hold.
+      "s3:DeleteBucketPolicy",
+      "ecr:BatchDeleteImage",
+      "lambda:DeleteEventSourceMapping",
+      "logs:DeleteSubscriptionFilter",
+      "kms:DisableKey",
+      "iam:DeletePolicyVersion",
       "s3:PutBucketVersioning",
       "s3:PutBucketPublicAccessBlock",
       "s3:PutBucketOwnershipControls",
