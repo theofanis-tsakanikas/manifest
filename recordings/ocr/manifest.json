@@ -1,7 +1,7 @@
 {
- "corpus_fingerprint": "0bec96d2c631e199a230e25d298cf636061e8b471c8a83eeb5fbcaffd7b986c2",
+ "corpus_fingerprint": "b566f174d57a20bbba8c1cfed55dba7d0c542efb263eae7aeb7cd41025ec7bc6",
  "corpus_seed": 20260809,
- "digest": "04063765ae7d85ed8328772c30936235a4a592b4071f8c4ead872217385a53a8",
+ "digest": "4df5f7dc0a97080d3f31e1176d074df1794848d0f3b284542ff5c6fb732c7757",
  "language_data": [
   "el",
   "en",
@@ -9,6 +9,6 @@
  ],
  "pages": 3255,
  "reader_name": "reference-ocr",
- "reader_version": "tesseract 5.5.2",
- "words": 182049
+ "reader_version": "tesseract 5.5.0",
+ "words": 183156
 }

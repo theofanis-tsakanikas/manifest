@@ -13,6 +13,7 @@ whether the corpus got easier or harder — and those have opposite fixes.
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -51,8 +52,38 @@ def _figures(entries) -> dict[str, float]:
     }
 
 
+ACCEPTANCE = ENVELOPE.parent.parent / "contracts" / "corpus" / "acceptance.yaml"
+
+
+def _accepted() -> dict[str, dict]:
+    """Figures a named human has accepted as outside the band, until a stated date.
+
+    **Scoped to one figure each, deliberately.** An acceptance that covered "the envelope" would
+    be a switch with a date on it. Each entry names the exact figure it excuses, so any other
+    breach still fails — including a second breach of the same document type on a different
+    measure.
+
+    Doctrine rule 6: on expiry the finding returns and the build goes red. An expired acceptance
+    is not a warning here, it is simply absent.
+    """
+    if not ACCEPTANCE.exists():
+        return {}
+    loaded = yaml.safe_load(ACCEPTANCE.read_text(encoding="utf-8")) or {}
+    today = date.today().isoformat()
+    live = {}
+    for entry in loaded.get("acceptances", ()):
+        expires = str(entry.get("expires_on", ""))
+        if not expires or expires <= today:
+            continue
+        figure = str(entry.get("figure", ""))
+        if figure:
+            live[figure] = entry
+    return live
+
+
 def _check(where: str, figures: dict[str, float], bands: dict) -> list[str]:
     problems = []
+    accepted = _accepted()
     for name, band in bands.items():
         actual = figures[name]
         if actual < band["min"]:
@@ -62,6 +93,16 @@ def _check(where: str, figures: dict[str, float], bands: dict) -> list[str]:
                 f"document set nobody would have called degraded"
             )
         elif actual > band["max"]:
+            excuse = accepted.get(f"{where}.{name}")
+            if excuse is not None:
+                # Printed, not swallowed. An accepted breach that nobody sees is a band that was
+                # widened in a file nobody opens.
+                print(
+                    f"  ACCEPTED  {where}.{name} is {actual:.4f}, above its ceiling of "
+                    f"{band['max']} — accepted by {excuse.get('accepted_by')} until "
+                    f"{excuse.get('expires_on')}. See contracts/corpus/acceptance.yaml"
+                )
+                continue
             problems.append(
                 f"{where}.{name} is {actual:.4f}, above its declared ceiling of {band['max']}. "
                 f"The corpus has become HARDER. Every claim is now scored against pages the "

@@ -107,6 +107,20 @@ def _send_a_partly_published_document_straight_to_publish(root: Path) -> bool:
     )
 
 
+def _let_the_corpus_acceptance_outlive_its_expiry(root: Path) -> bool:
+    """Push the envelope acceptance's expiry into the far future.
+
+    Doctrine rule 6: exceptions expire, and on expiry the finding returns. An acceptance whose
+    date can be pushed out without anybody re-deciding is not an acceptance — it is the band
+    widened in a file nobody opens.
+    """
+    return _replace(
+        root / "contracts/corpus/acceptance.yaml",
+        '    expires_on: "2026-09-22"',
+        '    expires_on: "2099-01-01"',
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -809,6 +823,16 @@ MUTATIONS: tuple[Mutation, ...] = (
         "states and they exclude each other, so a document that published eight fields and "
         "abstained on four sent nobody the four. Nothing failed, and claim 5's capacity model "
         "was left measuring the empty set.",
+    ),
+    Mutation(
+        "let the corpus envelope's acceptance outlive its expiry",
+        "corpus envelope",
+        [sys.executable, "scripts/check_corpus_envelope.py"],
+        "2026-09-22",
+        _let_the_corpus_acceptance_outlive_its_expiry,
+        "One figure is outside the declared band under a named, dated acceptance. An expiry "
+        "that can be pushed out without anybody re-deciding is the band widened in a file "
+        "nobody opens — which is exactly what the envelope exists to catch.",
     ),
     Mutation(
         "read the clock inside the core",

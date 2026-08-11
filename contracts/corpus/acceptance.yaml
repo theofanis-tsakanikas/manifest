@@ -1,0 +1,70 @@
+# One declared figure outside the corpus envelope, accepted by a named human, with an expiry.
+#
+# **Why this file exists rather than a wider band.** `corpus/envelope.yaml` is a specification
+# written *before* the result was known: it says how hard the generated corpus is supposed to be.
+# When the actual figures leave it, the doctrine is to fix the generator, not the band — a band
+# moved to wherever the measurement landed is the unconscious tuning the envelope exists to
+# prevent, wearing a date.
+#
+# The generator is not being tuned at 03:00 to chase a number, and the band is not being moved.
+# The breach is named, dated, and it lapses; on expiry the finding returns and CI goes red, which
+# is doctrine rule 6.
+version: 1
+
+acceptances:
+  - id: arrival_notice_harder_after_the_typeface_changed
+    accepted_by: "Theofanis Tsakanikas"
+    accepted_on: "2026-08-11"
+    # Six weeks. Long enough to choose a typeface deliberately and re-record once; short enough
+    # that nobody inherits this without deciding again.
+    expires_on: "2026-09-22"
+
+    # Exactly one figure, named. Any other breach still fails: an acceptance that covered
+    # "the envelope" rather than one number would be a switch, not an acceptance.
+    figure: "arrival_notice.error_rate_of_located"
+    measured: 0.4008
+    ceiling: 0.30
+
+    finding: >-
+      On arrival notices, 40.1% of the values the reader located are wrong, against a declared
+      ceiling of 30%. On the previous corpus the same figure was inside the band.
+
+    why: >-
+      The corpus font changed, and it changed for a correctness reason rather than a cosmetic
+      one. `corpus/sheet.py` used to take the first font it found on the machine; on a Linux
+      runner that was DejaVu, which covers no CJK, so the thirteen Chinese characters in the
+      corpus's party names rendered as empty boxes while every check stayed green (decision 21).
+      The corpus is now generated inside the reader image with one pinned typeface, WQY Zen Hei,
+      whose Latin glyphs are drawn to match CJK metrics and are measurably harder to read than
+      the Arial Unicode the envelope was calibrated against.
+
+      So this is a real regression in the *test data*, caused by a real fix to a worse defect.
+      It is not a regression in the system under test.
+
+    # What is deliberately not being done, so it cannot drift into being done.
+    not_done:
+      - >-
+        **The band is not widened.** 0.30 was declared before this measurement existed and it
+        still describes the intent: arrival notices should be hard and not unreadable.
+      - >-
+        **The generator's degradation is not softened.** Reducing pathologies until a figure
+        fits is the move this whole control exists to catch, and doing it at speed to unblock a
+        deploy is the worst version of it.
+      - >-
+        **No claim figure is adjusted.** Every threshold in this repository is derived from the
+        recording as it is.
+
+    ends_when: >-
+      A typeface is chosen deliberately — covering Latin, Greek and CJK, with Latin legibility
+      comparable to what the envelope was calibrated against — and the corpus is re-recorded
+      through `.github/workflows/record.yml`. If the figure is still outside the band after
+      that, the band was wrong and gets revised with its own reasoning, in its own commit.
+
+    # Read this before trusting the number above. The fields on arrival notices are all
+    # `always-review` under the current derivation, so this figure describes values that reach a
+    # human and never a published record. That limits the blast radius; it does not make the
+    # corpus meet its specification, which is why this is an acceptance and not a dismissal.
+    blast_radius: >-
+      No field on an arrival notice has a derived threshold, so nothing here publishes on the
+      strength of these pages. The five fields with thresholds are gross_weight, issuing_chamber,
+      terminal, vessel_name and volume.
