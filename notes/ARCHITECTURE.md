@@ -148,9 +148,9 @@ the local reader is not the cheap option — **it is the only one**.
 | **Textract** | tier 1, for the six documented languages | ✅ **wired**, ⚠️ never called |
 | **Bedrock Data Automation** | tier 2, reading order and tables | ✅ **wired**, ⚠️ never called |
 | **Bedrock** | tier 3, the only escalation for Greek and Dutch | ✅ **wired**, ⚠️ never called |
-| **Glue · Athena · Iceberg** | the record lake and its catalogue | ✅ applied |
-| **OpenSearch** | search over *published records*, never raw document text | ✅ applied |
-| **Redshift** | duty exposure by HS chapter, queue economics, cost per client | ⚠️ opt-in, never applied |
+| **Glue · Athena · Iceberg** | the record lake and its catalogue | ⚠️ created, **never fed** |
+| **OpenSearch** | search over *published records*, never raw document text | ⚠️ created, **never fed** |
+| **Redshift** | duty exposure by HS chapter, queue economics, cost per client | ⚠️ opt-in; **6 of 55 mart columns have a source** |
 | **EMR Serverless** | bulk re-extraction when the reader improves | ⚠️ opt-in, never applied |
 | **SageMaker** | opt-in only | ⚠️ never applied |
 
@@ -164,6 +164,15 @@ a box for each, two fields cleared their thresholds and seven abstained, the gat
 published fields **by cropping the page and reading it again**, the record was written keyed by
 document and version, and all seven abstentions reached the queue. Five edge cases were refused
 by name.
+
+**And the warehouse is a schema over nothing.** The lakehouse and the analytics layer both
+applied cleanly; neither has ever held a row. Nothing writes the Iceberg table — the pipeline
+publishes JSON records to S3 and no step converts them. Of the 55 columns the four marts read,
+**6 exist in the lake, 15 are derivable from it, and 34 have no source anywhere** — carrier and
+client id are commercial facts a document pipeline never sees; the review loop's decisions live
+in DynamoDB and nothing exports them. `scripts/check_warehouse_is_fed.py` holds that count and
+`contracts/analytics/acceptance.yaml` names every one, because a mart reading an invented column
+returns a number with the shape of an answer.
 
 **Not proved, and the reason is the same for all of it:** no managed extraction engine has ever
 been called. There is no accuracy figure for the escalated fraction and there cannot be one

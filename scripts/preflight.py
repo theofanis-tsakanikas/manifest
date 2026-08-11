@@ -188,6 +188,15 @@ CHECKS: list[Check] = [
         "read better.",
     ),
     Check(
+        "consistency",
+        "the warehouse has a source",
+        [PYTHON, "scripts/check_warehouse_is_fed.py"],
+        "Every column the marts read either exists in the lake, is derivable from it, or is "
+        "declared as having no source at all. The lakehouse and the warehouse both applied "
+        "cleanly and neither has ever held a row; a mart reading an invented column returns a "
+        "number with the shape of an answer.",
+    ),
+    Check(
         "correctness",
         "planting is blind",
         [PYTHON, "scripts/check_planting_is_blind.py"],

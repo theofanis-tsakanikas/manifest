@@ -1,0 +1,119 @@
+# Which warehouse columns have a source, which are derivable, and which nothing produces.
+#
+# **The finding this file records.** `infra/lakehouse` and `infra/analytics` both applied
+# cleanly on 2026-08-11. Neither has ever held a row. Nothing in this repository writes the
+# Iceberg table: the pipeline publishes a JSON record per document to `records/{id}/{version}.json`
+# and no step converts those into the lake, let alone into Redshift.
+#
+# `scripts/check_marts.py` proves the marts read only columns `analytics/schema.sql` declares.
+# That is true, useful, and says nothing about whether any of them has a source.
+# `scripts/check_warehouse_is_fed.py` asks the next question, and this file is the answer to it.
+#
+# **Why an acceptance and not a fix.** Two of the three categories below are fixable and one is
+# not. A loader can rename `field` to `field_name`; it can derive `reader_tier` from the reader
+# identity. It cannot produce a carrier or a client id, because those are facts about a
+# commercial relationship that a document-extraction pipeline never sees — they live in a
+# customer system this project does not have and is not pretending to have.
+#
+# Filling them anyway is doctrine rule 3 with a warehouse attached: a mart that reads an
+# invented column returns a number with the shape of an answer.
+version: 1
+
+# Renames and computations a loader may perform, with the lake column each comes from. Written
+# down so that "derivable" is a claim somebody made rather than an assumption a loader made
+# silently — and so the next person can check the arithmetic.
+derivable:
+  document_version: "the lake's `version`"
+  field_name: "the lake's `field`"
+  field_value: "the lake's `value`"
+  reader_identity: "the lake's `reader`"
+  reader_tier: "the tier the lake's `reader` identity belongs to, per contracts/cascade/routing.yaml"
+  always_review: "`threshold IS NULL` — the derivation's own way of saying it"
+  published: "`provenance_verified AND confidence >= threshold`, the pipeline's own rule"
+  read_on: "the lake's `extracted_on`, truncated to a date"
+  found_on: "the lake's `extracted_on`, truncated to a date"
+  outcome: "the lake's `review_decision`"
+
+# Columns nothing in this system produces, and the reason each one is absent. A mart that reads
+# one of these returns a shape rather than an answer until something that knows the fact is
+# connected — which is a decision about scope, not a bug to be fixed in a loader.
+unsourced:
+  shipment_id: >-
+    Documents arrive as files; the shipment they belong to is a fact a broker's operational
+    system holds. The corpus encodes it in a filename because the corpus generated both.
+  document_type: >-
+    The pipeline knows it — it is on the extraction outcome — and the Glue table does not carry
+    it. This one is a defect in the lake schema rather than a missing system, and it is listed
+    here rather than fixed because adding a column to a table nothing writes fixes nothing.
+  language: >-
+    Same shape as `document_type`: known at extraction, absent from the lake table.
+  hs_code: >-
+    Proposed by the classifier and always decided by a human. Known at extraction, absent from
+    the lake table — the same defect as `document_type`, on the field that carries the duty.
+  declared_value: >-
+    An extracted field on a customs declaration. Known at extraction, absent from the lake table.
+  duty_amount: >-
+    As above.
+  human_decided: >-
+    The review loop records every decision in DynamoDB; nothing joins that into the lake. This
+    is the column that makes `duty_exposure_by_chapter` worth more than a duty total, and it is
+    the one most likely to be quietly defaulted to `true` by a loader in a hurry.
+  country_of_origin: >-
+    An extracted field. Known at extraction, absent from the lake table.
+  currency: >-
+    As above.
+  declared_on: >-
+    As above — the declaration's own date, not the date this system read it.
+  seconds_on_task: >-
+    Measured by the review loop and held in DynamoDB. It is the number doctrine rule 2 turns on
+    — a reviewer who spends four seconds on a field is not a control — and nothing joins it into
+    the lake.
+  reviewer: >-
+    Recorded per decision in DynamoDB. Joining it into the lake would also put a person's
+    identity into an analytics table, which is a retention and personal-data question this
+    project has not answered — and answering it is the work, not the join.
+  queued_reason: >-
+    `Reason.BELOW_THRESHOLD` against `UNSCORED` against `ALWAYS_REVIEW` have opposite fixes, so
+    the queue's composition is the most useful column in this table. It is on the queue message
+    and in no lake table.
+  item_id: >-
+    The queue item's own identity, in DynamoDB. The whole `gold.review_item` table describes the
+    human loop, and the human loop's record lives in a table nothing exports — which is why five
+    of these appear together rather than one at a time.
+  queued_on: "As above — when the item reached the queue."
+  decided_on: "As above — when a person decided it."
+  decision: "As above — approved, corrected, supplied or rejected."
+  agreed_with_model: >-
+    As above, and it is the one that matters most: a reviewer whose agreement rate is 100% is a
+    rubber stamp with a login, and `review_queue_economics` cannot see that until this table is
+    fed.
+  source_channel: >-
+    How the document arrived — email, portal, EDI. The landing zone sees an object, not a
+    channel.
+  carrier: >-
+    A commercial fact about the shipment. Appears on a bill of lading as text this system may
+    extract, and mapping that text to a carrier identity is entity resolution against a
+    customer's master data, which this project does not have.
+  client_id: >-
+    As above, and further away: the client is a relationship, not a field on a page.
+  modelled_cost: >-
+    A per-page cost model exists in `src/manifest/core/scale.py` and is proved offline. Writing
+    its output into the warehouse would put a modelled figure in a table people read as measured,
+    which is the confusion `docs/DECISIONS.md` 15 exists to prevent.
+  modelled_currency: "As above."
+  left_document: "Reconciliation findings are computed offline and never written to the lake."
+  right_document: "As above."
+  rule_id: "As above."
+  severity: "As above."
+
+accepted_by: "Theofanis Tsakanikas"
+accepted_on: "2026-08-11"
+# Shorter than the others on purpose: this one blocks a claim rather than weakening a control,
+# and a claim that stays blocked for a quarter is a claim to remove instead.
+expires_on: "2026-10-11"
+
+ends_when: >-
+  Either a loader writes the lake and the derivable columns are computed there — at which point
+  only the genuinely external facts remain and this file shrinks to them — or `docs/DECISIONS.md`
+  6 is applied as written: *if these marts are not built, drop Redshift rather than keeping it as
+  a CV keyword*.

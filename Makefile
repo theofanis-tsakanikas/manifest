@@ -104,7 +104,7 @@ optional-layers: ## Every optional feature plans with its flag on and off (needs
 claims: core-pure planting-blind contracts-validate corpus-check envelope reader-version \
 	pipeline-routing \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
-	injection line-items classification marts ## Every claim gate that exists today
+	injection line-items classification marts warehouse-fed ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
@@ -165,6 +165,10 @@ classification: ## The abstention band on a contested heading, and a field that 
 .PHONY: marts
 marts: ## Every analytics mart reads only columns the warehouse declares
 	$(PY) scripts/check_marts.py
+
+.PHONY: warehouse-fed
+warehouse-fed: ## Every warehouse column has a source, is derivable, or is declared unsourced
+	$(PY) scripts/check_warehouse_is_fed.py
 
 .PHONY: gate-proof
 gate-proof: ## Break every gate on purpose; each must be refused, for the right reason

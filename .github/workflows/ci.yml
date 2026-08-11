@@ -150,6 +150,13 @@ jobs:
       - name: every analytics mart reads columns the warehouse declares
         run: python scripts/check_marts.py
 
+      - name: every warehouse column has a source, or is declared to have none
+        # `check_marts` proves the marts read only declared columns. This asks the next
+        # question — whether any of those columns has anything that writes it — and the answer
+        # today is that six of fifty-five do. The lakehouse and the warehouse both applied
+        # cleanly on 2026-08-11 and neither has ever held a row.
+        run: python scripts/check_warehouse_is_fed.py
+
       # Claim 2 is the only one absent, and for a reason rather than an omission: it needs the
       # rendered corpus, which is git-ignored and reproducible from a seed. It runs in
       # `make preflight` on a machine that has generated it.

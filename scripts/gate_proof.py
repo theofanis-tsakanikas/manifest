@@ -142,6 +142,21 @@ def _let_an_unscored_tier_publish(root: Path) -> bool:
     )
 
 
+def _quietly_source_a_column_nothing_produces(root: Path) -> bool:
+    """Move a genuinely external fact into the derivable list.
+
+    `carrier` is a commercial fact about a shipment; mapping extracted text to a carrier
+    identity is entity resolution against a customer's master data this project does not have.
+    Declaring it derivable is how a loader comes to fill it with something plausible — and a
+    mart that reads an invented column returns a number with the shape of an answer.
+    """
+    return _replace(
+        root / "contracts/analytics/acceptance.yaml",
+        "derivable:\n  document_version:",
+        'derivable:\n  carrier: "the bill of lading, probably"\n  document_version:',
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -868,6 +883,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         "Only tiers 0 and 1 report a score. Admitting an unscored tier to the publishing set "
         "would put a value into a customs record on a number nothing measured — and it would "
         "look like an improvement, because the page really was read better.",
+    ),
+    Mutation(
+        "call a fact nothing produces derivable",
+        "the warehouse has a source",
+        [sys.executable, "scripts/check_warehouse_is_fed.py"],
+        "carrier",
+        _quietly_source_a_column_nothing_produces,
+        "Thirty-four warehouse columns have no source anywhere. The list of them is the only "
+        "thing standing between an empty warehouse and a mart that looks like it answered.",
     ),
     Mutation(
         "read the clock inside the core",

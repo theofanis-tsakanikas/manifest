@@ -452,9 +452,9 @@ data "aws_iam_policy_document" "escalate" {
   }
 
   statement {
-    sid       = "Log"
-    effect    = "Allow"
-    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    sid     = "Log"
+    effect  = "Allow"
+    actions = ["logs:CreateLogStream", "logs:PutLogEvents"]
     # `one(...)` for the same reason the state machine uses it: this data source has no `count`,
     # so it is evaluated even when the log group does not exist, and `[0]` on an empty list is a
     # plan-time failure with the feature merely switched off.
