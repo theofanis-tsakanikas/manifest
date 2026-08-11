@@ -28,7 +28,9 @@ flowchart TB
     B -- no --> BX["nothing runs<br/><i>the cheapest refusal</i>"]
     B -- yes --> D["**Read** · tier 0<br/>OCR in a Lambda container<br/><i>words · scores · boxes</i>"]
 
+    D -- error --> RF["**ReadingFailed**<br/><i>a corrupt file<br/>or a missing language</i>"]
     D --> E["**Extract & threshold**<br/><i>contracts say which fields exist<br/>recordings say the thresholds</i>"]
+    E -- error --> EF["**ExtractionFailed**<br/><i>a contract or an artefact<br/>that does not match</i>"]
     E --> F{"any field above<br/>its threshold?"}
 
     F -- no --> Q["**Review queue** · SQS<br/><i>a human decides</i>"]
@@ -48,9 +50,11 @@ flowchart TB
     style G fill:#fff4e6
     style Q fill:#ffe8e8
     style J fill:#e8ffe8
+    style RF fill:#f0e0e0
+    style EF fill:#f0e0e0
 ```
 
-**The two things worth noticing.** A document can publish *and* queue at the same time — eight
+**Three things worth noticing.** A document can publish *and* queue at the same time — eight
 fields to the record, four to a human — and getting that wrong is how the estate first shipped.
 And nothing reaches the record without passing the provenance gate, which checks the box against
 the **page**, not against the record that produced it.
@@ -84,6 +88,11 @@ flowchart LR
     style D fill:#f0fff0
 ```
 
+The four pairs are **a sample, not the list**: `src/manifest/core/` holds sixteen modules and
+every one of them sits in the right-hand column. The cleanest example is not in the diagram —
+`checkdigit.py`, which refuses an ISO 6346 container number that disagrees with **its own
+arithmetic**. No confidence, no threshold: either the check digit works out or it does not.
+
 Everything on the right is pure Python in `src/manifest/core/`, importing no cloud SDK and no
 model library. That is what lets every claim be checked on a laptop with no AWS account — and
 it is why swapping Textract for a local reader is an adapter change and nothing else.
@@ -99,7 +108,7 @@ flowchart LR
     Q0 -- no --> PUB["publish"]
     Q0 -- yes --> LANG{"language?"}
 
-    LANG -- "en de fr it pt" --> T1["**Tier 1** · Textract<br/>degraded print, tables<br/>✅ reports a score"]
+    LANG -- "en de es fr it pt" --> T1["**Tier 1** · Textract<br/>degraded print, tables<br/>✅ reports a score"]
     LANG -- "el · nl" --> T3
 
     T1 --> Q1{"still<br/>below?"}
