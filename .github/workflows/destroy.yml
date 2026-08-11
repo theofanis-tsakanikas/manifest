@@ -267,6 +267,20 @@ jobs:
           python3 scripts/destroy_references.py \
             --project "${{ env.PROJECT }}" --layer foundation \
             --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
+      - name: resolve what lakehouse published
+        # **Its own layer, which the job did not resolve because it never had to.**
+        #
+        # The bucket name used to come from `terraform output -raw lake_bucket`, so nothing here
+        # needed the lakehouse references at all. Moving off that output — because it is empty
+        # once a previous attempt has emptied the state — left the job resolving its neighbours
+        # and not itself, and `set -u` caught it: *TF_VAR_lake_bucket: unbound variable*.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer lakehouse \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
+
       - name: empty the lake before destroying it
         # A versioned bucket with objects in it refuses to be destroyed, and a teardown that
         # fails on that leaves the bucket, its storage cost and the KMS key it needs. The
