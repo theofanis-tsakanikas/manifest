@@ -495,6 +495,28 @@ def _take_away_the_deploy_roles_permission_to_build_the_network(root: Path) -> b
     return True
 
 
+def _take_away_the_grant_only_a_teardown_script_needs(root: Path) -> bool:
+    """Drop `kms:ListKeys` from the sweep's statement and leave the rest.
+
+    **This was the repository's actual state**, and it is the shape a permission gap takes once
+    the obvious ones are closed. Every action a *layer* declares was granted and checked; this
+    one is called by `scripts/estate_sweep.py` alone, so the list it should have been on was a
+    list nobody was keeping.
+
+    What it cost is worth stating exactly, because it is not what a missing permission usually
+    costs: nothing failed to be destroyed. All five layer teardowns succeeded, the estate went
+    down, the billing stopped — and the run reported **failure**, on the step whose only job is
+    to say whether anything survived. A verdict that is wrong in the alarming direction is the
+    one that gets a report ignored, and an ignored teardown report is how the next real leftover
+    stays standing.
+
+    Deliberately one action rather than every `kms:` one. Removing the service wholesale is
+    already planted against `_check_permissions_exist`, and it is the easier catch; what this
+    proves is that the newer check reads the *scripts'* calls, not the layers' declarations.
+    """
+    return _replace(root / "infra/bootstrap/deploy_permissions.tf", '      "kms:ListKeys",\n', "")
+
+
 def _let_a_layer_run_without_the_variables_it_requires(root: Path) -> bool:
     """Stop supplying `expires_at` to the batch teardown.
 
@@ -992,6 +1014,16 @@ MUTATIONS: tuple[Mutation, ...] = (
         _remove_a_layer_from_the_teardown,
         "Acquired one layer at a time and never on purpose. The repository reads as complete "
         "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "take away the grant only a teardown script needs",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "no grant matching",
+        _take_away_the_grant_only_a_teardown_script_needs,
+        "The gap that survives every other permission check: an action no Terraform layer "
+        "declares, called by the teardown's own tooling. The estate comes down and the report "
+        "says it did not.",
     ),
     Mutation(
         "let the teardown stop at the first failure",

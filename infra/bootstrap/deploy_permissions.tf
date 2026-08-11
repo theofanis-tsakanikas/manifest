@@ -871,10 +871,38 @@ data "aws_iam_policy_document" "deploy_references" {
       "ecr:DescribeRepositories",
       "dynamodb:ListTables",
       "sqs:ListQueues",
+      # **Found by the check above rather than by a teardown, which is the point of writing it.**
+      #
+      # The sweep confirms a tagged leftover is really still there before reporting it, and for a
+      # queue that confirmation is `GetQueueUrl`. `gone()` treats anything that is not a
+      # `NotFound` as *present*, so a refusal here does not hide a survivor — it invents one, and
+      # a report with a phantom in it is a report somebody stops reading.
+      #
+      # It never fired because the estate has always torn its queues down cleanly, so the probe
+      # had nothing to probe. A permission that is only reached on the bad day is one no amount of
+      # running the good day will find.
+      "sqs:GetQueueUrl",
       "glue:GetDatabases",
       "iam:ListRoles",
       "iam:ListPolicies",
       "ssm:DescribeParameters",
+      # **The action the first real teardown died on, and the only one it died on.**
+      #
+      # `_keys_pending_deletion` enumerates the account's keys so that a key already scheduled
+      # for deletion is reported as removed rather than as a survivor — KMS enforces a seven to
+      # thirty day waiting period and refuses to delete sooner, so without that distinction every
+      # teardown ends red for doing exactly what it was told.
+      #
+      # It was missing because the grants were derived from what the *layers declare* and this
+      # call belongs to a script, which is a different list nobody was keeping. All five layer
+      # teardowns succeeded and the run still reported failure, which is the worst available
+      # combination: the estate was down and the report said otherwise.
+      #
+      # `kms:DescribeKey` is deliberately NOT widened to match. It stays scoped to keys carrying
+      # this project's tag, and the sweep already treats a key it can list and cannot describe as
+      # somebody else's — listing every key is a read this account can do about itself, describing
+      # every key is a read about everybody.
+      "kms:ListKeys",
     ]
     resources = ["*"]
   }

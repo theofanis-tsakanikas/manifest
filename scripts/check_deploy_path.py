@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import re
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 import yaml
@@ -771,6 +772,104 @@ def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
     return problems
 
 
+#: The teardown's own tools. Every AWS call these make runs as the deploy role, and none of them
+#: appears in any Terraform layer — which is exactly why their permissions went unchecked.
+TEARDOWN_SCRIPTS = ("estate_sweep.py", "destroy_references.py", "empty_bucket.py")
+
+#: boto3's client name is not always the IAM prefix.
+_IAM_PREFIX = {
+    "stepfunctions": "states",
+    "resourcegroupstaggingapi": "tag",
+}
+
+#: Calls whose IAM action is not the PascalCase of the method name. Each one is a place where
+#: the API and the permission were named by different people, and every entry here is a bug
+#: somebody would otherwise find at teardown time.
+_ACTION_FOR = {
+    ("s3", "list_buckets"): "s3:ListAllMyBuckets",
+    ("s3", "head_bucket"): "s3:ListBucket",
+    ("s3", "list_object_versions"): "s3:ListBucketVersions",
+    ("s3", "delete_objects"): "s3:DeleteObject",
+}
+
+
+def _calls_made(source: str) -> set[tuple[str, str]]:
+    """Every (service, method) pair a teardown script calls, read from the source.
+
+    Deliberately syntactic. An AST walk would resolve more, and what it would buy is calls
+    behind indirection — which these scripts do not have and must not acquire, because a
+    permission that cannot be read off the source is a permission nobody audits.
+    """
+    clients = {
+        variable: service
+        for variable, service in re.findall(
+            r"(\w+)\s*=\s*(?:session|boto3)\.client\(\"([\w-]+)\"\)", source
+        )
+    }
+    calls: set[tuple[str, str]] = set()
+
+    # `session.client("sns").get_topic_attributes(...)` — no variable in between.
+    for service, method in re.findall(r"(?:session|boto3)\.client\(\"([\w-]+)\"\)\.(\w+)", source):
+        calls.add((service, method))
+
+    # `x = session.client("sqs")` … `x.list_queues(...)` / `x.get_paginator("list_queues")`.
+    for variable, method in re.findall(r"\b(\w+)\.get_paginator\(\"(\w+)\"\)", source):
+        if variable in clients:
+            calls.add((clients[variable], method))
+    for variable, method in re.findall(
+        r"\b(\w+)\.((?:list|describe|get|delete|put|head)_\w+)\(", source
+    ):
+        if variable in clients and method != "get_paginator":
+            calls.add((clients[variable], method))
+
+    return calls
+
+
+def _granted_actions() -> set[str]:
+    """Every action string in the deploy role's policy documents, wildcards included."""
+    grants = (ROOT / "infra" / "bootstrap" / "deploy_permissions.tf").read_text(encoding="utf-8")
+    return set(re.findall(r'"([a-z0-9-]+:[A-Za-z0-9*]+)"', grants))
+
+
+def _check_the_teardown_scripts_can_run() -> list[str]:
+    """Every AWS call the teardown's own scripts make has a grant on the deploy role.
+
+    **This is the check the first real teardown needed and did not have.** All five layer jobs
+    destroyed cleanly and the run still reported failure, on `kms:ListKeys` — a call
+    `scripts/estate_sweep.py` makes and no Terraform layer declares. `_check_permissions_exist`
+    derives what the role needs from what the *layers* declare, so a call that lives only in a
+    script is outside the list it is checking against, and every offline gate reported green
+    while the teardown's final step could not run at all.
+
+    That failure has the worst available shape: the estate was down, the money had stopped, and
+    the report said otherwise. A teardown whose verdict is wrong in the reassuring direction is
+    one thing; wrong in the alarming direction teaches somebody to stop reading it, which is how
+    the next real leftover survives.
+
+    **What a pass does not mean.** That the grant is *sufficient* — a resource-scoped or
+    tag-conditioned statement matches here exactly as a `"*"` one does, and only a real call
+    tells them apart. What it means is that no call has been forgotten entirely, which is the
+    failure that actually happened.
+    """
+    granted = _granted_actions()
+    problems: list[str] = []
+    for script in TEARDOWN_SCRIPTS:
+        source = (ROOT / "scripts" / script).read_text(encoding="utf-8")
+        for service, method in sorted(_calls_made(source)):
+            prefix = _IAM_PREFIX.get(service, service)
+            action = _ACTION_FOR.get(
+                (service, method), f"{prefix}:{''.join(part.title() for part in method.split('_'))}"
+            )
+            if not any(fnmatch(action, allowed) for allowed in granted):
+                problems.append(
+                    f"scripts/{script} calls {service}.{method} and the deploy role has no "
+                    f"grant matching `{action}`. It is not in any layer, so nothing else looks "
+                    f"for it — the teardown reaches its last step, is refused, and reports a "
+                    f"failure over an estate that is already gone"
+                )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -790,6 +889,7 @@ def main() -> int:
 
     problems.extend(_check_resolution())
     problems.extend(_check_permissions_exist())
+    problems.extend(_check_the_teardown_scripts_can_run())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())
