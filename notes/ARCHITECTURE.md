@@ -24,27 +24,25 @@ abstains too often fails its own build rather than quietly drowning its reviewer
 
 ```mermaid
 flowchart TB
-    A["📄 Document arrives<br/>S3 landing zone<br/><i>incoming/{lang}/{type}/{id}.pdf</i>"]
-    A --> B{"EventBridge<br/>matches the prefix?"}
+    A["📄 arrives · S3 landing<br/><i>incoming/{lang}/{type}/{id}.pdf</i>"] --> B{"prefix<br/>matches?"}
     B -- no --> BX["nothing runs<br/><i>the cheapest refusal</i>"]
-    B -- yes --> C["Step Functions<br/><i>one execution per document</i>"]
+    B -- yes --> D["**Read** · tier 0<br/>OCR in a Lambda container<br/><i>words · scores · boxes</i>"]
 
-    C --> D["**Read** · tier 0<br/>local OCR in a Lambda container<br/><i>words · confidences · boxes</i>"]
-    D --> E["**Extract & threshold**<br/><i>contracts decide which fields exist<br/>recordings decide the thresholds</i>"]
+    D --> E["**Extract & threshold**<br/><i>contracts say which fields exist<br/>recordings say the thresholds</i>"]
+    E --> F{"any field above<br/>its threshold?"}
 
-    E --> F{"any field<br/>above threshold?"}
-    F -- no --> Q
+    F -- no --> Q["**Review queue** · SQS<br/><i>a human decides</i>"]
     F -- yes --> G["**Provenance gate**<br/><i>re-crop the box · re-read it<br/>check the digit arithmetic</i>"]
 
     G --> H{"every published<br/>field verified?"}
     H -- no --> Q
     H -- yes --> I{"anything<br/>abstained?"}
-    I -- yes --> Q2["**Queue the abstentions**"] --> J
-    I -- no --> J["**Publish**<br/>S3 records · keyed by document + version"]
 
-    Q["**Review queue** · SQS<br/><i>a human decides</i>"]
+    I -- yes --> Q2["queue the abstentions"]
+    Q2 --> J["**Publish** · S3 records<br/><i>keyed by document + version</i>"]
+    I -- no --> J
     Q2 -.-> Q
-    J --> K["Iceberg on S3 · Glue · Athena<br/>OpenSearch · Redshift marts"]
+    J --> K["Iceberg · Glue · Athena<br/>OpenSearch · Redshift marts"]
 
     style D fill:#e8f4ff
     style G fill:#fff4e6
@@ -95,22 +93,21 @@ it is why swapping Textract for a local reader is an adapter change and nothing 
 ## 3 · The cascade — and the fact that decides its economics
 
 ```mermaid
-flowchart TB
-    P["page"] --> T0["**Tier 0** — local OCR<br/>every language · €0 per page<br/>✅ reports a confidence"]
-    T0 --> Q0{"confidence below<br/>the derived threshold?"}
+flowchart LR
+    P["page"] --> T0["**Tier 0** · local OCR<br/>every language · €0<br/>✅ reports a score"]
+    T0 --> Q0{"below the<br/>threshold?"}
     Q0 -- no --> PUB["publish"]
-    Q0 -- yes --> LANG{"which language?"}
+    Q0 -- yes --> LANG{"language?"}
 
-    LANG -- "en de fr it pt" --> T1["**Tier 1** — Textract<br/>better on degraded print & tables<br/>✅ reports a confidence"]
+    LANG -- "en de fr it pt" --> T1["**Tier 1** · Textract<br/>degraded print, tables<br/>✅ reports a score"]
     LANG -- "el · nl" --> T3
 
-    T1 --> Q1{"still below?"}
+    T1 --> Q1{"still<br/>below?"}
     Q1 -- no --> PUB
-    Q1 -- yes --> T2["**Tier 2** — Bedrock Data Automation<br/>reading order · table structure<br/>❌ no confidence, anywhere"]
-
-    T2 --> T3["**Tier 3** — Bedrock model<br/>the only path for Greek & Dutch<br/>❌ no confidence, and refuses to invent one"]
+    Q1 -- yes --> T2["**Tier 2** · BDA<br/>reading order, tables<br/>❌ no score, anywhere"]
+    T2 --> T3["**Tier 3** · Bedrock<br/>the only path for el · nl<br/>❌ no score, and refuses<br/>to invent one"]
     T2 --> HU
-    T3 --> HU["**human** · Reason.UNSCORED"]
+    T3 --> HU["**human**<br/>Reason.UNSCORED"]
 
     style T0 fill:#e8ffe8
     style T1 fill:#e8f4ff
