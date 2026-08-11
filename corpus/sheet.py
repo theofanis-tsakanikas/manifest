@@ -46,43 +46,100 @@ PAGE_WIDTH, PAGE_HEIGHT = A4
 #: a page no reader could read, degraded or not, and one that would silently make an abstention
 #: rate look worse than the degradation warrants. The Arabic surface forms stay in the party
 #: register, where claim 6 uses them as strings without ever needing them printed.
-_FONT_CANDIDATES: Final = (
-    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-)
+#: **One font, in one place, and no fallback. This used to be a list.**
+#:
+#: It held three paths and took the first that existed: Arial Unicode on the author's laptop,
+#: DejaVu on a Linux runner, FreeSans elsewhere. Box geometry comes from font metrics, so each
+#: of those produces a *different ground truth* — and DejaVu covers no CJK, so on a runner the
+#: thirteen Chinese characters in the corpus's party names rendered as empty boxes while every
+#: check stayed green.
+#:
+#: The generator already knew this mattered: `--check` has an error written for a changed font,
+#: saying a different font is a different ground truth. It never fired, because it compared the
+#: runner's font against the corpus.json the runner had just written.
+#:
+#: So the font is the image's, exactly like the reader binary, and there is nothing to fall back
+#: to. A corpus that cannot be generated outside the image is a corpus whose boxes mean the same
+#: thing on a laptop and in the estate.
+_FONT_CANDIDATES: Final = ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",)
+
+#: Noto ships as a TrueType *collection*; index 0 is the regular face. Named rather than left as
+#: a bare zero because a collection with a different order would silently change every glyph.
+_FONT_SUBFONT_INDEX: Final = 0
 
 BODY = "corpus-body"
 BOLD = "corpus-bold"
 _MONO = "Courier"
 
+#: What a machine that is not the image may fall back to, and **only** for tests.
+#:
+#: The corpus that ships is generated in the image and nowhere else. But the tests in
+#: `tests/corpus/` build a four-shipment corpus in-process to assert *structural* properties —
+#: that a table breaks across a page boundary, that every placement carries a box, that one seed
+#: gives one corpus. None of those depends on which font drew the glyphs, and a suite that can
+#: only run inside a container is a suite a reader cannot run.
+#:
+#: The artefact stays protected by the layer that matters: the font path is recorded in the
+#: ground truth, and `--check` compares it, so a corpus generated on a laptop can be built and
+#: can never be mistaken for the committed one.
+_FALLBACK_CANDIDATES: Final = (
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+)
+
 _registered = False
+#: The path chosen this process, so a non-strict call made by a test is honoured by the strict
+#: calls `build()` makes afterwards. Without it the fixture would register a fallback and the
+#: generator would immediately refuse the same machine.
+_chosen: str | None = None
 
 
 class FontError(RuntimeError):
     """No font on this machine covers the corpus's scripts."""
 
 
-def register_fonts() -> str:
+def register_fonts(strict: bool = True) -> str:
     """Register the corpus font, returning the path used.
 
     Raises rather than falling back to a built-in font. A Latin-only fallback would render the
     Greek documents as empty boxes, every claim scored on them would be scored on a page nobody
-    could read, and the run would still be green.
+    could read, and the run would still be green — which is not a hypothetical: on a Linux
+    runner the old candidate list picked DejaVu, and the corpus's Chinese party names became
+    tofu while every check passed.
+
+    `strict=False` is for `tests/corpus/` and for nothing else. Those tests build a small corpus
+    in-process to assert structural properties — a table breaking across a page, every placement
+    carrying a box, one seed giving one corpus — and none of them depends on which font drew the
+    glyphs. A suite that can only run inside a container is a suite a reader cannot run. The
+    artefact stays protected where it matters: the font path is recorded in the ground truth and
+    `--check` compares it, so a laptop-built corpus can never be mistaken for the committed one.
     """
-    global _registered  # noqa: PLW0603 — reportlab's font registry is process-global
-    for candidate in _FONT_CANDIDATES:
+    global _registered, _chosen  # noqa: PLW0603 — reportlab's font registry is process-global
+    if _chosen is not None:
+        return _chosen
+    candidates = _FONT_CANDIDATES if strict else (*_FONT_CANDIDATES, *_FALLBACK_CANDIDATES)
+    for candidate in candidates:
         path = Path(candidate)
         if path.exists():
             if not _registered:
-                pdfmetrics.registerFont(TTFont(BODY, str(path)))
-                pdfmetrics.registerFont(TTFont(BOLD, str(path)))
+                index = _FONT_SUBFONT_INDEX if path.suffix == ".ttc" else 0
+                pdfmetrics.registerFont(TTFont(BODY, str(path), subfontIndex=index))
+                pdfmetrics.registerFont(TTFont(BOLD, str(path), subfontIndex=index))
                 _registered = True
-            return str(path)
+            _chosen = str(path)
+            return _chosen
     raise FontError(
-        "no font covering Latin, Greek and CJK was found. The corpus cannot be generated "
-        f"without one; looked for {list(_FONT_CANDIDATES)}. Falling back to a Latin-only font "
-        "would render every Greek document as empty boxes while the run stayed green"
+        f"the corpus font is not on this machine; expected {_FONT_CANDIDATES[0]}.\n\n"
+        f"That path is inside the reader image, and the corpus is generated there on purpose: "
+        f"box geometry comes from font metrics, so a corpus rendered with whatever font a "
+        f"machine happens to have is a different ground truth on every machine. This used to "
+        f"fall back through a list, and on a Linux runner it picked DejaVu — which covers no "
+        f"CJK, so the Chinese party names became empty boxes and every check stayed green.\n\n"
+        f"Generate the corpus the way the ceremony does:\n"
+        f'  docker build -t manifest-reader . && docker run --rm -v "$PWD:/work" -w /work \\\n'
+        f"    -e PYTHONPATH=/work/src --entrypoint /usr/local/bin/python manifest-reader \\\n"
+        f"    -m corpus.generate"
     )
 
 

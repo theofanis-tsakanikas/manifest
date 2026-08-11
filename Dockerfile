@@ -74,6 +74,23 @@ FROM public.ecr.aws/docker/library/python:3.12-slim-trixie
 #
 # Named individually rather than pulled as a group: an image silently missing one language would
 # read those pages in the wrong script and return confident nonsense.
+#
+# **`fonts-noto-cjk` is here for the same reason the reader is, and it was found the same way.**
+#
+# `corpus/sheet.py` used to take the first font it found on the machine. On the author's laptop
+# that is Arial Unicode; on a Linux runner it was DejaVu — which covers Latin and Greek and
+# **not CJK**, so the thirteen Chinese characters in the corpus's party names rendered as empty
+# boxes. The corpus generated on a runner was not merely a different corpus, it was a worse one,
+# and every check stayed green.
+#
+# Box geometry comes from font metrics, so the font is part of the ground truth exactly as the
+# reader's version is part of the recording. Noto Sans CJK covers all three scripts in one file,
+# the distribution pins it, and `sheet.py` will now accept nothing else — a corpus that cannot
+# be generated outside this image is a corpus whose boxes mean one thing everywhere.
+#
+# It costs roughly 200 MB of image, paid by a function that never renders a page. That is the
+# price of the corpus and the reading coming from the same machine, and it is cheaper than a
+# claim scored against tofu.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       tesseract-ocr \
@@ -85,6 +102,7 @@ RUN apt-get update \
       poppler-utils \
       libgl1 \
       libglib2.0-0 \
+      fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # **The version and the languages, asserted rather than hoped for.**

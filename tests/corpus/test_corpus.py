@@ -21,7 +21,7 @@ from corpus.degrade import degrade_page, rotate_box
 from corpus.documents import BUILDERS
 from corpus.generate import DPI, build, fingerprint
 from corpus.plant import plant
-from corpus.sheet import Sheet
+from corpus.sheet import Sheet, register_fonts
 from corpus.world import Language, Pathology, PerturbedFact, build_world, container_number
 from PIL import Image
 from scripts.check_planting_is_blind import violations
@@ -30,6 +30,20 @@ from manifest.core.checkdigit import check
 from manifest.core.geometry import Box, PageSize
 
 SMALL = 6
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _font():
+    """Any font that can draw the scripts, because these tests are about structure.
+
+    The corpus that ships is generated inside the reader image, with one pinned font, because
+    box geometry comes from font metrics — see `corpus/sheet.register_fonts`. Everything below
+    asserts something font-independent: that a table breaks across a page boundary, that every
+    placement carries a page and a box, that one seed produces one corpus. Requiring the image
+    here would make the suite unrunnable on a laptop to protect a property none of these tests
+    is about.
+    """
+    register_fonts(strict=False)
 
 
 @pytest.fixture(scope="module")
