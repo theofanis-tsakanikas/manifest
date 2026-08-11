@@ -154,9 +154,21 @@ COPY src/ ${LAMBDA_TASK_ROOT}/src/
 # would apply one version's rules to another version's fields.
 COPY contracts/ ${LAMBDA_TASK_ROOT}/contracts/
 
+# **`[corpus]`, not the bare package — the image generates the corpus as well as reading it.**
+#
+# The extras list is `pillow numpy reportlab pypdfium2`: the renderer, the degrader and the
+# rasteriser. The reader needs three of them; the generator needs all four, and the fourth is
+# how this was found — moving corpus generation into the image failed on `No module named
+# 'reportlab'`, after the image built and after eight shards started.
+#
+# Naming the extra rather than listing packages by hand means `pyproject.toml` stays the one
+# place that says what the corpus needs. The two that are not in any extra are here because they
+# belong to the runtime rather than to the package: `awslambdaric` is the Lambda interface an AWS
+# base image would have supplied, and `boto3` is deliberately not a hard dependency so the
+# offline suite imports on a machine with no AWS libraries at all.
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir "${LAMBDA_TASK_ROOT}" \
-    && python -m pip install --no-cache-dir pillow numpy pypdfium2 awslambdaric boto3
+    && python -m pip install --no-cache-dir "${LAMBDA_TASK_ROOT}[corpus]" \
+    && python -m pip install --no-cache-dir awslambdaric boto3
 
 ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/src" \
     CONTRACTS_DIR="${LAMBDA_TASK_ROOT}/contracts"

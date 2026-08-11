@@ -101,20 +101,6 @@ jobs:
         # sent the four to nobody, silently, on every successful execution.
         run: python scripts/check_pipeline_routing.py
 
-      - name: the generator reproduces the ground truth this repository ships
-        # **Never run after `corpus.generate`.** That command overwrites the ground truth, and
-        # for the life of this project the ceremony ran the two in that order — so `--check`
-        # compared the corpus it had just written against itself and passed on every runner
-        # while proving nothing. `load_committed` reads from git now, which makes the order
-        # irrelevant; this step exists because the check was in `make claims` and in no
-        # workflow, so nothing ever ran it at all.
-        #
-        # It regenerates the ground truth without images, which takes minutes rather than the
-        # hour a full render needs. Every claim in this repository is scored against boxes this
-        # produces; a generator that has drifted is every figure being about documents nobody
-        # has.
-        run: python -m corpus.generate --check
-
       - name: the corpus plants mismatches blind to the rules that will find them
         # Claim 4's independence, read off the import graph. A planter that knows the
         # reconciliation contract is a planter that can be tuned to it, and the harness would
@@ -167,6 +153,39 @@ jobs:
       # Claim 2 is the only one absent, and for a reason rather than an omission: it needs the
       # rendered corpus, which is git-ignored and reproducible from a seed. It runs in
       # `make preflight` on a machine that has generated it.
+
+  corpus:
+    name: the generator reproduces the committed ground truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # **Inside the image, and that is the whole point of the job.**
+      #
+      # Box geometry comes from font metrics, and `corpus/sheet.py` accepts exactly one font —
+      # the one in this image. A check run on the bare runner would use whatever font the runner
+      # has and could never agree with a ground truth generated in the image, so it would be a
+      # step that can only ever be red.
+      #
+      # It is a job of its own rather than a step in `claims` because it takes twenty minutes and
+      # nothing else waits on it. It exists at all because for the life of this project the check
+      # ran nowhere: it was in `make claims`, in no workflow, and where the ceremony did run it,
+      # it ran immediately after `corpus.generate` — comparing the corpus that command had just
+      # written against itself.
+      - name: build the image the corpus is generated in
+        run: docker build --tag manifest-reader:ci .
+
+      - name: check
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            --env PYTHONPATH=/work/src \
+            --entrypoint /usr/local/bin/python \
+            manifest-reader:ci \
+            -m corpus.generate --check
 
   gate-proof:
     name: attack our own gates
