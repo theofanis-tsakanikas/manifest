@@ -130,12 +130,60 @@ def _await_execution(estate: Estate, since: float, wanted: str, timeout: int = 9
     return None
 
 
+def _from_history(execution_arn: str) -> dict:
+    """Reassemble what each state produced, from the execution history.
+
+    Keyed by the shape of each payload rather than by state name: the reader's output is the one
+    with `pages`, the extraction's is the one with `publishable_count`, the gate's is the one
+    with `verified`. Matching on names would tie this verifier to the machine's current state
+    names, and renaming a state is not supposed to break the thing that checks it.
+    """
+    states = _client("stepfunctions")
+    assembled: dict = {}
+    paginator = states.get_paginator("get_execution_history")
+    for page in paginator.paginate(executionArn=execution_arn):
+        for event in page.get("events", []):
+            raw = (event.get("taskSucceededEventDetails") or {}).get("output")
+            if not raw:
+                continue
+            try:
+                payload = json.loads(raw).get("Payload")
+            except (ValueError, AttributeError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if "reading" in payload:
+                assembled["tier0"] = payload
+            elif "publishable_count" in payload:
+                assembled["extraction"] = {"outcome": payload}
+            elif "verified" in payload:
+                assembled["provenance"] = {"checked": payload}
+    return assembled
+
+
 def _json_object(bucket: str, key: str) -> dict | None:
+    """The object, parsed once.
+
+    **Once, deliberately.** A record that needs two `json.loads` is double-encoded — a JSON
+    string literal whose contents are the JSON — and that is a defect, not a format to
+    accommodate. The estate wrote records that way until `Body` stopped being passed through
+    `States.JsonToString`, and every consumer downstream would have read text where a customs
+    record belongs. Returning `None` here makes the check that asked for it fail, which is the
+    correct outcome; quietly loading twice would have hidden it.
+    """
     try:
         body = _client("s3").get_object(Bucket=bucket, Key=key)["Body"].read()
     except Exception:
         return None
-    return json.loads(body.decode("utf-8"))
+    parsed = json.loads(body.decode("utf-8"))
+    if not isinstance(parsed, dict):
+        print(
+            f"  {RED}the object at {key} is double-encoded{RESET}: it parses to "
+            f"{type(parsed).__name__}, not an object. A consumer reading it gets text where a "
+            f"record should be."
+        )
+        return None
+    return parsed
 
 
 def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
@@ -164,7 +212,16 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
         )
         return
 
-    output = json.loads(execution["output"])
+    # **Read from the history, not from the execution's output.**
+    #
+    # A terminal state replaces the output with its own result: `Publish` leaves an S3
+    # PutObject response, `QueueForReview` leaves an SQS receipt. Either way what the document
+    # actually did — the reading, the per-field outcomes, the gate's verdicts — is gone from the
+    # place the obvious code looks. That cost two full end-to-end runs, both reported as five
+    # failures whose real cause was that the evidence had been overwritten by a message id.
+    #
+    # The history keeps every state's output, which is what an execution history is for.
+    output = _from_history(execution["executionArn"])
     reading_pointer = (output.get("tier0") or {}).get("reading") or {}
     reading = _json_object(reading_pointer.get("bucket", ""), reading_pointer.get("key", ""))
 

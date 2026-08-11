@@ -416,10 +416,23 @@ resource "aws_sfn_state_machine" "extraction" {
           # was previously published, so a re-extraction writes a new object beside the old one
           # rather than over it, and both stay retrievable.
           "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
-          # **Serialised, not passed as an object.** `s3:PutObject` takes a string body; handing
-          # it the checked record as a structure is a type error at the API rather than at the
-          # plan, so it fails on the first document rather than on the first deploy.
-          "Body.$" : "States.JsonToString($.provenance.checked)",
+          # **The object, not a string of it.** This used to be
+          # `States.JsonToString($.provenance.checked)`, on the reasoning that `s3:PutObject`
+          # takes a string body. It does — and the SDK integration serialises the parameter as
+          # well, so the record landed in the bucket **double-encoded**: a JSON string literal
+          # whose contents are the JSON.
+          #
+          #     "{\"language\":\"en\",\"document_id\":\"E2E-PROOF2\",\"fields\":[...]}"
+          #
+          # Nothing failed. The execution succeeded, the object was written, its key was right
+          # and its bytes were valid JSON — of a string. Every consumer downstream — Athena over
+          # the lakehouse, Glue's crawler, a human opening the file — reads text where a customs
+          # record should be, and the first one to notice would be whichever query returned a
+          # column of escaped quotes.
+          #
+          # Found by the end-to-end verifier failing to call `.get` on a `str`, which is a
+          # cheaper way to learn it than a mart that silently has one column.
+          "Body.$" : "$.provenance.checked",
           "ServerSideEncryption" : "aws:kms",
           "SsekmsKeyId" : var.data_key_arn
         }
