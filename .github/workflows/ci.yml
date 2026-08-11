@@ -101,6 +101,20 @@ jobs:
         # sent the four to nobody, silently, on every successful execution.
         run: python scripts/check_pipeline_routing.py
 
+      - name: the generator reproduces the ground truth this repository ships
+        # **Never run after `corpus.generate`.** That command overwrites the ground truth, and
+        # for the life of this project the ceremony ran the two in that order — so `--check`
+        # compared the corpus it had just written against itself and passed on every runner
+        # while proving nothing. `load_committed` reads from git now, which makes the order
+        # irrelevant; this step exists because the check was in `make claims` and in no
+        # workflow, so nothing ever ran it at all.
+        #
+        # It regenerates the ground truth without images, which takes minutes rather than the
+        # hour a full render needs. Every claim in this repository is scored against boxes this
+        # produces; a generator that has drifted is every figure being about documents nobody
+        # has.
+        run: python -m corpus.generate --check
+
       - name: the corpus plants mismatches blind to the rules that will find them
         # Claim 4's independence, read off the import graph. A planter that knows the
         # reconciliation contract is a planter that can be tuned to it, and the harness would

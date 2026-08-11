@@ -23,6 +23,7 @@ import argparse
 import hashlib
 import json
 import random
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -194,10 +195,50 @@ def write(payload: dict[str, object]) -> None:
 
 
 def load_committed() -> dict[str, object]:
+    """The ground truth **as committed**, read from git rather than from the working tree.
+
+    **The tautology this closes, and it went undetected for the life of the project.**
+
+    `--check` regenerates the corpus and compares it against "the committed" ground truth. It
+    read that from the working tree — and the recording ceremony runs
+
+        python -m corpus.generate          # writes corpus.json and fingerprint.txt
+        python -m corpus.generate --check  # compares against corpus.json
+
+    so the second command compared the corpus the first had just written against itself. It
+    passed on every runner, every time, and proved nothing. The first thing in this repository
+    ever to compare the two honestly was `ocr_merge.py`, which refused: the shards recorded a
+    corpus whose fingerprint is not the one committed here.
+
+    Reading from git is what makes the check mean what it says. The claim is *"the generator
+    reproduces the ground truth this repository ships"*, and the repository's copy is the one in
+    the index, not the one a previous command left on disk.
+
+    Falls back to the working tree when there is no git — a tarball, a vendored copy — and says
+    so, because a check that silently downgrades to the weaker comparison is the tautology
+    returning with better manners.
+    """
     path = GROUND_TRUTH / "corpus.json"
-    if not path.exists():
-        raise SystemExit(f"{path} does not exist; run `make corpus` first")
-    return json.loads(path.read_text(encoding="utf-8"))
+    relative = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+    try:
+        committed = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["git", "show", f"HEAD:{relative.as_posix()}"],  # noqa: S607
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+        return json.loads(committed)
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        if not path.exists():
+            raise SystemExit(f"{path} does not exist; run `make corpus` first") from exc
+        print(
+            f"corpus-check: could not read the ground truth from git ({exc.__class__.__name__}), "
+            f"falling back to the working tree. That comparison is weaker: if something wrote "
+            f"{relative} since the last commit, this is about to compare it with itself.",
+            file=sys.stderr,
+        )
+        return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> int:

@@ -107,8 +107,13 @@ jobs:
       - name: regenerate the corpus and prove it reproduces
         run: |
           set -euo pipefail
-          python -m corpus.generate
+          # **Order reversed, and it is the whole of a finding.** This used to generate first
+          # and check second, so the check compared the corpus it had just written against
+          # itself. `load_committed` reads the ground truth from git now, so the order no longer
+          # decides the answer — but checking *before* generating is the honest sequence anyway:
+          # prove the generator still reproduces what is committed, then build the pages.
           python -m corpus.generate --check
+          python -m corpus.generate
 
       - name: build the reader image
         run: docker build --tag manifest-reader:ceremony .
@@ -157,8 +162,13 @@ jobs:
       - name: regenerate the corpus
         run: |
           set -euo pipefail
-          python -m corpus.generate
+          # **Order reversed, and it is the whole of a finding.** This used to generate first
+          # and check second, so the check compared the corpus it had just written against
+          # itself. `load_committed` reads the ground truth from git now, so the order no longer
+          # decides the answer — but checking *before* generating is the honest sequence anyway:
+          # prove the generator still reproduces what is committed, then build the pages.
           python -m corpus.generate --check
+          python -m corpus.generate
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
