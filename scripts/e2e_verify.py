@@ -395,6 +395,12 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
     _check_the_record_reached_the_lake(estate, document_id, outcome)
 
 
+def _query_failure(execution_id: str) -> str:
+    """Why Athena refused, in its own words."""
+    described = _client("athena").get_query_execution(QueryExecutionId=execution_id)
+    return described["QueryExecution"]["Status"].get("StateChangeReason", "no reason given")
+
+
 def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome: dict) -> None:
     """Claim it in the warehouse's own words: query the table and count the rows.
 
@@ -439,7 +445,28 @@ def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome
         time.sleep(3)
 
     if state != "SUCCEEDED":
-        estate.check("9 · the published record reached the lake", False, f"the query {state}")
+        # **A query this verifier cannot run is not a fact about the estate.**
+        #
+        # The first version reported `9 · the published record reached the lake: FAIL` when the
+        # record *had* reached the lake — 27 rows were in the table — and the only thing wrong
+        # was that this script's own principal had no Lake Formation grant on a table that had
+        # just been recreated. `count(*)` needs no column access and answered; `count(value)`
+        # does and did not.
+        #
+        # A check that reports its own blindness as the system's failure is worse than no check:
+        # it is a false statement about production, made confidently, in the one place whose
+        # value is that it can be believed.
+        reason = _query_failure(started)
+        estate.check(
+            "9 · the published record reached the lake",
+            False,
+            f"the query {state}: {reason}. If this names Lake Formation, it is a statement about "
+            f"the principal running this script and not about the estate — grant it with "
+            f"`aws lakeformation grant-permissions --principal "
+            f"DataLakePrincipalIdentifier=<you> --resource "
+            f'\'{{"Table":{{"DatabaseName":"{estate.glue_database}","Name":'
+            f'"document_version"}}}}\' --permissions SELECT DESCRIBE`',
+        )
         return
 
     rows = athena.get_query_results(QueryExecutionId=started)["ResultSet"]["Rows"]
@@ -806,28 +833,70 @@ def _rows_for_version(estate: Estate, document_id: str) -> list[tuple[str, str]]
     ]
 
 
+#: Two committed corpus pages, rendered to PDF on demand. Different shipments, so the second is
+#: a genuinely different document under the same id — which is what a *correction* is, and what
+#: the re-extraction check needs. Re-sending identical bytes would prove the opposite property.
+CORPUS_FIRST = ROOT / "corpus/rendered/SHP00001_bill_of_lading_p1.jpg"
+CORPUS_CORRECTED = ROOT / "corpus/rendered/SHP00002_bill_of_lading_p1.jpg"
+
+
+def _rendered(page: Path, name: str) -> Path:
+    """A committed corpus page as a one-page PDF, written beside the run.
+
+    **The verifier used to take a PDF somebody had made by hand in a temporary directory.** That
+    is a script only its author can run, and it stopped working the moment the directory was
+    cleaned — which is a fair description of every "it works on my machine" this repository
+    exists to argue against. The corpus is committed; the render is deterministic; the input is
+    now part of the repository like everything else it asserts about.
+
+    A degraded scan wrapped in a PDF is also exactly what arrives: the corpus pages are already
+    skewed, noised and recompressed, so nothing here is a cleaner document than the real one.
+    """
+    from PIL import Image  # noqa: PLC0415 - the offline suite must import this module without it
+
+    if not page.exists():
+        raise SystemExit(
+            f"{page} is not in the repository. The corpus is committed; if it is missing, this "
+            f"is a checkout problem rather than something to work around with a temporary file"
+        )
+    destination = Path(tempfile.gettempdir()) / f"manifest-{name}.pdf"
+    Image.open(page).convert("RGB").save(destination, "PDF", resolution=200.0)
+    return destination
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default="manifest")
-    parser.add_argument("--document", type=Path, required=True, help="A PDF to send through.")
+    parser.add_argument(
+        "--document",
+        type=Path,
+        help=(
+            "A PDF to send through. Rendered from the committed corpus when omitted, so this "
+            "script needs nothing a reader has to make by hand."
+        ),
+    )
     parser.add_argument("--document-id", default="E2E-VERIFY")
     parser.add_argument("--skip-edge-cases", action="store_true")
     parser.add_argument(
         "--corrected",
         type=Path,
-        help="A second, different page for the same document id — the re-extraction check.",
+        help=(
+            "A second, different page for the same document id — the re-extraction check. "
+            "Rendered from a different committed corpus page when omitted."
+        ),
     )
     arguments = parser.parse_args()
 
     sys.path.insert(0, str(ROOT / "src"))
+    document = arguments.document or _rendered(CORPUS_FIRST, "e2e-first")
+    corrected = arguments.corrected or _rendered(CORPUS_CORRECTED, "e2e-corrected")
     estate = _resolve(arguments.project)
     print(f"the deployed estate — {estate.state_machine}\n")
 
-    _happy_path(estate, arguments.document, arguments.document_id)
-    if arguments.corrected:
-        _re_extraction(estate, arguments.document, arguments.corrected)
+    _happy_path(estate, document, arguments.document_id)
+    _re_extraction(estate, document, corrected)
     if not arguments.skip_edge_cases:
-        _edge_cases(estate, arguments.document)
+        _edge_cases(estate, document)
 
     failed = [result for result in estate.results if not result.passed]
     print(f"\n  {len(estate.results) - len(failed)}/{len(estate.results)} checks passed\n")

@@ -804,6 +804,11 @@ data "aws_iam_policy_document" "deploy_compute" {
       # secret: Amazon Redshift can't access the secret`, which names Redshift. The first fix
       # attempt granted five actions around the secret and not the one that makes it, and the
       # message afterwards was character for character the same.
+      # **The one that finds the others.** Every action below names the secret by ARN pattern,
+      # and `ListSecrets` names nothing — so it was not granted, and the deploy step that has to
+      # *discover* the ARN Redshift chose failed on it: `not authorized to perform:
+      # secretsmanager:ListSecrets`. A resource-scoped grant list is complete for every call
+      # that already knows the resource.
       "secretsmanager:CreateSecret",
       "secretsmanager:DescribeSecret",
       "secretsmanager:GetResourcePolicy",
@@ -838,6 +843,25 @@ data "aws_iam_policy_document" "deploy_compute" {
     resources = [
       "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:redshift!${var.project}-*",
     ]
+  }
+
+  # **The call that finds the secret the calls below name.**
+  #
+  # Every action in the statement above is scoped to `redshift!manifest-*`, which is complete for
+  # any call that already knows the ARN — and the deploy step has to *discover* it, because
+  # Redshift chooses the suffix. `ListSecrets` takes no resource at all, so it could not go in
+  # that statement, and its absence surfaced as `not authorized to perform:
+  # secretsmanager:ListSecrets` after the workgroup had already been built.
+  #
+  # A list is a read over names, not over contents: this grants seeing that a secret exists, and
+  # `GetSecretValue` stays scoped to the one this estate creates.
+  #checkov:skip=CKV_AWS_111:ListSecrets supports no resource-level scoping; it returns names and no secret material.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "FindTheSecretRedshiftNamed"
+    effect    = "Allow"
+    actions   = ["secretsmanager:ListSecrets"]
+    resources = ["*"]
   }
 
   # **Reading the inference profile, so the escalation's policy can name what it routes to.**
