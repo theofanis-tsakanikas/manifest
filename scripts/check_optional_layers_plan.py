@@ -23,14 +23,28 @@ AWS however little it intends to. Two earlier versions of this file claimed to b
 were not: the first read the real Terraform state, the second failed on the provider and I
 nearly wrote the claim anyway.
 
-What it does avoid is *shared* state. A temporary `backend "local"` override sits beside the
-layer for the length of the run, so the plan reasons about an empty state — every resource
-appears as "to add" — and no lock is taken on the estate anybody else might be deploying.
+What it does avoid is *shared* state. Each layer is copied to a temporary directory with a
+`backend "local"` override, so the plan reasons about an empty state — every resource appears as
+"to add" — and no lock is taken on the estate anybody else might be deploying.
+
+**The copy is the whole point, and it was learned the expensive way.** This ran in the layer's
+own directory and re-initialised it with `-reconfigure` to pick up the local backend. It removed
+the override afterwards and did not, could not, restore what it had overwritten: `.terraform`
+was left pointing at a local backend. The deploy's next command is `terraform apply` against the
+S3 backend it had initialised one line earlier, and it refused with *"Backend type changed from
+local to s3"* — an error about the workflow's own `init`, produced by a check that had already
+printed a pass.
+
+A check that mutates what it inspects is a check that can break the thing it certifies, and no
+amount of tidying up afterwards makes that safe: it cannot restore a backend configuration it
+was never told. Isolation costs one provider download per layer and removes the failure mode
+rather than sequencing around it.
 """
 
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -118,22 +132,27 @@ OVERRIDE = """terraform {
 """
 
 
-def _init(layer: str) -> tuple[bool, str]:
-    """Initialise the layer without its backend, so a plan needs no state and no credentials.
+#: What must not be copied into the working copy. `.terraform` carries the *caller's* backend
+#: initialisation, which is the state this check exists not to touch; the state files are the
+#: real estate's and a plan that read them would take a lock on it.
+NOT_COPIED = shutil.ignore_patterns(".terraform", "*.tfstate", "*.tfstate.backup", "*.tfplan")
 
-    `-reconfigure` because a working copy that has been used against the real backend remembers
-    it, and a plan then refuses with *"changes to backend configurations require
-    reinitialization"* — which reads like a configuration error and is a leftover.
+
+def _working_copy(layer: str, destination: Path) -> Path:
+    """The layer's configuration, alone, with a local backend written over its own.
+
+    `.terraform.lock.hcl` comes along deliberately: the provider version this plans against must
+    be the one the deploy applies with, and the price of the isolation is re-downloading it.
     """
+    shutil.copytree(ROOT / "infra" / layer, destination, ignore=NOT_COPIED)
+    (destination / "zz_local_backend_override.tf").write_text(OVERRIDE, encoding="utf-8")
+    return destination
+
+
+def _init(copy: Path) -> tuple[bool, str]:
+    """Initialise the working copy, which has no backend but the local one written into it."""
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-        [  # noqa: S607
-            "terraform",
-            f"-chdir=infra/{layer}",
-            "init",
-            "-reconfigure",
-            "-input=false",
-            "-no-color",
-        ],
+        ["terraform", f"-chdir={copy}", "init", "-input=false", "-no-color"],  # noqa: S607
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -142,11 +161,11 @@ def _init(layer: str) -> tuple[bool, str]:
     return result.returncode == 0, (result.stderr or result.stdout)[-800:]
 
 
-def _plan(layer: str, flag: str, enabled: bool, varfile: Path) -> tuple[bool, str]:
+def _plan(copy: Path, flag: str, enabled: bool, varfile: Path) -> tuple[bool, str]:
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [  # noqa: S607
             "terraform",
-            f"-chdir=infra/{layer}",
+            f"-chdir={copy}",
             "plan",
             "-input=false",
             "-no-color",
@@ -165,12 +184,9 @@ def _plan(layer: str, flag: str, enabled: bool, varfile: Path) -> tuple[bool, st
 def main() -> int:
     problems: list[str] = []
     for layer, flag in OPTIONAL.items():
-        override = ROOT / "infra" / layer / "zz_local_backend_override.tf"
-        override.write_text(OVERRIDE, encoding="utf-8")
-        try:
-            problems.extend(_plan_both_ways(layer, flag))
-        finally:
-            override.unlink(missing_ok=True)
+        with tempfile.TemporaryDirectory(prefix=f"optional-{layer}-") as scratch:
+            copy = _working_copy(layer, Path(scratch) / layer)
+            problems.extend(_plan_both_ways(layer, flag, copy))
 
     if problems:
         print(f"\noptional layers: {len(problems)} problem(s)\n", file=sys.stderr)
@@ -185,9 +201,9 @@ def main() -> int:
     return 0
 
 
-def _plan_both_ways(layer: str, flag: str) -> list[str]:
+def _plan_both_ways(layer: str, flag: str, copy: Path) -> list[str]:
     problems: list[str] = []
-    ready, output = _init(layer)
+    ready, output = _init(copy)
     if not ready:
         return [f"infra/{layer} will not initialise: {_last_line(output)}"]
     values = _variables(layer)
@@ -196,7 +212,7 @@ def _plan_both_ways(layer: str, flag: str) -> list[str]:
         varfile = Path(handle.name)
     try:
         for enabled in (False, True):
-            ok, output = _plan(layer, flag, enabled, varfile)
+            ok, output = _plan(copy, flag, enabled, varfile)
             state = "on" if enabled else "off"
             if ok:
                 print(f"  {layer:12} {flag} {state:3} — plans")
