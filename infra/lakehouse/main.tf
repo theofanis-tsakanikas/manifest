@@ -257,3 +257,40 @@ resource "aws_athena_workgroup" "analysis" {
     }
   }
 }
+
+# ── Who governs this catalogue ───────────────────────────────────────────────
+#
+# **This account enforces Lake Formation, and this project did not ask it to.** A sibling estate
+# set `CreateDatabaseDefaultPermissions` and `CreateTableDefaultPermissions` to `[]` at the
+# account level, which means a principal holding every `glue:` action it needs is still refused
+# by a second permission system this repository never designed around. The landing function met
+# that wall; so did the end-to-end verifier, which then reported the *estate* as broken when the
+# only broken thing was its own access.
+#
+# So this project's own database says, explicitly, that IAM governs it. That is what the rest of
+# the estate is built on: every role here is scoped, reviewed and attacked by `gate-proof`, and
+# a second authorisation layer that no check in this repository can read is not a control — it
+# is a place where access is decided somewhere nobody is looking.
+#
+# **Scoped to this database and nothing else.** It does not change the account's settings, does
+# not touch a neighbour's catalogue, and does not remove Lake Formation from anywhere it was
+# deliberately put. The tables here hold published customs records whose access is already
+# decided by the bucket policy, the KMS key and the role that reads them.
+resource "aws_lakeformation_permissions" "iam_governs_this_database" {
+  principal   = "IAM_ALLOWED_PRINCIPALS"
+  permissions = ["ALL"]
+
+  database {
+    name = aws_glue_catalog_database.records.name
+  }
+}
+
+resource "aws_lakeformation_permissions" "iam_governs_this_table" {
+  principal   = "IAM_ALLOWED_PRINCIPALS"
+  permissions = ["ALL"]
+
+  table {
+    database_name = aws_glue_catalog_database.records.name
+    name          = aws_glue_catalog_table.document_version.name
+  }
+}

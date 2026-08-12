@@ -845,6 +845,42 @@ data "aws_iam_policy_document" "deploy_compute" {
     ]
   }
 
+  # **Running the schema against the warehouse, which is a different service from creating it.**
+  #
+  # `redshift-serverless:*` builds the workgroup; `redshift-data:*` talks to it. The analytics
+  # job creates the schema and then runs every mart against it, and none of that is reachable
+  # through the resource-management API.
+  #
+  # Missed because it was probed with the wrong principal — by hand, as a user that already held
+  # these, which answers a different question from the one being asked. The same mistake as
+  # running an Athena `INSERT` as myself and reading a schema error where the truth was
+  # reachability, and it is the standing hazard of probing: the probe must run as the identity
+  # that will run in earnest.
+  statement {
+    sid    = "RunStatementsAgainstTheWarehouse"
+    effect = "Allow"
+    actions = [
+      "redshift-data:BatchExecuteStatement",
+      "redshift-data:ExecuteStatement",
+      "redshift-data:DescribeStatement",
+      "redshift-data:GetStatementResult",
+      "redshift-data:CancelStatement",
+    ]
+    resources = ["arn:aws:redshift-serverless:*:${data.aws_caller_identity.current.account_id}:workgroup/*"]
+  }
+
+  # `DescribeStatement` and `GetStatementResult` are addressed by statement id rather than by
+  # workgroup, so they take no resource this role can name. Read-only over statements this role
+  # itself submitted.
+  #checkov:skip=CKV_AWS_111:Statement reads are addressed by statement id and support no resource-level scoping.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "ReadBackTheStatementsItSubmitted"
+    effect    = "Allow"
+    actions   = ["redshift-data:DescribeStatement", "redshift-data:GetStatementResult"]
+    resources = ["*"]
+  }
+
   # **The call that finds the secret the calls below name.**
   #
   # Every action in the statement above is scoped to `redshift!manifest-*`, which is complete for
