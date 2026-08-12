@@ -265,6 +265,11 @@ def _redecide(
                     "queued_because": because.value if because else None,
                     "publishable": because is None and bool(found and found.value),
                     "tier": target,
+                    # The threshold this re-decision was made against, overwriting tier 0's. A
+                    # rescued field was judged twice, and the record has to say which judgement
+                    # it carries — `**entry` would otherwise leave the earlier tier's number
+                    # beside the later tier's verdict, which reads as consistent and is not.
+                    "threshold": threshold,
                 }
             )
             continue

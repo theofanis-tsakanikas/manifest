@@ -408,6 +408,20 @@ data "aws_iam_policy_document" "deploy_identity" {
         "budgets.amazonaws.com",
         "emr-serverless.amazonaws.com",
         "redshift.amazonaws.com",
+        # **The serverless flavour is a different principal, and the list had only the other.**
+        #
+        # `CreateNamespace` was refused with *"no identity-based policy allows the iam:PassRole
+        # action"* — the message a **condition mismatch** produces, not an absent grant, which
+        # sends the reader to look for a statement that is already there. Redshift Serverless
+        # passes the namespace's role as `redshift-serverless.amazonaws.com`; the provisioned
+        # service uses `redshift.amazonaws.com`, and one of them being present made the other
+        # look present too.
+        #
+        # Third time a service's *spelling* has cost a cycle here: Glue reads tags as `GetTags`,
+        # EMR Serverless validates the caller's network permission rather than the job role's,
+        # and now this. The pattern is that a permission list is written from the console's
+        # vocabulary and enforced against the API's.
+        "redshift-serverless.amazonaws.com",
         "glue.amazonaws.com",
         "lambda.amazonaws.com",
         "sagemaker.amazonaws.com",

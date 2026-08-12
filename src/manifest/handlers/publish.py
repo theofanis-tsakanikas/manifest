@@ -61,6 +61,16 @@ class Outcome:
     box: tuple[float, float, float, float] | None
     reason: str
     queued_because: Reason | None
+    #: The derived threshold this outcome was decided against, or `None` for a field the
+    #: derivation declared always-review.
+    #
+    # **Carried rather than looked up later, and the lake's own schema says why**: *"a threshold
+    # that moved later must not silently re-judge a record published under the old one"*. It was
+    # computed here, used here, and dropped — so anything downstream wanting to know what
+    # standard a value met had to read today's artefact and attribute it to a record published
+    # under a different one. That is the same mistake as re-deriving the language, with a longer
+    # blast radius: it does not fail, it produces a defensible-looking wrong answer.
+    threshold: float | None
 
     @property
     def publishable(self) -> bool:
@@ -169,6 +179,7 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
                     outcome.queued_because.value if outcome.queued_because else None
                 ),
                 "publishable": outcome.publishable,
+                "threshold": outcome.threshold,
             }
             for outcome in outcomes
         ],
@@ -192,6 +203,11 @@ def _outcome(field: str, found: Extracted, thresholds: dict[str, float | None]) 
             # no "the usual". A field absent from a page is a fact about that page.
             reason=found.reason,
             queued_because=None,
+            # A field that was not found was not measured against anything. `None` here means
+            # "no threshold applied", which is a different fact from a field whose threshold is
+            # `None` because it is always-review — and the two are told apart by `value`, not by
+            # this, which is why both are allowed to be null.
+            threshold=None,
         )
 
     # `thresholds.get(field)` returning `None` is ambiguous on its own — a field declared
@@ -214,6 +230,7 @@ def _outcome(field: str, found: Extracted, thresholds: dict[str, float | None]) 
         box=found.box.as_tuple() if found.box else None,
         reason=found.reason,
         queued_because=because,
+        threshold=thresholds[field],
     )
 
 
