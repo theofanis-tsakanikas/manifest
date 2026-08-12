@@ -144,6 +144,18 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         "document_id": reading.source_id,
         "fingerprint": reading.fingerprint(),
         "document_type": document_type,
+        # **The field the escalation could not run without, and that this returned without.**
+        #
+        # It is derived above, from the reading's own pages, and it was used and dropped. The
+        # next state is `Escalate`, which is handed this object and needs the language before it
+        # can ask `contracts/cascade/routing.yaml` which tiers may read the page at all — so the
+        # first document through a deployed estate with the tiers on failed at that state, on a
+        # fact this function had computed and thrown away.
+        #
+        # Language belongs in the outcome rather than being re-derived downstream for the same
+        # reason `document_type` does: it is a property of *this reading*, decided once, and a
+        # second derivation is a second chance to decide it differently.
+        "language": language,
         "reader": str(reading.reader),
         "fields": [
             {

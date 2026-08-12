@@ -49,6 +49,19 @@ data "aws_iam_policy_document" "deploy_network" {
       "ec2:CreateSecurityGroup",
       "ec2:CreateFlowLogs",
       "ec2:CreateTags",
+      # **EMR Serverless validates the caller's network permission, not the job role's.**
+      #
+      # `CreateApplication` with a `network_configuration` was refused with
+      # `ValidationException: Unauthorized to create network interface` — a message about the
+      # application, produced by a check on *this* role. The interfaces are made later, by the
+      # service, for a job that has not been submitted; what happens at create time is that EMR
+      # Serverless refuses to accept a network configuration the caller could not use.
+      #
+      # It is the same grant Lambda needed one layer along, at a different moment and against a
+      # different principal, which is why neither found it for the other: the deploy role builds
+      # the network and had never been asked to *attach* anything to it.
+      "ec2:CreateNetworkInterface",
+      "ec2:DeleteNetworkInterface",
     ]
     resources = ["*"]
   }

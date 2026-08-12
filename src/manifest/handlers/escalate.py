@@ -79,6 +79,39 @@ class Escalation:
     reason: str
 
 
+def required_facts(event: dict[str, Any], outcome: dict[str, Any]) -> tuple[str, str, str]:
+    """The three facts this handler cannot proceed without, read from `publish`'s output.
+
+    **A function rather than four lines inline, because it is the contract between two handlers
+    and a contract needs somewhere to be tested.** There was a test that a missing language is
+    refused, and it passed for as long as the language was missing in production: it proved the
+    *refusal* worked while building the event by hand, which is the one way an event is never
+    built. `publish` derived the language, used it, and returned an object without it, and the
+    first document through a deployed estate with the tiers on stopped here.
+
+    Two tests that each pass in isolation is what a contract looks like when nobody wrote it
+    down. `tests/handlers` now feeds one handler's real return value into this.
+    """
+    document_id = str(outcome.get("document_id") or "")
+    document_type = str(outcome.get("document_type") or "")
+    language = str(event.get("language") or outcome.get("language") or "")
+    missing = [
+        name
+        for name, value in (
+            ("document id", document_id),
+            ("document type", document_type),
+            ("language", language),
+        )
+        if not value
+    ]
+    if missing:
+        raise HandlerError(
+            f"the event is missing its {', '.join(missing)}. None is guessable: the type decides "
+            f"which fields exist, and the language decides which tiers may read the page at all"
+        )
+    return document_id, document_type, language
+
+
 def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     """Entry point. Takes `publish`'s output; returns it with the escalated fields re-decided."""
     del context
@@ -87,15 +120,7 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     if not isinstance(fields, list):
         raise HandlerError("the event carries no extraction outcome; `publish` returns one")
 
-    document_id = str(outcome.get("document_id") or "")
-    document_type = str(outcome.get("document_type") or "")
-    language = str(event.get("language") or outcome.get("language") or "")
-    if not (document_id and document_type and language):
-        raise HandlerError(
-            "the event is missing the document id, its type or its language. None is guessable: "
-            "the type decides which fields exist, and the language decides which tiers may read "
-            "the page at all"
-        )
+    document_id, document_type, language = required_facts(event, outcome)
 
     contracts = load(Path(_contracts_directory()))
     eligible = contracts.cascade.eligible(language)
