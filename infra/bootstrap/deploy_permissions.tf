@@ -814,11 +814,27 @@ data "aws_iam_policy_document" "deploy_compute" {
       # a namespace whose credential can never be rotated, which is a security control missing
       # rather than a deploy that fails — the quieter of the two.
       "secretsmanager:RotateSecret",
+      # **`GetSecretValue` was deliberately absent, and the reasoning held until the warehouse
+      # needed a schema.**
+      #
+      # The sentence here read: *"a deploy role that could read it would put the password one
+      # compromised workflow away, in exchange for nothing the apply needs"*. That was true of an
+      # apply that only created a workgroup. It is false of one that has to create tables in it:
+      # Redshift maps an IAM caller to a database user with no privileges on `dev`, and
+      # `analytics/schema.sql` came back `permission denied for database dev`. DDL needs a
+      # privileged session and the only privileged credential is the one Redshift minted.
+      #
+      # So the trade is taken and stated rather than reversed quietly. What is bought is a
+      # warehouse whose schema is created by the deploy that creates the warehouse; the
+      # alternative is a human running DDL by hand, which is undocumented state in the one layer
+      # whose whole argument is that its contents are declared. What is given up is real: this
+      # role can read the warehouse admin password.
+      #
+      # Narrowed as far as the API allows — one secret, named by the pattern Redshift chooses —
+      # and it stays out of `manifest-deploy-references`, where every other read lives, so that
+      # `grep GetSecretValue` finds it here with this paragraph attached.
+      "secretsmanager:GetSecretValue",
     ]
-    # **`GetSecretValue` is deliberately absent.** The whole point of `manage_admin_password` is
-    # that no principal in this repository ever holds the warehouse credential. A deploy role
-    # that could read it would put the password one compromised workflow away, in exchange for
-    # nothing the apply needs.
     resources = [
       "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:redshift!${var.project}-*",
     ]

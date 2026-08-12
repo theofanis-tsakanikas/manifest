@@ -726,3 +726,25 @@ jobs:
         run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/analytics apply -auto-approve -var 'expires_at=${{ inputs.expires_at }}'
+      - name: create the warehouse schema and run every mart against it
+        # **A workgroup with no tables in it is the analytics layer's version of the lake being
+        # a schema over nothing.** Redshift stood up, answered `select 1`, and held nothing but
+        # its own internal catalogue: `analytics/schema.sql` had never been executed by
+        # anything, and `check_marts.py` — which proves offline that no mart reads an undeclared
+        # column — is exactly the check that cannot notice the schema is absent.
+        #
+        # The marts are then *run*, not parsed. A mart that parses and a mart that executes are
+        # different claims, and the distance between them is every function name, cast and join
+        # Redshift disagrees with.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          SECRET=$(aws secretsmanager list-secrets \
+            --query "SecretList[?contains(Name, 'redshift!${{ env.PROJECT }}-marts')].ARN | [0]" \
+            --output text)
+          if [ -z "$SECRET" ] || [ "$SECRET" = "None" ]; then
+            echo "::error::no admin secret for the marts namespace; Redshift mints it with the namespace"
+            exit 1
+          fi
+          python3 scripts/apply_warehouse_schema.py \
+            --workgroup "${{ env.PROJECT }}-marts" --secret-arn "$SECRET"
