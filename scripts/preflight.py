@@ -87,7 +87,16 @@ CHECKS: list[Check] = [
     Check(
         "correctness",
         "test suite",
-        [PYTHON, "-m", "pytest", "-q"],
+        # **No `-q` here.** `pyproject.toml` already sets it in `addopts`, so passing it again
+        # makes `-qq`, and pytest's second quiet level removes the `N passed in Ms` line
+        # entirely. That line is the only thing `_scoreboard_figures` reads the test count from,
+        # so the count was never extracted, the README's figure was never compared to anything,
+        # and the check that exists to catch a stale scoreboard reported green over one for as
+        # long as it has existed — the README said 295 against a suite of 309.
+        #
+        # The same shape as the gate that counted an export and called it a value: not a wrong
+        # answer, an absent input, which is the failure that looks most like success.
+        [PYTHON, "-m", "pytest"],
         "Every claim this repository makes is asserted by one of these.",
     ),
     Check(
