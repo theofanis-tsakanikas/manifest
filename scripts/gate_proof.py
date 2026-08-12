@@ -517,6 +517,30 @@ def _take_away_the_grant_only_a_teardown_script_needs(root: Path) -> bool:
     return _replace(root / "infra/bootstrap/deploy_permissions.tf", '      "kms:ListKeys",\n', "")
 
 
+def _stop_a_function_in_a_vpc_from_attaching_to_it(root: Path) -> bool:
+    """Take `ec2:CreateNetworkInterface` off one Lambda execution role.
+
+    **This was the repository's actual state** on the fourth function in the layer. Three roles
+    carried the statement, the escalation's was written without it, and the apply reached
+    `CreateFunction` — five minutes in, with the image pushed and the other three functions
+    built — to be told *"The provided execution role does not have permissions to call
+    CreateNetworkInterface on EC2"*.
+
+    Planted on the reader's document rather than the escalation's, deliberately: the escalation
+    is behind an optional flag, and a mutation that only bites when a feature is switched on is a
+    mutation that stops biting the day somebody switches it off. The reader runs in every shape
+    of this estate.
+
+    The action is removed and the role, the policy and the function all still resolve — which is
+    why `terraform validate` passes on it and why an apply is otherwise the first thing to know.
+    """
+    return _replace(
+        root / "infra/extraction/compute.tf",
+        '      "ec2:CreateNetworkInterface",\n',
+        "",
+    )
+
+
 def _let_a_layer_run_without_the_variables_it_requires(root: Path) -> bool:
     """Stop supplying `expires_at` to the batch teardown.
 
@@ -1014,6 +1038,16 @@ MUTATIONS: tuple[Mutation, ...] = (
         _remove_a_layer_from_the_teardown,
         "Acquired one layer at a time and never on purpose. The repository reads as complete "
         "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "stop a function in a VPC from attaching to it",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "cannot ec2:CreateNetworkInterface",
+        _stop_a_function_in_a_vpc_from_attaching_to_it,
+        "The omission the fourth copy of a block always gets: the feature's permissions are "
+        "reasoned about freshly, the runtime's are not a feature's at all. CreateFunction "
+        "itself is refused, deep into an apply.",
     ),
     Mutation(
         "take away the grant only a teardown script needs",

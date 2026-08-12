@@ -870,6 +870,76 @@ def _check_the_teardown_scripts_can_run() -> list[str]:
     return problems
 
 
+def _hcl_blocks(text: str, header: str) -> dict[str, str]:
+    """Every `<header> "name" { ... }` and its body, matched by counting braces."""
+    blocks: dict[str, str] = {}
+    for match in re.finditer(rf'{header}\s+"(\w+)"\s*\{{', text):
+        depth, start = 0, match.end() - 1
+        for position in range(start, len(text)):
+            if text[position] == "{":
+                depth += 1
+            elif text[position] == "}":
+                depth -= 1
+                if depth == 0:
+                    blocks[match.group(1)] = text[start : position + 1]
+                    break
+    return blocks
+
+
+def _check_every_vpc_function_can_attach_to_it() -> list[str]:
+    """A function in a VPC has a role that may create a network interface.
+
+    **Lambda creates the interface itself, using the execution role, before any code runs.** So
+    the omission does not surface as a function that cannot reach the network — it surfaces as
+    `CreateFunction` being refused outright, with `InvalidParameterValueException: The provided
+    execution role does not have permissions to call CreateNetworkInterface on EC2`, minutes into
+    an apply that has already built everything before it.
+
+    Three functions in this layer carried the statement and the fourth did not. That is the
+    shape the omission always has: the block is copied while there are two of it and reasoned
+    about freshly when a new one is written, and the fresh reasoning is about what the *feature*
+    needs — a tier to read from, a key to decrypt with — while attaching to the network is what
+    the *runtime* needs and belongs to no feature at all.
+
+    `terraform validate` cannot see it: the role exists, the policy is well-formed, and the
+    reference resolves. Only an apply, or this, pairs the two.
+    """
+    problems: list[str] = []
+    for layer in sorted((ROOT / "infra").iterdir()):
+        if not layer.is_dir():
+            continue
+        text = "\n".join(path.read_text(encoding="utf-8") for path in sorted(layer.glob("*.tf")))
+        documents = _hcl_blocks(text, r'data\s+"aws_iam_policy_document"')
+
+        #: role name -> the policy documents attached to it, inline or managed.
+        granted: dict[str, list[str]] = {}
+        for body in _hcl_blocks(text, r'resource\s+"aws_iam_role_policy"').values():
+            role = re.search(r"role\s*=\s*aws_iam_role\.(\w+)", body)
+            document = re.search(r"data\.aws_iam_policy_document\.(\w+)", body)
+            if role and document:
+                granted.setdefault(role.group(1), []).append(documents.get(document.group(1), ""))
+
+        for name, body in _hcl_blocks(text, r'resource\s+"aws_lambda_function"').items():
+            if "vpc_config" not in body:
+                continue
+            role = re.search(r"role\s*=\s*aws_iam_role\.(\w+)", body)
+            if not role:
+                problems.append(
+                    f"infra/{layer.name}: aws_lambda_function.{name} runs in a VPC and its role "
+                    f"is not a reference this check can follow"
+                )
+                continue
+            attached = granted.get(role.group(1), [])
+            if not any("ec2:CreateNetworkInterface" in document for document in attached):
+                problems.append(
+                    f"infra/{layer.name}: aws_lambda_function.{name} has a vpc_config and "
+                    f"aws_iam_role.{role.group(1)} cannot ec2:CreateNetworkInterface. Lambda "
+                    f"makes the interface with this role before any code runs, so CreateFunction "
+                    f"itself is refused — minutes into an apply, after everything before it built"
+                )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -890,6 +960,7 @@ def main() -> int:
     problems.extend(_check_resolution())
     problems.extend(_check_permissions_exist())
     problems.extend(_check_the_teardown_scripts_can_run())
+    problems.extend(_check_every_vpc_function_can_attach_to_it())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())

@@ -460,6 +460,35 @@ data "aws_iam_policy_document" "escalate" {
     # plan-time failure with the feature merely switched off.
     resources = ["${aws_cloudwatch_log_group.escalate[0].arn}:*"]
   }
+
+  # **The statement the other three roles have and this one was written without.**
+  #
+  # This function has a `vpc_config` like every other function here, so Lambda creates an elastic
+  # network interface in the private subnets on its behalf — using *this role*, at create time,
+  # before any code runs. Without the grant `CreateFunction` itself is refused:
+  # `InvalidParameterValueException: The provided execution role does not have permissions to
+  # call CreateNetworkInterface on EC2`, five minutes into an apply that had already built the
+  # other three functions and pushed the image.
+  #
+  # It is the newest role in the layer and the omission is the ordinary one: the escalation was
+  # written as *what this tier is allowed to read* — Textract, Bedrock, the page, the key — and
+  # attaching to the network is not a permission the feature needs, it is one the runtime needs.
+  # `scripts/check_deploy_path.py` now pairs every `vpc_config` with its role's grant, because a
+  # fourth function is exactly when a copied block stops being copied.
+  #checkov:skip=CKV_AWS_111:The EC2 network-interface actions Lambda requires for VPC attachment are documented as not resource-scoped.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpc"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role" "escalate" {
