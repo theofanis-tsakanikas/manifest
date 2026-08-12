@@ -403,9 +403,23 @@ resource "aws_sfn_state_machine" "extraction" {
           Resource = "arn:aws:states:::lambda:invoke"
           Parameters = {
             "FunctionName" : aws_lambda_function.provenance_gate.arn,
+            # **The record must be able to say which version it is.**
+            #
+            # `fingerprint` and `reader` were not passed, so the gate — which returns
+            # `{**event, ...}` — could not carry them, and the object written to
+            # `records/<id>/<fingerprint>.json` did not contain its own fingerprint. The *key*
+            # said which version it was and the *record* did not, which is a record you cannot
+            # check against the place it came from: rename the object and nothing in it
+            # disagrees.
+            #
+            # It surfaced as the landing function refusing a record with no version — doctrine
+            # rule 4 depends on versions being retrievable and comparable, and a diff between two
+            # records neither of which names itself is a diff between two anonymous documents.
             "Payload" : {
               "document_id.$" : "$.extraction.outcome.document_id",
               "document_type.$" : "$.extraction.outcome.document_type",
+              "fingerprint.$" : "$.extraction.outcome.fingerprint",
+              "reader.$" : "$.extraction.outcome.reader",
               "language.$" : "$.tier0.reading.language",
               "fields.$" : "$.extraction.outcome.fields"
             }

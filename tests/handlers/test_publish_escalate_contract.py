@@ -102,3 +102,18 @@ def test_the_requirement_still_refuses_an_outcome_that_is_missing_one(
     without_language = {key: value for key, value in outcome.items() if key != "language"}
     with pytest.raises(escalate.HandlerError, match="language"):
         escalate.required_facts({"extraction": {"outcome": without_language}}, without_language)
+
+
+def test_the_published_record_can_say_which_version_it_is(outcome: dict[str, Any]) -> None:
+    """`fingerprint` and `reader` travel with the record, not only in its object key.
+
+    The record is written to `records/<document_id>/<fingerprint>.json`. For a while the key
+    said which version it was and the object did not — rename the file and nothing inside
+    disagrees. Doctrine rule 4 is about versions being retrievable *and comparable*, and a diff
+    between two records neither of which names itself is a diff between two anonymous documents.
+
+    It surfaced as the landing function refusing a record with no version, which is the cheap
+    end of that failure. The expensive end is a restatement nobody can attribute.
+    """
+    for fact in ("document_id", "fingerprint", "document_type", "reader", "language"):
+        assert outcome.get(fact), f"a published record with no {fact} cannot be checked against"
