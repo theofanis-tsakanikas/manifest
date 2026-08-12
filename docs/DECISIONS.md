@@ -303,6 +303,39 @@ with a check that could not see the difference. The reader version was found by 
 Lambda failing on a missing threshold artefact. The font was found by a merge refusing. Neither
 was found by anything designed to look.
 
+**22 · Tier 3 points at the model the account holds an agreement for, and the reason is written
+here because the value is not in the repository.**
+*(Added 2026-08-12, when the first Greek page reached tier 3.)*
+
+`escalation_model_arn` lives in `infra/bootstrap/terraform.tfvars`, which `.gitignore` refuses
+because the same file carries an alert address that is personal data. So the one deployment
+decision a reader would most want to check — *which model reads the documents* — is invisible to
+anyone reading the repository, and the comment beside it is invisible with it. That is the whole
+reason for this entry.
+
+**What happened.** The tier was pointed at `eu.anthropic.claude-sonnet-5`. The first Greek
+packing list to reach it was refused: *"anthropic.claude-sonnet-5 is not available for this
+account"*. `get-foundation-model-availability` reports the agreement as `NOT_AVAILABLE` for
+Sonnet 5 and for every Claude 4 variant, and `AVAILABLE` for `anthropic.claude-haiku-4-5`.
+Accepting a model agreement is a commercial act on the account rather than a deployment step,
+and it is not one an automated agent should perform on somebody's behalf. The tier points at
+what the account already holds.
+
+**What did not change.** The profile is still an `eu.*` one, and its six underlying models were
+checked on the day: `eu-north-1`, `eu-west-3`, `eu-south-1`, `eu-south-2`, `eu-west-1`,
+`eu-central-1`, and nothing else. `docs/REGULATORY.md` says document text is processed in the
+EU, and that sentence has to stay true when the model changes — which is exactly the check a
+model swap invites somebody to skip.
+
+**Two facts about the failure, worth more than the fix.** The refusal arrived only after IAM was
+correct — the previous attempt failed on a policy that named the inference profile and not the
+six foundation models it routes to, and *that* error named `eu-north-1`, a Region this estate
+does not deploy into. Two different refusals, both reading as "AccessDenied on Bedrock", with
+different causes and different fixes. And neither was reachable from any offline check: an
+account's model agreements are not in the configuration.
+
+---
+
 ## Deliberately deferred, or out of scope
 
 - **Live capture and screenshots — out of scope, not deferred.** See decision 14.
