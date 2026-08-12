@@ -393,12 +393,20 @@ def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome
     """
     athena = _client("athena")
     expected = len(outcome.get("fields", []))
+    # **Nothing is interpolated, and the first version of this was.** It built the `WHERE` with
+    # an f-string, in the same commit that argues a field value must be encoded rather than
+    # concatenated — and `ruff`'s S608 refused it. The document id here is one this script chose,
+    # so it was not exploitable; it was the same shape as the thing being guarded against, three
+    # files away from the guard.
+    #
+    # The database goes in the execution *context* rather than into the statement, so the table
+    # can be named bare and there is no identifier to quote either.
     started = athena.start_query_execution(
         QueryString=(
-            "SELECT count(*) AS rows, count(value) AS with_a_value "
-            f'FROM "{estate.glue_database}"."document_version" '
-            f"WHERE document_id = '{document_id}'"
+            "SELECT count(*) AS landed, count(value) AS with_a_value "
+            "FROM document_version WHERE document_id = ?"
         ),
+        ExecutionParameters=[document_id],
         WorkGroup=estate.athena_workgroup,
         QueryExecutionContext={"Database": estate.glue_database},
     )["QueryExecutionId"]

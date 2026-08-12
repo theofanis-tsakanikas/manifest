@@ -735,6 +735,12 @@ resource "aws_lambda_function" "land" {
   # table. The queue in front of this is the pipeline, and the pipeline is per document.
   reserved_concurrent_executions = 2
 
+  # The same key every other function's environment is encrypted with. Not a formality here:
+  # `kms:Decrypt` on it is already granted to this role, so leaving it off would have been a
+  # function whose configuration is readable to anyone who can read Lambda's API while the data
+  # it processes is not.
+  kms_key_arn = var.data_key_arn
+
   environment {
     variables = {
       RECORDS_BUCKET   = var.records_bucket

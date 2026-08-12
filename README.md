@@ -88,7 +88,7 @@ command in this repository, not a summary of one.
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
 | `make gate-proof` | **48 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **606 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
+| `checkov` | **630 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
 | test suite | **338 passing**, offline, credential-free |
 
