@@ -149,7 +149,10 @@ class TestTheInsertEncodesRatherThanInterpolates:
         )
         # The attack survives *as text*, with its quotes doubled. That is the property: it is
         # still there, still readable, and no longer able to close the literal it sits in.
-        assert attack.replace("'", "''") in statement
+        assert attack.replace("'", "''") in statement, (
+            "the value must survive as text with its quotes doubled. Un-doubled, it closes the "
+            "literal it sits in and the rest of it is parsed as statement"
+        )
 
         # And the statement's shape is untouched by it. Two fields in, two tuples out, one
         # INSERT — a closed literal would have produced a third tuple or a second statement.

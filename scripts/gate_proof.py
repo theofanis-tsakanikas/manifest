@@ -326,12 +326,21 @@ def _remove_a_layer_from_the_teardown(root: Path) -> bool:
     to the deploy workflow, and the destroy file is the one they do not have open. What is left
     is a repository that reads as complete and an estate that cannot be fully torn down.
     """
+    # **Retargeted 2026-08-12, and the retarget is the harness working.** The teardown order was
+    # `lakehouse` then `extraction`; the landing function made `extraction` depend on the lake,
+    # so the deploy order reversed and the teardown reversed with it. This mutation's old anchor
+    # — the text between `lakehouse:` and `extraction:` — stopped existing, and it was reported
+    # **STALE** rather than passing. That is Attestor's third rule earning its place on a real
+    # refactor for the second time in this file.
+    #
+    # Anchored on the job that is now last but one, rather than on a pair of neighbours, so the
+    # next reordering moves it again only if that job moves.
     path = root / ".github/workflows/destroy.yml"
     text = path.read_text(encoding="utf-8")
     start = text.find("  lakehouse:\n")
     if start < 0:
         return False
-    end = text.find("\n  extraction:", start)
+    end = text.find("\n  foundation:", start)
     if end < 0:
         return False
     path.write_text(text[:start] + text[end + 1 :], encoding="utf-8")
@@ -575,6 +584,24 @@ def _let_a_push_cancel_a_deploy_in_flight(root: Path) -> bool:
         root / ".github/workflows/ci.yml",
         "  group: ci-${{ github.workflow }}-${{ github.ref }}",
         "  group: ci-${{ github.ref }}",
+    )
+
+
+def _let_a_document_write_its_own_sql(root: Path) -> bool:
+    """Stop doubling the quote in a value on its way into the landing statement.
+
+    A field value is text a counterparty wrote. The reader makes well-formed SQL unlikely, and
+    unlikely is the word that makes this the classic mistake — a consignee of `ACME', 1, 1);
+    DROP TABLE` is a document somebody can post, and the lake is the one place in this system
+    where document text becomes a statement rather than a value.
+
+    The mutation is the removal of one `.replace`, which is how it would be written by somebody
+    tidying a line they thought was redundant.
+    """
+    return _replace(
+        root / "src/manifest/core/lake.py",
+        'return "\'" + str(value).replace("\'", "\'\'") + "\'"',
+        'return "\'" + str(value) + "\'"',
     )
 
 
@@ -1075,6 +1102,20 @@ MUTATIONS: tuple[Mutation, ...] = (
         _remove_a_layer_from_the_teardown,
         "Acquired one layer at a time and never on purpose. The repository reads as complete "
         "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "let a document write its own SQL",
+        "record lake",
+        # **No `-x` here, unlike its neighbours.** Stopping at the first failure stops at the
+        # quote-doubling test, whose message is about backslashes — true, and not the refusal
+        # this mutation is named for. The planted-statement tests are what must speak, and they
+        # run after it. A mutation that is refused for a reason other than its own is a
+        # mutation reporting a coincidence.
+        ["pytest", "-q", "tests/core/test_lake.py"],
+        "closes the literal it sits in",
+        _let_a_document_write_its_own_sql,
+        "The one place document text becomes a statement rather than a value. A reader makes "
+        "well-formed SQL unlikely, and unlikely is what makes it the classic mistake.",
     ),
     Mutation(
         "let a push cancel a deploy in flight",
