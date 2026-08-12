@@ -759,3 +759,31 @@ resource "aws_lambda_function" "land" {
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
+
+# ── The catalogue's own permission layer ─────────────────────────────────────
+#
+# **IAM is necessary and not sufficient here, because this account enforces Lake Formation.**
+# `CreateTableDefaultPermissions` is `[]` rather than `IAM_ALLOWED_PRINCIPALS` — set by a
+# sibling project, not by this one — so a principal holding every `glue:` action still gets
+# `Access Denied when accessing database ..., table ...` from Athena. The landing function did.
+#
+# `ALTER` is in the list and is not decoration: an Iceberg append rewrites the table's metadata
+# pointer, so a writer that may `INSERT` and not `ALTER` commits data files nobody can see.
+resource "aws_lakeformation_permissions" "land_writes_the_table" {
+  principal   = aws_iam_role.land.arn
+  permissions = ["SELECT", "INSERT", "ALTER", "DESCRIBE"]
+
+  table {
+    database_name = var.glue_database
+    name          = var.lake_table
+  }
+}
+
+resource "aws_lakeformation_permissions" "land_sees_the_database" {
+  principal   = aws_iam_role.land.arn
+  permissions = ["DESCRIBE"]
+
+  database {
+    name = var.glue_database
+  }
+}

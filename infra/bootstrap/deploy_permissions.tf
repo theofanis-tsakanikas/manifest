@@ -752,6 +752,36 @@ data "aws_iam_policy_document" "deploy_compute" {
     resources = ["*"]
   }
 
+  # **Lake Formation, which this account enforces because a sibling project turned it on.**
+  #
+  # `CreateDatabaseDefaultPermissions` and `CreateTableDefaultPermissions` are both `[]` rather
+  # than `IAM_ALLOWED_PRINCIPALS`, and the data lake admins are `watermark-deploy` and the
+  # author's own user. Neither was set by this repository. The consequence is that IAM alone
+  # does not open the catalogue: the landing function held every `glue:` action it needed and
+  # Athena still answered `Access Denied when accessing database manifest_records, table
+  # document_version`.
+  #
+  # This role created the database, so Lake Formation gave it `ALL` **with grant option** — it
+  # can pass what it holds to the function it also creates. What it could not do is *issue* the
+  # grant, because holding a permission in Lake Formation and being allowed to call
+  # `GrantPermissions` are, as ever, two different facts.
+  #
+  # Recorded as a decision rather than a fix: an estate does not exist in isolation, and this is
+  # the second time an account-level setting from a neighbouring project has changed what this
+  # one has to declare. The first was `create_oidc_provider = false`.
+  statement {
+    sid    = "GrantTheCatalogueToWhatThisEstateBuilds"
+    effect = "Allow"
+    actions = [
+      "lakeformation:GrantPermissions",
+      "lakeformation:RevokePermissions",
+      "lakeformation:ListPermissions",
+      "lakeformation:GetDataLakeSettings",
+      "lakeformation:GetResourceLFTags",
+    ]
+    resources = ["*"]
+  }
+
   # **The namespace's admin secret, which Redshift creates and Terraform then reads back.**
   #
   # `manage_admin_password` means the service mints the credential rather than the configuration
