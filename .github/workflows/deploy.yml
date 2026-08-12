@@ -181,11 +181,17 @@ jobs:
           # Resolved here rather than by a Terraform data source, deliberately: a data source
           # would make `terraform plan` require a real profile, and the offline check that plans
           # every optional feature with its flag on and off would need an account to run.
+          # The profile ARN goes in as an argument, not an environment variable. A `VAR=x cmd`
+          # prefix applies to `cmd` alone, and in a pipeline that is the *first* stage — so
+          # `PROFILE_ARN=... aws ... | python3` set it for `aws`, which never reads it, and left
+          # `python3` with a `KeyError`. It passed locally because the local test exported it
+          # first, which is the one difference that made the two behave differently.
           ESCALATION_MODEL_ARNS=$(
-            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+            aws bedrock get-inference-profile \
               --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
               --query 'models[].modelArn' --output json \
-            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+            | python3 -c 'import json, sys; print(json.dumps([sys.argv[1], *json.load(sys.stdin)]))' \
+                "$ESCALATION_MODEL_ARN"
           )
           if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
             echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
@@ -270,11 +276,17 @@ jobs:
           # Resolved here rather than by a Terraform data source, deliberately: a data source
           # would make `terraform plan` require a real profile, and the offline check that plans
           # every optional feature with its flag on and off would need an account to run.
+          # The profile ARN goes in as an argument, not an environment variable. A `VAR=x cmd`
+          # prefix applies to `cmd` alone, and in a pipeline that is the *first* stage — so
+          # `PROFILE_ARN=... aws ... | python3` set it for `aws`, which never reads it, and left
+          # `python3` with a `KeyError`. It passed locally because the local test exported it
+          # first, which is the one difference that made the two behave differently.
           ESCALATION_MODEL_ARNS=$(
-            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+            aws bedrock get-inference-profile \
               --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
               --query 'models[].modelArn' --output json \
-            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+            | python3 -c 'import json, sys; print(json.dumps([sys.argv[1], *json.load(sys.stdin)]))' \
+                "$ESCALATION_MODEL_ARN"
           )
           if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
             echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
@@ -456,11 +468,17 @@ jobs:
           # Resolved here rather than by a Terraform data source, deliberately: a data source
           # would make `terraform plan` require a real profile, and the offline check that plans
           # every optional feature with its flag on and off would need an account to run.
+          # The profile ARN goes in as an argument, not an environment variable. A `VAR=x cmd`
+          # prefix applies to `cmd` alone, and in a pipeline that is the *first* stage — so
+          # `PROFILE_ARN=... aws ... | python3` set it for `aws`, which never reads it, and left
+          # `python3` with a `KeyError`. It passed locally because the local test exported it
+          # first, which is the one difference that made the two behave differently.
           ESCALATION_MODEL_ARNS=$(
-            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+            aws bedrock get-inference-profile \
               --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
               --query 'models[].modelArn' --output json \
-            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+            | python3 -c 'import json, sys; print(json.dumps([sys.argv[1], *json.load(sys.stdin)]))' \
+                "$ESCALATION_MODEL_ARN"
           )
           if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
             echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
