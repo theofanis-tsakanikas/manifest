@@ -74,6 +74,8 @@ class Estate:
     data_key: str
     state_machine: str
     queue_url: str
+    glue_database: str
+    athena_workgroup: str
     results: list[Result] = field(default_factory=list)
 
     def check(self, name: str, passed: bool, detail: str) -> bool:
@@ -103,6 +105,8 @@ def _resolve(project: str) -> Estate:
         data_key=parameter("foundation/data_key_arn"),
         state_machine=parameter("extraction/state_machine_arn"),
         queue_url=f"https://sqs.{region}.amazonaws.com/{account}/{queue}",
+        glue_database=parameter("lakehouse/glue_database"),
+        athena_workgroup=parameter("lakehouse/athena_workgroup"),
     )
 
 
@@ -371,6 +375,60 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
     )
 
     _check_a_box_against_the_page(estate, document_id, record)
+    _check_the_record_reached_the_lake(estate, document_id, outcome)
+
+
+def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome: dict) -> None:
+    """Claim it in the warehouse's own words: query the table and count the rows.
+
+    **The lake was a schema over nothing until this ran.** `infra/lakehouse` declared an Iceberg
+    table on the day it was written and no step ever wrote to it, so the marts, the search
+    surface and the bulk reprocessor all read from an empty table and every one of them
+    "worked". Asserted by querying rather than by trusting the landing state's return value: a
+    state that reports `landed: 9` and committed nothing is the failure this is for.
+
+    The count is compared against the *fields* of the published record, not against a constant —
+    an abstention lands as a row with a null value, and a check that expected only publishable
+    fields would go green on a lake that had quietly dropped the queue.
+    """
+    athena = _client("athena")
+    expected = len(outcome.get("fields", []))
+    started = athena.start_query_execution(
+        QueryString=(
+            "SELECT count(*) AS rows, count(value) AS with_a_value "
+            f'FROM "{estate.glue_database}"."document_version" '
+            f"WHERE document_id = '{document_id}'"
+        ),
+        WorkGroup=estate.athena_workgroup,
+        QueryExecutionContext={"Database": estate.glue_database},
+    )["QueryExecutionId"]
+
+    deadline = time.time() + 180
+    state = "QUEUED"
+    while time.time() < deadline:
+        state = athena.get_query_execution(QueryExecutionId=started)["QueryExecution"]["Status"][
+            "State"
+        ]
+        if state in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+            break
+        time.sleep(3)
+
+    if state != "SUCCEEDED":
+        estate.check("9 · the published record reached the lake", False, f"the query {state}")
+        return
+
+    rows = athena.get_query_results(QueryExecutionId=started)["ResultSet"]["Rows"]
+    landed = int(rows[1]["Data"][0]["VarCharValue"])
+    with_a_value = int(rows[1]["Data"][1]["VarCharValue"])
+    publishable = int(outcome.get("publishable_count", 0))
+    estate.check(
+        "9 · the published record reached the lake",
+        landed == expected and with_a_value == publishable,
+        f"{landed} row(s) in the Iceberg table against {expected} field(s) published, "
+        f"{with_a_value} carrying a value against {publishable} publishable. An abstention "
+        f"lands as a row with a null value: dropping it would hide the review queue from every "
+        f"query in the analytics layer, which is the number a thresholding system is judged on",
+    )
 
 
 def _queue_carries(estate: Estate, document_id: str, expected: set[str]) -> bool:

@@ -217,9 +217,104 @@ jobs:
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/batch destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
+  extraction:
+    name: "destroy · extraction"
+    needs: [analytics, batch]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    environment: destroy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Same reason as the deploy: a transcribed value looks like an independent setting, and
+        # a destroy pointed at the wrong state bucket is a destroy that reports success having
+        # torn down nothing.
+        run: |
+          set -euo pipefail
+          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
+          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
+          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
+          # assignment is the form whose failure `set -e` actually sees.
+          TF_STATE_BUCKET=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
+            --query 'Parameter.Value' --output text)
+          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve the escalation model
+        # The teardown evaluates the configuration, so a variable with a validation rule still
+        # has to satisfy it. Without this the destroy passes `[""]`, the rule refuses it, and
+        # the estate cannot be torn down from CI — the failure the destroy path exists to
+        # prevent, reached through the variable rather than the permission.
+        run: |
+          set -euo pipefail
+          ESCALATION_MODEL_ARN=$(aws ssm get-parameter \
+            --name "/${{ env.PROJECT }}/bootstrap/escalation_model_arn" \
+            --query 'Parameter.Value' --output text)
+          echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN" >> "$GITHUB_ENV"
+      - name: resolve what foundation published
+        # **One resolver, and it stands in rather than refusing.**
+        #
+        # Foundation runs last and takes its own SSM parameters with it, so after a
+        # teardown that failed part-way — the only kind anybody re-runs — every layer
+        # above it used to stop here, before Terraform started. The estate then sat in
+        # the one state where the workflow written to remove it refused to run.
+        #
+        # A destroy is removing these resources, so the values only have to satisfy
+        # variable validation; nothing reads them. Same reasoning already written for
+        # `reader_image_digest`, which is all zeros so it satisfies the format and
+        # could never name a real image. Placeholders are announced, loudly.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer foundation \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
+      - name: resolve what lakehouse published
+        # **Now needed by this job too, because the landing function lives here.** The pipeline
+        # writes the published record into the Iceberg table, so `infra/extraction` takes the
+        # database, the workgroup and the bucket as variables — and a teardown that could not
+        # supply them would stop at an input prompt with no terminal to appear on.
+        #
+        # It resolves rather than reads: by the new order this layer is destroyed *before* the
+        # lakehouse, so the references are still there — and the resolver stands in anyway, for
+        # the re-run after a partial failure where they are not.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          python3 scripts/destroy_references.py \
+            --project "${{ env.PROJECT }}" --layer lakehouse \
+            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
+      - name: release deletion protection on the record tables
+        # The decision table and the ledger carry `deletion_protection_enabled`, which is right
+        # for every day except this one. Released explicitly here so that the protection is a
+        # real obstacle during normal operation rather than a flag somebody left off.
+        run: |
+          for table in "${PROJECT}-review-decisions" "${PROJECT}-reprocessing-ledger"; do
+            aws dynamodb update-table --table-name "$table" --no-deletion-protection-enabled || true
+          done
+      - run: |
+          terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
+          # `reader_image_digest` and the model ARN decide nothing in a teardown, and both
+          # still have to resolve, because a destroy evaluates the configuration. The digest
+          # is deliberately all zeros: it satisfies the format and could never name a real
+          # image, so a destroy that somehow ended in an apply would fail rather than deploy
+          # a function pointing at whatever happened to be pushed last.
+          terraform -chdir=infra/extraction destroy -auto-approve -refresh=false \
+            -var 'expires_at=1970-01-01' \
+            -var 'enable_escalation_tiers=true' \
+            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
+            -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000'
+
   lakehouse:
     name: "destroy · lakehouse"
-    needs: [analytics, batch]
+    needs: extraction
     # Always. A teardown that stops at the first failure leaves exactly the expensive half
     # standing, which is the failure mode this whole file exists to prevent.
     if: always() && !cancelled()
@@ -321,89 +416,9 @@ jobs:
       - run: |
           terraform -chdir=infra/lakehouse destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
 
-  extraction:
-    name: "destroy · extraction"
-    needs: lakehouse
-    if: always() && !cancelled()
-    runs-on: ubuntu-latest
-    environment: destroy
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
-          aws-region: ${{ env.AWS_REGION }}
-      - name: resolve what bootstrap published
-        # Same reason as the deploy: a transcribed value looks like an independent setting, and
-        # a destroy pointed at the wrong state bucket is a destroy that reports success having
-        # torn down nothing.
-        run: |
-          set -euo pipefail
-          # Assigned to a variable first, deliberately. `echo "X=$(aws ...)"` succeeds when the
-          # `aws` call fails — the echo is the command `set -e` judges — and writes an empty
-          # value, which surfaces four minutes later as `-backend-config="bucket="`. An
-          # assignment is the form whose failure `set -e` actually sees.
-          TF_STATE_BUCKET=$(aws ssm get-parameter \
-            --name "/${{ env.PROJECT }}/bootstrap/state_bucket" \
-            --query 'Parameter.Value' --output text)
-          echo "TF_STATE_BUCKET=$TF_STATE_BUCKET" >> "$GITHUB_ENV"
-          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
-      - name: resolve the escalation model
-        # The teardown evaluates the configuration, so a variable with a validation rule still
-        # has to satisfy it. Without this the destroy passes `[""]`, the rule refuses it, and
-        # the estate cannot be torn down from CI — the failure the destroy path exists to
-        # prevent, reached through the variable rather than the permission.
-        run: |
-          set -euo pipefail
-          ESCALATION_MODEL_ARN=$(aws ssm get-parameter \
-            --name "/${{ env.PROJECT }}/bootstrap/escalation_model_arn" \
-            --query 'Parameter.Value' --output text)
-          echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN" >> "$GITHUB_ENV"
-      - name: resolve what foundation published
-        # **One resolver, and it stands in rather than refusing.**
-        #
-        # Foundation runs last and takes its own SSM parameters with it, so after a
-        # teardown that failed part-way — the only kind anybody re-runs — every layer
-        # above it used to stop here, before Terraform started. The estate then sat in
-        # the one state where the workflow written to remove it refused to run.
-        #
-        # A destroy is removing these resources, so the values only have to satisfy
-        # variable validation; nothing reads them. Same reasoning already written for
-        # `reader_image_digest`, which is all zeros so it satisfies the format and
-        # could never name a real image. Placeholders are announced, loudly.
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet boto3
-          python3 scripts/destroy_references.py \
-            --project "${{ env.PROJECT }}" --layer foundation \
-            --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
-      - name: release deletion protection on the record tables
-        # The decision table and the ledger carry `deletion_protection_enabled`, which is right
-        # for every day except this one. Released explicitly here so that the protection is a
-        # real obstacle during normal operation rather than a flag somebody left off.
-        run: |
-          for table in "${PROJECT}-review-decisions" "${PROJECT}-reprocessing-ledger"; do
-            aws dynamodb update-table --table-name "$table" --no-deletion-protection-enabled || true
-          done
-      - run: |
-          terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          # `reader_image_digest` and the model ARN decide nothing in a teardown, and both
-          # still have to resolve, because a destroy evaluates the configuration. The digest
-          # is deliberately all zeros: it satisfies the format and could never name a real
-          # image, so a destroy that somehow ended in an apply would fail rather than deploy
-          # a function pointing at whatever happened to be pushed last.
-          terraform -chdir=infra/extraction destroy -auto-approve -refresh=false \
-            -var 'expires_at=1970-01-01' \
-            -var 'enable_escalation_tiers=true' \
-            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
-            -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000'
-
   foundation:
     name: "destroy · foundation"
-    needs: extraction
+    needs: lakehouse
     if: always() && !cancelled()
     runs-on: ubuntu-latest
     environment: destroy

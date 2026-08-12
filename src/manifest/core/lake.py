@@ -123,3 +123,104 @@ def rows_for(
 def _number(value: Any) -> float | None:
     """A float, or nothing. `0.0` is a score and must survive; `None` is the absence of one."""
     return None if value is None else float(value)
+
+
+def insert_statement(rows: Sequence[Row], *, database: str, table: str) -> str:
+    """The `INSERT` that lands these rows, with every value encoded rather than interpolated.
+
+    **A field value is text a counterparty wrote.** `CLAUDE.md` says that about extraction
+    prompts and it is no less true of a warehouse: a party name is chosen by the party. The
+    values here have already passed through a reader, so they are unlikely to be well-formed
+    SQL — and "unlikely" is the word that makes this the classic mistake. A packing list whose
+    consignee is `ACME', 1, 1); DROP TABLE` is a document somebody can post.
+
+    So values never reach the statement as themselves. Strings are encoded by the one rule
+    Trino, and therefore Athena, defines for a string literal — a single quote is written twice —
+    and everything else is refused rather than quoted hopefully:
+
+    *Numbers* are rendered from `float`/`int` the caller already parsed, so a string cannot
+    arrive in a numeric position at all. *Nulls* are the bare keyword, because `'NULL'` is a
+    three-character string and the difference between "we abstained" and "we published the word
+    NULL" is the whole of doctrine rule 3.
+
+    **Why a string at all, rather than parameters.** Athena's execution parameters carry every
+    value as text and cast on the way in, which puts the type decision inside the engine and out
+    of reach of a test. Here the encoding is a pure function over plain data, `evals/injection`
+    can attack it, and `gate-proof` can break it — which is the trade this repository makes
+    everywhere else too.
+    """
+    if not rows:
+        raise ValueError("no rows to land; an INSERT with no VALUES is a syntax error")
+
+    columns = (
+        "document_id, version, supersedes, reader, field, value, confidence, threshold, "
+        "page, box, provenance_verified, review_decision, extracted_on, extraction_date"
+    )
+    values = ",\n  ".join(_row_literal(row) for row in rows)
+    target = f'"{_identifier(database)}"."{_identifier(table)}"'
+    return f"INSERT INTO {target} ({columns})\nVALUES\n  {values}"
+
+
+def _row_literal(row: Row) -> str:
+    return (
+        "("
+        + ", ".join(
+            (
+                _text(row.document_id),
+                _text(row.version),
+                _text(row.supersedes),
+                _text(row.reader),
+                _text(row.field),
+                _text(row.value),
+                _double(row.confidence),
+                _double(row.threshold),
+                _integer(row.page),
+                _box(row.box),
+                "true" if row.provenance_verified else "false",
+                _text(row.review_decision),
+                f"timestamp {_text(row.extracted_on)}",
+                f"date {_text(row.extracted_on[:10])}",
+            )
+        )
+        + ")"
+    )
+
+
+def _identifier(name: str) -> str:
+    """A catalogue name, refused unless it is one.
+
+    These come from `infra/lakehouse`, not from a document, so the check is cheap insurance
+    rather than a control — but an identifier cannot be escaped the way a value can, so the only
+    safe treatment is to refuse anything unexpected instead of quoting it and hoping.
+    """
+    if not name or not all(character.isalnum() or character == "_" for character in name):
+        raise ValueError(
+            f"{name!r} is not a plain catalogue identifier. Unlike a value, an identifier has no "
+            f"escaping rule that makes an arbitrary string safe, so it is refused"
+        )
+    return name
+
+
+def _text(value: str | None) -> str:
+    if value is None:
+        return "NULL"
+    # The whole of the rule, and it is the whole of it on purpose. Backslash is *not* an escape
+    # character in a Trino string literal, so doubling quotes is sufficient and adding
+    # backslash handling would corrupt any value that legitimately contains one — a Windows path
+    # in a free-text field, most obviously.
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _double(value: float | None) -> str:
+    return "NULL" if value is None else f"CAST({float(value)!r} AS DOUBLE)"
+
+
+def _integer(value: int | None) -> str:
+    return "NULL" if value is None else str(int(value))
+
+
+def _box(box: tuple[float, ...] | None) -> str:
+    if box is None:
+        return "NULL"
+    edges = ", ".join(f"CAST({float(edge)!r} AS DOUBLE)" for edge in box)
+    return f"ARRAY[{edges}]"

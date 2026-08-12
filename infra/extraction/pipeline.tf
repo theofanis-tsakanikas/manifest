@@ -508,7 +508,50 @@ resource "aws_sfn_state_machine" "extraction" {
             "ServerSideEncryption" : "aws:kms",
             "SsekmsKeyId" : var.data_key_arn
           }
-          End = true
+          ResultPath = "$.published"
+          Next       = "LandInTheLake"
+        }
+
+        # **The record becomes queryable, and the order is deliberate.**
+        #
+        # Landing runs *after* the object is written, never instead of it. The customs record is
+        # the object in the records bucket — versioned, keyed by fingerprint, the thing doctrine
+        # rule 4 protects. The lake is a view of it, and a view that can be rebuilt from the
+        # bucket is a view whose loss is an inconvenience rather than a restatement.
+        #
+        # **`Catch` sends a failed landing to review rather than failing the execution**, and
+        # that is the opposite of the choice made at `VerifyProvenance` one state earlier. The
+        # difference is what is at stake: a provenance gate that cannot run must stop everything,
+        # because publishing past it is the thing this system exists not to do. A row that did
+        # not reach the warehouse has cost a query and nothing else — the record is published,
+        # the reviewer's queue is intact, and the row can be replayed. Failing the execution
+        # there would turn an analytics outage into a document that looks unprocessed.
+        LandInTheLake = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::lambda:invoke"
+          Parameters = {
+            "FunctionName" : aws_lambda_function.land.arn,
+            "Payload" : { "record.$" : "$.provenance.checked" }
+          }
+          ResultSelector = { "landed.$" : "$.Payload" }
+          ResultPath     = "$.lake"
+          Retry = [{
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }]
+          Catch = [{ ErrorEquals = ["States.ALL"], Next = "LandingFailed", ResultPath = "$.error" }]
+          End   = true
+        }
+
+        # A terminal state of its own rather than a shared failure, so that "the warehouse is
+        # behind" is distinguishable in the execution history from "a document was refused".
+        # They have different responders and only one of them is urgent.
+        LandingFailed = {
+          Type  = "Fail"
+          Error = "LandingFailed"
+          Cause = "The record is published and its rows are not in the lake. The bucket is the record; the lake is a view and can be replayed."
         }
 
         QueueForReview = {

@@ -223,201 +223,9 @@ jobs:
   # every consumer to hold read access to the state bucket, and turns the blast radius of a bug
   # in the smallest layer into the blast radius of the largest. The two could then not be
   # destroyed separately either — which is the property `destroy.yml` depends on.
-  extraction:
-    name: "apply · extraction"
-    needs: foundation
-    runs-on: ubuntu-latest
-    environment: deploy
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
-      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
-        with:
-          # Constructed, not transcribed. The role name is a constant this repository owns;
-          # the account id is the single value CI cannot derive.
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
-          aws-region: ${{ env.AWS_REGION }}
-      - name: resolve what bootstrap published
-        # Everything below is a consequence of a name `infra/bootstrap` already chose, so it is
-        # read from that layer rather than copied into repository configuration. A copied value
-        # looks like an independent setting: rename the state bucket and this becomes a deploy
-        # that fails on a backend nobody can find, with the fix in a settings page instead of a
-        # diff.
-        #
-        # The account id is the one value that cannot be resolved this way — CI has to know
-        # *which* account before it can ask that account anything, and reading a parameter is
-        # already asking.
-        run: |
-          set -euo pipefail
-          read_param() {
-            aws ssm get-parameter --name "/${{ env.PROJECT }}/bootstrap/$1" \
-              --with-decryption --query 'Parameter.Value' --output text
-          }
-          # Assigned first, for the reason above: inside an `echo`, a failed read is a
-          # successful command that writes an empty value.
-          TF_STATE_BUCKET=$(read_param state_bucket)
-          BUDGET_EMAIL=$(read_param budget_notification_email)
-          # The escalation model, read here rather than in a step of its own. It is a value
-          # `infra/bootstrap` published like the others, and a separate step is a step that can
-          # be added to one job and forgotten in another — which is exactly what happened: the
-          # extraction job passed an empty `escalation_model_arns` and the variable's own
-          # validation refused it, after the image had been built and pushed.
-          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
-          # **The profile is not the only thing a Converse call is authorised against.**
-          #
-          # A cross-Region inference profile routes to a foundation model in a Region Bedrock
-          # picks at call time, and IAM checks `bedrock:InvokeModel` on *that* ARN too. The first
-          # Greek page was refused on `eu-north-1` — a Region this estate does not deploy into
-          # and names nowhere. Which Regions a profile spans is AWS's decision and changes
-          # without notice, so the list is asked for rather than written down.
-          #
-          # Resolved here rather than by a Terraform data source, deliberately: a data source
-          # would make `terraform plan` require a real profile, and the offline check that plans
-          # every optional feature with its flag on and off would need an account to run.
-          # The profile ARN goes in as an argument, not an environment variable. A `VAR=x cmd`
-          # prefix applies to `cmd` alone, and in a pipeline that is the *first* stage — so
-          # `PROFILE_ARN=... aws ... | python3` set it for `aws`, which never reads it, and left
-          # `python3` with a `KeyError`. It passed locally because the local test exported it
-          # first, which is the one difference that made the two behave differently.
-          ESCALATION_MODEL_ARNS=$(
-            aws bedrock get-inference-profile \
-              --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
-              --query 'models[].modelArn' --output json \
-            | python3 -c 'import json, sys; print(json.dumps([sys.argv[1], *json.load(sys.stdin)]))' \
-                "$ESCALATION_MODEL_ARN"
-          )
-          if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
-            echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
-            exit 1
-          fi
-          {
-            echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
-            echo "BUDGET_EMAIL=$BUDGET_EMAIL"
-            echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
-            echo "ESCALATION_MODEL_ARNS=$ESCALATION_MODEL_ARNS"
-          } >> "$GITHUB_ENV"
-          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
-      - name: resolve what foundation published
-        # From SSM, not from a CI artifact. The artifact existed for exactly one workflow run,
-        # so dispatching this layer on its own found nothing — and `batch` and `analytics` had
-        # no path at all, because no run had ever produced one for them.
-        run: |
-          set -euo pipefail
-          resolved=0
-          while read -r name value; do
-            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
-            resolved=$((resolved + 1))
-          done < <(
-            aws ssm get-parameters-by-path \
-              --path "/${{ env.PROJECT }}/foundation" \
-              --query 'Parameters[].[Name,Value]' --output text \
-              | sed "s|/${{ env.PROJECT }}/foundation/||"
-          )
-          # An empty path is not an empty result, it is a missing foundation — and `set -e`
-          # cannot see it, because reading nothing is a successful read. Left unchecked this
-          # job would carry on, set no variables, and stop at an input prompt with no terminal
-          # to appear on: the same failure the required-variable gate was written to close,
-          # arriving through a different door.
-          if [ "$resolved" -eq 0 ]; then
-            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
-            exit 1
-          fi
-          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
-      - name: build and push the reader image
-        # **The reader binary is the artefact.** Every confidence threshold in this repository
-        # was derived from one build of it, so the functions are pinned to a *digest* rather
-        # than a tag: a tag says what somebody meant, a digest says what is there. The image
-        # itself refuses to build if the reader version or any language pack is not what the
-        # recording ceremony expects — see the Dockerfile.
-        id: image
-        run: |
-          set -euo pipefail
-          # The repository URL comes from what foundation published, not from a string built
-          # here. A constructed URL is a second place the name lives, and the two drift.
-          repository="$TF_VAR_reader_repository_url"
-          registry="${repository%%/*}"
-          aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
-            | docker login --username AWS --password-stdin "$registry"
-          # Tagged by commit, never `latest`. The repository is IMMUTABLE, so a tag cannot be
-          # moved onto a different build after the fact.
-          docker build -t "$repository:${{ github.sha }}" .
-          docker push "$repository:${{ github.sha }}"
-          digest=$(aws ecr describe-images \
-            --repository-name "${{ env.PROJECT }}-reader" \
-            --image-ids imageTag=${{ github.sha }} \
-            --query 'imageDetails[0].imageDigest' --output text)
-          if [ -z "$digest" ] || [ "$digest" = "None" ]; then
-            echo "::error::the image pushed but no digest came back; refusing to deploy a function pinned to nothing"
-            exit 1
-          fi
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-      - name: package the extraction handler
-        # Code and contracts from the same commit, in one artefact. A deployment where they came
-        # from different revisions would apply one version's comparison rules to another
-        # version's fields, and nothing anywhere would report it.
-        id: package
-        run: |
-          set -euo pipefail
-          staging="$(mktemp -d)"
-          python -m pip install --quiet --target "$staging" ".[handlers]"
-          cp -r contracts "$staging/contracts"
-          (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/publish.zip" .)
-          key="artifacts/publish-${{ github.sha }}.zip"
-          aws s3api put-object \
-            --bucket "$TF_VAR_records_bucket" \
-            --key "$key" \
-            --body "$GITHUB_WORKSPACE/publish.zip" \
-            --server-side-encryption aws:kms \
-            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "hash=$(openssl dgst -sha256 -binary "$GITHUB_WORKSPACE/publish.zip" | base64)" >> "$GITHUB_OUTPUT"
-      - name: upload the derived thresholds
-        # **The artefact the extraction handler reads, and that nothing created.** Without this
-        # the first invocation after a deploy fails on `NoSuchKey` — the same family as the
-        # provenance gate that was invoked by a name no layer created, and just as invisible:
-        # every offline check reads `recordings/thresholds.json` directly, so every offline
-        # check passed.
-        #
-        # Rendered from the committed recording rather than recomputed here. Recomputing would
-        # let a threshold move because a runner image was updated, in the one place where it
-        # decides whether a value reaches a customer.
-        run: |
-          set -euo pipefail
-          python scripts/thresholds_artefact.py --out thresholds.json
-          key=$(python scripts/thresholds_artefact.py --print-key)
-          aws s3api put-object \
-            --bucket "$TF_VAR_records_bucket" \
-            --key "$key" \
-            --body thresholds.json \
-            --content-type application/json \
-            --server-side-encryption aws:kms \
-            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
-          echo "uploaded $key"
-      - name: apply
-        run: |
-          terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          # **Both shapes plan before either applies.** An optional feature that breaks the
-          # configuration it is absent from is one every ordinary deploy trips over, and
-          # `terraform validate` cannot see it: both shapes are type-correct. This costs seconds
-          # and it is the only check in this repository that needs credentials, which is why it
-          # runs here rather than in the offline suite.
-          python3 -m pip install --quiet pyyaml
-          python3 scripts/check_optional_layers_plan.py
-          terraform -chdir=infra/extraction apply -auto-approve \
-            -var 'expires_at=${{ inputs.expires_at }}' \
-            -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
-            -var "publish_package_key=${{ steps.package.outputs.key }}" \
-            -var "publish_package_hash=${{ steps.package.outputs.hash }}" \
-            -var "escalation_model_arns=$ESCALATION_MODEL_ARNS" \
-            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
-            -var "enable_classifier=${{ inputs.enable_classifier }}" \
-            -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
-
   lakehouse:
     name: "apply · lakehouse"
-    needs: extraction
+    needs: foundation
     runs-on: ubuntu-latest
     environment: deploy
     steps:
@@ -540,10 +348,225 @@ jobs:
   # They were previously described as separate dispatches and were not: no job existed, so two
   # of the six layers had no path at all. Written, validated and unreachable is a different
   # thing from written, validated and not run.
+  extraction:
+    name: "apply · extraction"
+    needs: lakehouse
+    runs-on: ubuntu-latest
+    environment: deploy
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          # Constructed, not transcribed. The role name is a constant this repository owns;
+          # the account id is the single value CI cannot derive.
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT }}-deploy
+          aws-region: ${{ env.AWS_REGION }}
+      - name: resolve what bootstrap published
+        # Everything below is a consequence of a name `infra/bootstrap` already chose, so it is
+        # read from that layer rather than copied into repository configuration. A copied value
+        # looks like an independent setting: rename the state bucket and this becomes a deploy
+        # that fails on a backend nobody can find, with the fix in a settings page instead of a
+        # diff.
+        #
+        # The account id is the one value that cannot be resolved this way — CI has to know
+        # *which* account before it can ask that account anything, and reading a parameter is
+        # already asking.
+        run: |
+          set -euo pipefail
+          read_param() {
+            aws ssm get-parameter --name "/${{ env.PROJECT }}/bootstrap/$1" \
+              --with-decryption --query 'Parameter.Value' --output text
+          }
+          # Assigned first, for the reason above: inside an `echo`, a failed read is a
+          # successful command that writes an empty value.
+          TF_STATE_BUCKET=$(read_param state_bucket)
+          BUDGET_EMAIL=$(read_param budget_notification_email)
+          # The escalation model, read here rather than in a step of its own. It is a value
+          # `infra/bootstrap` published like the others, and a separate step is a step that can
+          # be added to one job and forgotten in another — which is exactly what happened: the
+          # extraction job passed an empty `escalation_model_arns` and the variable's own
+          # validation refused it, after the image had been built and pushed.
+          ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
+          # **The profile is not the only thing a Converse call is authorised against.**
+          #
+          # A cross-Region inference profile routes to a foundation model in a Region Bedrock
+          # picks at call time, and IAM checks `bedrock:InvokeModel` on *that* ARN too. The first
+          # Greek page was refused on `eu-north-1` — a Region this estate does not deploy into
+          # and names nowhere. Which Regions a profile spans is AWS's decision and changes
+          # without notice, so the list is asked for rather than written down.
+          #
+          # Resolved here rather than by a Terraform data source, deliberately: a data source
+          # would make `terraform plan` require a real profile, and the offline check that plans
+          # every optional feature with its flag on and off would need an account to run.
+          # The profile ARN goes in as an argument, not an environment variable. A `VAR=x cmd`
+          # prefix applies to `cmd` alone, and in a pipeline that is the *first* stage — so
+          # `PROFILE_ARN=... aws ... | python3` set it for `aws`, which never reads it, and left
+          # `python3` with a `KeyError`. It passed locally because the local test exported it
+          # first, which is the one difference that made the two behave differently.
+          ESCALATION_MODEL_ARNS=$(
+            aws bedrock get-inference-profile \
+              --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
+              --query 'models[].modelArn' --output json \
+            | python3 -c 'import json, sys; print(json.dumps([sys.argv[1], *json.load(sys.stdin)]))' \
+                "$ESCALATION_MODEL_ARN"
+          )
+          if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
+            echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
+            exit 1
+          fi
+          {
+            echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
+            echo "BUDGET_EMAIL=$BUDGET_EMAIL"
+            echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
+            echo "ESCALATION_MODEL_ARNS=$ESCALATION_MODEL_ARNS"
+          } >> "$GITHUB_ENV"
+          echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
+      - name: resolve what foundation published
+        # From SSM, not from a CI artifact. The artifact existed for exactly one workflow run,
+        # so dispatching this layer on its own found nothing — and `batch` and `analytics` had
+        # no path at all, because no run had ever produced one for them.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/foundation" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/foundation/||"
+          )
+          # An empty path is not an empty result, it is a missing foundation — and `set -e`
+          # cannot see it, because reading nothing is a successful read. Left unchecked this
+          # job would carry on, set no variables, and stop at an input prompt with no terminal
+          # to appear on: the same failure the required-variable gate was written to close,
+          # arriving through a different door.
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/foundation/ — apply the foundation layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/foundation/*"
+      - name: resolve what lakehouse published
+        # **The layer order was reversed for this step.** `extraction` used to apply before
+        # `lakehouse`, which was fine while nothing in it touched the lake — and the moment a
+        # function had to write to the Iceberg table, the layer that creates that table came
+        # afterwards. Nothing reads another layer's state here, so the order *is* the dependency
+        # graph, and the graph changed when the pipeline gained a landing step.
+        run: |
+          set -euo pipefail
+          resolved=0
+          while read -r name value; do
+            echo "TF_VAR_${name}=${value}" >> "$GITHUB_ENV"
+            resolved=$((resolved + 1))
+          done < <(
+            aws ssm get-parameters-by-path \
+              --path "/${{ env.PROJECT }}/lakehouse" \
+              --query 'Parameters[].[Name,Value]' --output text \
+              | sed "s|/${{ env.PROJECT }}/lakehouse/||"
+          )
+          if [ "$resolved" -eq 0 ]; then
+            echo "::error::nothing published under /${{ env.PROJECT }}/lakehouse/ — apply the lakehouse layer first"
+            exit 1
+          fi
+          echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
+      - name: build and push the reader image
+        # **The reader binary is the artefact.** Every confidence threshold in this repository
+        # was derived from one build of it, so the functions are pinned to a *digest* rather
+        # than a tag: a tag says what somebody meant, a digest says what is there. The image
+        # itself refuses to build if the reader version or any language pack is not what the
+        # recording ceremony expects — see the Dockerfile.
+        id: image
+        run: |
+          set -euo pipefail
+          # The repository URL comes from what foundation published, not from a string built
+          # here. A constructed URL is a second place the name lives, and the two drift.
+          repository="$TF_VAR_reader_repository_url"
+          registry="${repository%%/*}"
+          aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
+            | docker login --username AWS --password-stdin "$registry"
+          # Tagged by commit, never `latest`. The repository is IMMUTABLE, so a tag cannot be
+          # moved onto a different build after the fact.
+          docker build -t "$repository:${{ github.sha }}" .
+          docker push "$repository:${{ github.sha }}"
+          digest=$(aws ecr describe-images \
+            --repository-name "${{ env.PROJECT }}-reader" \
+            --image-ids imageTag=${{ github.sha }} \
+            --query 'imageDetails[0].imageDigest' --output text)
+          if [ -z "$digest" ] || [ "$digest" = "None" ]; then
+            echo "::error::the image pushed but no digest came back; refusing to deploy a function pinned to nothing"
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: package the extraction handler
+        # Code and contracts from the same commit, in one artefact. A deployment where they came
+        # from different revisions would apply one version's comparison rules to another
+        # version's fields, and nothing anywhere would report it.
+        id: package
+        run: |
+          set -euo pipefail
+          staging="$(mktemp -d)"
+          python -m pip install --quiet --target "$staging" ".[handlers]"
+          cp -r contracts "$staging/contracts"
+          (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/publish.zip" .)
+          key="artifacts/publish-${{ github.sha }}.zip"
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "$key" \
+            --body "$GITHUB_WORKSPACE/publish.zip" \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "hash=$(openssl dgst -sha256 -binary "$GITHUB_WORKSPACE/publish.zip" | base64)" >> "$GITHUB_OUTPUT"
+      - name: upload the derived thresholds
+        # **The artefact the extraction handler reads, and that nothing created.** Without this
+        # the first invocation after a deploy fails on `NoSuchKey` — the same family as the
+        # provenance gate that was invoked by a name no layer created, and just as invisible:
+        # every offline check reads `recordings/thresholds.json` directly, so every offline
+        # check passed.
+        #
+        # Rendered from the committed recording rather than recomputed here. Recomputing would
+        # let a threshold move because a runner image was updated, in the one place where it
+        # decides whether a value reaches a customer.
+        run: |
+          set -euo pipefail
+          python scripts/thresholds_artefact.py --out thresholds.json
+          key=$(python scripts/thresholds_artefact.py --print-key)
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "$key" \
+            --body thresholds.json \
+            --content-type application/json \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          echo "uploaded $key"
+      - name: apply
+        run: |
+          terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
+          # **Both shapes plan before either applies.** An optional feature that breaks the
+          # configuration it is absent from is one every ordinary deploy trips over, and
+          # `terraform validate` cannot see it: both shapes are type-correct. This costs seconds
+          # and it is the only check in this repository that needs credentials, which is why it
+          # runs here rather than in the offline suite.
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/check_optional_layers_plan.py
+          terraform -chdir=infra/extraction apply -auto-approve \
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
+            -var "publish_package_key=${{ steps.package.outputs.key }}" \
+            -var "publish_package_hash=${{ steps.package.outputs.hash }}" \
+            -var "escalation_model_arns=$ESCALATION_MODEL_ARNS" \
+            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
+            -var "enable_classifier=${{ inputs.enable_classifier }}" \
+            -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
+
   batch:
     name: "apply · batch (opt-in)"
     if: inputs.include_batch
-    needs: lakehouse
+    needs: extraction
     runs-on: ubuntu-latest
     environment: deploy
     steps:

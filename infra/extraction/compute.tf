@@ -576,3 +576,180 @@ resource "aws_lambda_function" "escalate" {
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
 
+
+# ── The landing function ─────────────────────────────────────────────────────
+#
+# **The step four services were waiting for.** The lakehouse has declared an Iceberg table since
+# the day it was written and nothing ever wrote to it, so the marts, the search surface and the
+# bulk reprocessor all read from an empty schema. This is the per-document path: one published
+# record in, one row per field out.
+
+resource "aws_iam_role" "land" {
+  name               = "${var.project}-land"
+  description        = "Writes a published record into the record lake. Reads the record; decides nothing."
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "land" {
+  # **Read, not write.** This function does not produce the record; it copies what `Publish`
+  # already wrote into a queryable shape. A landing function that could write to `records/`
+  # would be a second author of the customs record.
+  statement {
+    sid       = "ReadThePublishedRecords"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::${var.records_bucket}/records/*"]
+  }
+
+  # Listing one prefix, so `supersedes` can be found. The previous version is read from the
+  # records bucket rather than from the lake, because the bucket is where doctrine rule 4 is
+  # enforced and the lake is the table this function is in the middle of writing.
+  statement {
+    sid       = "ListOneDocumentsVersions"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.records_bucket}"]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["records/*"]
+    }
+  }
+
+  # Athena writes the table's data files and its own results into the lake bucket.
+  statement {
+    sid       = "WriteTheTableAndTheQueryResults"
+    effect    = "Allow"
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
+    resources = ["arn:aws:s3:::${var.lake_bucket}/*"]
+  }
+
+  statement {
+    sid       = "ListTheLakeSoIcebergCanPlan"
+    effect    = "Allow"
+    actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
+    resources = ["arn:aws:s3:::${var.lake_bucket}"]
+  }
+
+  # **An Iceberg append is a catalogue commit.** The data files are S3; the new metadata pointer
+  # is an `UpdateTable` against Glue. Granting the S3 half alone produces a query that writes
+  # parquet nobody can see — the failure that looks like a slow table rather than a broken one.
+  statement {
+    sid    = "CommitTheIcebergMetadata"
+    effect = "Allow"
+    actions = [
+      "glue:GetDatabase",
+      "glue:GetDatabases",
+      "glue:GetTable",
+      "glue:GetTables",
+      "glue:UpdateTable",
+      "glue:GetPartitions",
+    ]
+    resources = [
+      "arn:aws:glue:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:catalog",
+      "arn:aws:glue:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:database/${var.glue_database}",
+      "arn:aws:glue:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:table/${var.glue_database}/*",
+    ]
+  }
+
+  #checkov:skip=CKV_AWS_111:Athena's execution actions are scoped to the workgroup below; the query-level ones take no resource.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "RunTheLandingStatement"
+    effect = "Allow"
+    actions = [
+      "athena:StartQueryExecution",
+      "athena:GetQueryExecution",
+      "athena:GetQueryResults",
+      "athena:GetWorkGroup",
+    ]
+    resources = [
+      "arn:aws:athena:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:workgroup/${var.athena_workgroup}",
+    ]
+  }
+
+  statement {
+    sid       = "UseTheDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = [var.data_key_arn]
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.land.arn}:*"]
+  }
+
+  #checkov:skip=CKV_AWS_111:As on every other function here — Lambda's VPC attachment actions take no resource ARN.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpc"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "land" {
+  name   = "land"
+  role   = aws_iam_role.land.id
+  policy = data.aws_iam_policy_document.land.json
+}
+
+resource "aws_cloudwatch_log_group" "land" {
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate.
+  name              = "/aws/lambda/${var.project}-land"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+  tags              = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_lambda_function" "land" {
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Synchronous invocations from the state machine; a dead-letter queue receives only from asynchronous ones.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  function_name = "${var.project}-land"
+  description   = "Writes one row per published field into the Iceberg table"
+  role          = aws_iam_role.land.arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.land.handler"
+  s3_bucket     = var.records_bucket
+  s3_key        = var.publish_package_key
+
+  source_code_hash = var.publish_package_hash
+
+  # Longer than the others because it waits on a query rather than on its own work. The handler
+  # gives up at 120s and says which execution it gave up on; this is the outer bound.
+  timeout     = 180
+  memory_size = 512
+
+  # **Low on purpose.** Every append is a catalogue commit, and Iceberg resolves concurrent
+  # commits by retrying — so a hundred parallel landings turn into a hundred retries against one
+  # table. The queue in front of this is the pipeline, and the pipeline is per document.
+  reserved_concurrent_executions = 2
+
+  environment {
+    variables = {
+      RECORDS_BUCKET   = var.records_bucket
+      GLUE_DATABASE    = var.glue_database
+      LAKE_TABLE       = var.lake_table
+      ATHENA_WORKGROUP = var.athena_workgroup
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  tracing_config { mode = "Active" }
+
+  tags = { "${var.project}:expires-at" = var.expires_at }
+}

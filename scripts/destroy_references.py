@@ -60,7 +60,7 @@ PLACEHOLDERS: dict[str, dict[str, str]] = {
     },
     "lakehouse": {
         "lake_bucket": "{project}-lake-{account}",
-        "catalog_database": "{project}_records",
+        "glue_database": "{project}_records",
         "athena_workgroup": "{project}-analysis",
     },
 }

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from manifest.core.lake import rows_for
+from manifest.core.lake import insert_statement, rows_for
 
 WHEN = "2026-08-12T04:00:00Z"
 
@@ -112,3 +112,68 @@ def test_a_record_with_no_key_is_refused(missing: str) -> None:
 def test_a_record_with_no_field_list_is_refused() -> None:
     with pytest.raises(ValueError, match="carries none"):
         rows_for(_record(fields=None), extracted_on=WHEN)
+
+
+class TestTheInsertEncodesRatherThanInterpolates:
+    """A field value is text a counterparty wrote, and it ends up in a SQL statement.
+
+    The reader makes well-formed SQL unlikely, and "unlikely" is exactly the word that makes
+    this the classic mistake. A packing list whose consignee is `ACME', 1, 1); DROP TABLE` is a
+    document somebody can post.
+    """
+
+    def test_a_quote_in_a_value_is_doubled_and_nothing_else_is_touched(self) -> None:
+        record = _record()
+        record["fields"][0]["value"] = "O'Brien & Sons — 50% of C:\\shipping\\lot"
+        statement = insert_statement(
+            rows_for(record, extracted_on=WHEN), database="records", table="document_version"
+        )
+        assert "'O''Brien & Sons — 50% of C:\\shipping\\lot'" in statement, (
+            "backslash is not an escape character in a Trino literal; escaping it would corrupt "
+            "any value that legitimately contains one"
+        )
+
+    @pytest.mark.parametrize(
+        "attack",
+        [
+            "ACME', 1, 1); DROP TABLE document_version; --",
+            "'; DELETE FROM document_version WHERE ''=''",
+            "x') , ('injected",
+        ],
+    )
+    def test_a_planted_statement_stays_one_value(self, attack: str) -> None:
+        record = _record()
+        record["fields"][0]["value"] = attack
+        statement = insert_statement(
+            rows_for(record, extracted_on=WHEN), database="records", table="document_version"
+        )
+        # The attack survives *as text*, with its quotes doubled. That is the property: it is
+        # still there, still readable, and no longer able to close the literal it sits in.
+        assert attack.replace("'", "''") in statement
+
+        # And the statement's shape is untouched by it. Two fields in, two tuples out, one
+        # INSERT — a closed literal would have produced a third tuple or a second statement.
+        assert statement.count("INSERT INTO") == 1
+        assert statement.count("),\n  (") == 1, "two fields in, two rows out — no extra tuple"
+        assert statement.count("'") % 2 == 0, "an odd number of quotes is an unterminated literal"
+
+    def test_a_null_is_the_keyword_and_not_the_word(self) -> None:
+        """Doctrine rule 3 in the encoder: an abstention is missing, not the string 'NULL'."""
+        statement = insert_statement(
+            rows_for(_record(), extracted_on=WHEN), database="records", table="document_version"
+        )
+        assert ", NULL," in statement
+        assert "'NULL'" not in statement
+
+    def test_an_identifier_that_is_not_one_is_refused_rather_than_quoted(self) -> None:
+        """A value can be escaped. An identifier cannot, so the only safe treatment is refusal."""
+        with pytest.raises(ValueError, match="not a plain catalogue identifier"):
+            insert_statement(
+                rows_for(_record(), extracted_on=WHEN),
+                database='records" ; drop schema "x',
+                table="document_version",
+            )
+
+    def test_no_rows_is_refused_rather_than_emitted(self) -> None:
+        with pytest.raises(ValueError, match="no rows to land"):
+            insert_statement([], database="records", table="document_version")

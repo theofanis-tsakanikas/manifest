@@ -1034,6 +1034,7 @@ def main() -> int:
             )
 
     problems.extend(_check_resolution())
+    problems.extend(_resolver_covers_what_layers_publish())
     problems.extend(_check_permissions_exist())
     problems.extend(_check_the_teardown_scripts_can_run())
     problems.extend(_check_every_vpc_function_can_attach_to_it())

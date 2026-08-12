@@ -229,3 +229,37 @@ variable "bda_profile_arn" {
   type        = string
   default     = ""
 }
+
+# ── What the lakehouse published, resolved by the deploy ─────────────────────
+#
+# The landing function writes the published record into the Iceberg table, so this layer now
+# takes three references from the layer that owns it. They arrive as variables, never as a
+# remote state read: that would make one layer's internals another layer's contract and would
+# stop the two being destroyed separately, which is the property `destroy.yml` depends on.
+
+variable "glue_database" {
+  description = "The Glue database holding the record lake's tables."
+  type        = string
+}
+
+variable "lake_table" {
+  description = "The Iceberg table one row per published field lands in."
+  type        = string
+  default     = "document_version"
+}
+
+variable "athena_workgroup" {
+  description = <<-EOT
+    The workgroup the landing query runs in.
+
+    Not a detail: the workgroup carries the result location, the KMS key results are written
+    with, and the bytes ceiling per query. A statement run outside it would write results to a
+    default location this estate does not own.
+  EOT
+  type        = string
+}
+
+variable "lake_bucket" {
+  description = "Where the Iceberg table's data and the Athena results live."
+  type        = string
+}
