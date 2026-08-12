@@ -226,6 +226,19 @@ resource "aws_glue_catalog_table" "document_version" {
 resource "aws_athena_workgroup" "analysis" {
   name = "${var.project}-analysis"
 
+  # **A workgroup that has been used cannot be deleted without this, and every teardown before
+  # today was of a workgroup nobody had queried.**
+  #
+  # `DeleteWorkGroup` returned `InvalidRequestException: WorkGroup manifest-analysis is not
+  # empty` — "empty" meaning its query history, which the landing function fills one `INSERT`
+  # per document and which every probe adds to. The estate tore down cleanly for as long as the
+  # analytics half was decorative, and the first teardown after it did real work is the one that
+  # stopped on it.
+  #
+  # Same shape as the buckets needing `s3:DeleteObjectVersion`: a `Put` path complete and a
+  # `Delete` path short by exactly the thing that only exists once the system has been used.
+  force_destroy = true
+
   configuration {
     enforce_workgroup_configuration    = true
     publish_cloudwatch_metrics_enabled = true
