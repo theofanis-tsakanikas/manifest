@@ -128,6 +128,23 @@ jobs:
       - run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/analytics destroy -auto-approve -refresh=false -var 'expires_at=1970-01-01'
+      - name: remove the log groups Redshift made for itself
+        # **`log_exports` is a namespace setting and the log groups are the service's, not
+        # Terraform's.** Nothing in `infra/analytics` declares them, so `terraform destroy` takes
+        # the namespace and leaves `/aws/redshift/manifest-marts/connectionlog` and its two
+        # siblings behind — with no retention, holding whatever was logged, for ever.
+        #
+        # `estate_sweep.py` found them by name, which is the sweep that exists for exactly this:
+        # a resource created outside Terraform is the resource nobody tagged. The tag sweep was
+        # clean and these were still there.
+        run: |
+          set -euo pipefail
+          for group in $(aws logs describe-log-groups \
+              --log-group-name-prefix "/aws/redshift/${{ env.PROJECT }}-" \
+              --query 'logGroups[].logGroupName' --output text); do
+            aws logs delete-log-group --log-group-name "$group" && echo "deleted $group"
+          done
+          echo "no Redshift log group for ${{ env.PROJECT }} remains"
 
   batch:
     name: "destroy · batch"

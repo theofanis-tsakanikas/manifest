@@ -204,8 +204,33 @@ def _still_exists(session, arn: str) -> bool:
         return not gone(session.client("athena").get_work_group, WorkGroup=identifier)
     if service == "sns":
         return not gone(session.client("sns").get_topic_attributes, TopicArn=arn)
+    if service == "emr-serverless":
+        return _emr_application_lives(session, identifier)
     # Unknown service: report it. The direction that costs money is the one that stays silent.
     return True
+
+
+def _emr_application_lives(session, identifier: str) -> bool:
+    """Whether an EMR Serverless application is anything other than its own tombstone.
+
+    **`TERMINATED` is as deleted as an EMR Serverless application gets**, and the service keeps
+    the record afterwards — as KMS keeps a key through its waiting period. The same reasoning as
+    `_keys_pending_deletion`, for the same reason: a teardown that deleted the application
+    correctly reported it as a survivor, on the very first run where there had ever been one to
+    delete, and a report carrying a permanent false entry is a report somebody stops reading.
+
+    The tag index is what surfaced it. Tags outlive the resource by minutes and sometimes hours,
+    so `tag:GetResources` returns things that *were* tagged — which is why every entry here is
+    probed rather than believed.
+    """
+    application = identifier.rsplit("/", 1)[-1]
+    try:
+        state = session.client("emr-serverless").get_application(applicationId=application)
+    except Exception as error:
+        # Absent is gone; anything else is reported, because a probe that cannot answer must not
+        # answer "fine".
+        return "NotFound" not in error.__class__.__name__ and "not found" not in str(error)
+    return state["application"]["state"] != "TERMINATED"
 
 
 def _bootstrap_names(session, project: str) -> set[str]:
