@@ -120,12 +120,27 @@ def _upload(estate: Estate, key: str, body: bytes) -> None:
     )
 
 
-def _await_execution(estate: Estate, since: float, wanted: str, timeout: int = 900):
+def _await_execution(
+    estate: Estate,
+    since: float,
+    wanted: str,
+    timeout: int = 900,
+    exclude: frozenset[str] = frozenset(),
+):
     """The execution whose input names this document. Polled, because there is no callback.
 
     Matched on the *input* rather than on the name: Step Functions names an EventBridge-started
     execution with a uuid, so the document id is nowhere in it. Matching on the name would find
     nothing and report a trigger that did not fire.
+
+    **`exclude` exists because a sixty-second grace window made this return the same execution
+    twice.** The re-extraction check sends one document id through, waits, and sends it again —
+    and the second wait matched the first run, because that run had started well inside
+    `since - 60`. Both fingerprints came back identical and the check reported an estate that
+    overwrites, of an estate that had written both versions correctly.
+
+    A time window cannot distinguish two runs of the same document seconds apart. An execution
+    ARN can, so the caller passes the ones it has already accounted for.
     """
     states = _client("stepfunctions")
     deadline = time.time() + timeout
@@ -133,6 +148,8 @@ def _await_execution(estate: Estate, since: float, wanted: str, timeout: int = 9
         page = states.list_executions(stateMachineArn=estate.state_machine, maxResults=40)
         for execution in page.get("executions", []):
             if execution["startDate"].timestamp() < since - 60:
+                continue
+            if execution["executionArn"] in exclude:
                 continue
             described = states.describe_execution(executionArn=execution["executionArn"])
             if wanted in described.get("input", ""):
@@ -678,12 +695,128 @@ def _records_under(estate: Estate, document_id: str) -> list[str]:
     return [entry["Key"] for entry in listing.get("Contents", [])]
 
 
+def _re_extraction(estate: Estate, first: Path, corrected: Path) -> None:
+    """Claim 3 on the estate: a correction is a new version beside the old one, not over it.
+
+    **The one property in this system that a single run cannot show.** Everything else the
+    verifier asserts is about one document going through once. Doctrine rule 4 is about what
+    happens the *second* time — and until now nothing had ever sent the same document id through
+    twice on a real estate.
+
+    Two different pages under one document id, which is what a correction is: the shipment is the
+    same, the paper is not. Re-sending identical bytes would prove the opposite property — same
+    input, same fingerprint, one record — which `evals/reprocessing` already proves offline over
+    3,000 documents and which would look, from here, exactly like nothing happening.
+
+    Three assertions, and the third is the one nobody builds: the older record is **still there**,
+    the newer one is a different version, and the lake says which replaced which. A system that
+    overwrites is indistinguishable from this one on the first two.
+    """
+    print(f"\n{DIM}re-extraction — the same document id, corrected{RESET}\n")
+    key = "incoming/en/bill_of_lading/E2E-REEXTRACT.pdf"
+
+    started = time.time()
+    _upload(estate, key, first.read_bytes())
+    original = _await_execution(estate, started, "E2E-REEXTRACT")
+    if original is None or original["status"] != "SUCCEEDED":
+        estate.check(
+            "10 · a correction supersedes rather than overwrites",
+            False,
+            f"the first version did not publish "
+            f"({original['status'] if original else 'no execution'})",
+        )
+        return
+    first_version = (
+        (_from_history(original["executionArn"]).get("extraction") or {}).get("outcome") or {}
+    ).get("fingerprint", "")
+
+    started = time.time()
+    _upload(estate, key, corrected.read_bytes())
+    second = _await_execution(
+        estate, started, "E2E-REEXTRACT", exclude=frozenset({original["executionArn"]})
+    )
+    if second is None or second["status"] != "SUCCEEDED":
+        estate.check(
+            "10 · a correction supersedes rather than overwrites",
+            False,
+            f"the corrected version did not publish "
+            f"({second['status'] if second else 'no execution'})",
+        )
+        return
+    second_version = (
+        (_from_history(second["executionArn"]).get("extraction") or {}).get("outcome") or {}
+    ).get("fingerprint", "")
+
+    kept = {
+        entry["Key"].rsplit("/", 1)[-1].removesuffix(".json")
+        for entry in _client("s3")
+        .list_objects_v2(Bucket=estate.records, Prefix="records/E2E-REEXTRACT/")
+        .get("Contents", [])
+    }
+    estate.check(
+        "10 · a correction supersedes rather than overwrites",
+        first_version
+        and second_version
+        and first_version != second_version
+        and kept >= {first_version, second_version},
+        f"versions {first_version[:12]}… then {second_version[:12]}…, and {len(kept)} record(s) "
+        f"retrievable. Doctrine rule 4: the correction writes beside the original, never over it "
+        f"— a system that overwrote would look identical until somebody asked what it said before",
+    )
+
+    landed = _rows_for_version(estate, "E2E-REEXTRACT")
+    supersedes = {version: previous for version, previous in landed}
+    estate.check(
+        "11 · the lake records which version replaced which",
+        supersedes.get(second_version) == first_version,
+        f"the newer version's rows carry supersedes={str(supersedes.get(second_version))[:12]}… "
+        f"against a first version of {first_version[:12]}…. A chain, not a pointer to current: "
+        f"the question an auditor asks is what you said before",
+    )
+
+
+def _rows_for_version(estate: Estate, document_id: str) -> list[tuple[str, str]]:
+    """`(version, supersedes)` for every row this document has in the lake."""
+    athena = _client("athena")
+    started = athena.start_query_execution(
+        QueryString=(
+            "SELECT DISTINCT version, supersedes FROM document_version WHERE document_id = ?"
+        ),
+        ExecutionParameters=[document_id],
+        WorkGroup=estate.athena_workgroup,
+        QueryExecutionContext={"Database": estate.glue_database},
+    )["QueryExecutionId"]
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        state = athena.get_query_execution(QueryExecutionId=started)["QueryExecution"]["Status"][
+            "State"
+        ]
+        if state in {"SUCCEEDED", "FAILED", "CANCELLED"}:
+            break
+        time.sleep(3)
+    if state != "SUCCEEDED":
+        return []
+    rows = athena.get_query_results(QueryExecutionId=started)["ResultSet"]["Rows"][1:]
+    return [
+        (
+            row["Data"][0].get("VarCharValue", ""),
+            row["Data"][1].get("VarCharValue") or "",
+        )
+        for row in rows
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default="manifest")
     parser.add_argument("--document", type=Path, required=True, help="A PDF to send through.")
     parser.add_argument("--document-id", default="E2E-VERIFY")
     parser.add_argument("--skip-edge-cases", action="store_true")
+    parser.add_argument(
+        "--corrected",
+        type=Path,
+        help="A second, different page for the same document id — the re-extraction check.",
+    )
     arguments = parser.parse_args()
 
     sys.path.insert(0, str(ROOT / "src"))
@@ -691,6 +824,8 @@ def main() -> int:
     print(f"the deployed estate — {estate.state_machine}\n")
 
     _happy_path(estate, arguments.document, arguments.document_id)
+    if arguments.corrected:
+        _re_extraction(estate, arguments.document, arguments.corrected)
     if not arguments.skip_edge_cases:
         _edge_cases(estate, arguments.document)
 
