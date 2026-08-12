@@ -128,7 +128,7 @@ jobs:
     # buys a three-fold cycle time during the period when the estate is being brought up and
     # torn down repeatedly; it is not a permanent posture and the acceptance says when it ends.
     with:
-      run_corpus: false
+      run_corpus: "false"
 
   foundation:
     name: "apply · foundation"

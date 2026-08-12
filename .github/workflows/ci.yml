@@ -31,9 +31,18 @@ on:
           the corpus, because every threshold comes from the committed recording. It is 24 of
           the gate's 36 minutes against 3 minutes of actual applying, re-run on every attempt to
           fix a one-line grant, having already passed on the same commit.
-        type: boolean
+        # **A string, not a boolean, and that is not a style choice.**
+        #
+        # GitHub's expression `==` coerces loosely: `null` and `false` both become `0`, so
+        # `inputs.run_corpus == null` — the obvious way to write "run it when nobody said
+        # otherwise" — is *true* when somebody said `false`. The job ran for 24 minutes in the
+        # run that was supposed to skip it, and the condition looked correct in the diff.
+        #
+        # Compared against the string `'false'` there is nothing to coerce: a push supplies no
+        # input and `'' != 'false'` runs the job; the deploy supplies `'false'` and it does not.
+        type: string
         required: false
-        default: true
+        default: "true"
 
 # **Every third-party action is pinned to a commit SHA, never to a tag.**
 #
@@ -195,8 +204,8 @@ jobs:
 
   corpus:
     name: the generator reproduces the committed ground truth
-    # `null` on a push, where inputs do not exist, so the default is to run it.
-    if: ${{ inputs.run_corpus == null || inputs.run_corpus }}
+    # Anything but the literal string `false` runs it, including the empty value a push gives.
+    if: ${{ inputs.run_corpus != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
