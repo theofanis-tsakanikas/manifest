@@ -376,6 +376,27 @@ jobs:
             --project "${{ env.PROJECT }}" --layer lakehouse \
             --region "${{ env.AWS_REGION }}" --account "${{ vars.AWS_ACCOUNT_ID }}"
 
+      - name: delete the workgroup recursively, because a used one is not empty
+        # **`force_destroy` is a state attribute, and state is written before a teardown needs
+        # it.** The workgroup is declared with it now, so an estate created after this commit
+        # tears down in one pass. This estate was created before, and re-applying the whole
+        # thing to record one flag would be an absurd way to delete it.
+        #
+        # Which leaves the same shape as `empty_bucket.py`, and for the same reason: Terraform
+        # cannot delete a container the API refuses to delete while it has contents, and the
+        # contents here are the workgroup's own query history — one entry per landed document
+        # and one per probe. `DeleteWorkGroup` refused with `InvalidRequestException: WorkGroup
+        # manifest-analysis is not empty`, which is a sentence about a workgroup nobody had ever
+        # queried until today.
+        #
+        # `|| true`: a workgroup already gone is the state this step wants, and a teardown step
+        # that fails because its work was already done is a teardown nobody can re-run.
+        run: |
+          set -euo pipefail
+          aws athena delete-work-group \
+            --work-group "${{ env.PROJECT }}-analysis" \
+            --recursive-delete-option 2>&1 || true
+          echo "workgroup ${{ env.PROJECT }}-analysis is gone or was never there"
       - name: empty the lake before destroying it
         # A versioned bucket with objects in it refuses to be destroyed, and a teardown that
         # fails on that leaves the bucket, its storage cost and the KMS key it needs. The
