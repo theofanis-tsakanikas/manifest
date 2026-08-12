@@ -142,11 +142,11 @@ the local reader is not the cheap option — **it is the only one**.
 |---|---|---|
 | **S3** | landing zone, records, renders, Iceberg lake | ✅ running |
 | **Lambda** (container) | the tier-0 reader and the provenance gate | ✅ running |
-| **Step Functions** | one execution per document; the escalation lives here | ✅ **escalation states written**, never dispatched |
+| **Step Functions** | one execution per document; the escalation lives here | ✅ running, **escalation states dispatched 2026-08-12** |
 | **SQS + DynamoDB** | the review queue and the recorded decisions | ✅ running |
 | **ECR** | the reader image — 3.7 GB, two functions run *from* it | ✅ running |
-| **Textract** | tier 1, for the six documented languages | ✅ **wired**, ⚠️ never called |
-| **Bedrock Data Automation** | tier 2, reading order and tables | ✅ **wired**, ⚠️ never called |
+| **Textract** | tier 1, for the six documented languages | ✅ **called 2026-08-12** — 7 fields of 1 document |
+| **Bedrock Data Automation** | tier 2, reading order and tables | ✅ **wired**, ⚠️ never called — no language routes to it |
 | **Bedrock** | tier 3, the only escalation for Greek and Dutch | ✅ **wired**, ⚠️ never called |
 | **Glue · Athena · Iceberg** | the record lake and its catalogue | ⚠️ created, **never fed** |
 | **OpenSearch** | search over *published records*, never raw document text | ⚠️ created, **never fed** |
@@ -158,12 +158,18 @@ the local reader is not the cheap option — **it is the only one**.
 
 ## 5 · What was proved, and what was not
 
-**Proved on the deployed estate, 2026-08-11**, by `scripts/e2e_verify.py` — 13 of 13 checks. A
-bill of lading arrived, was read into 53 words with genuine confidences from 0.179 to 0.969 and
-a box for each, two fields cleared their thresholds and seven abstained, the gate verified both
-published fields **by cropping the page and reading it again**, the record was written keyed by
-document and version, and all seven abstentions reached the queue. Five edge cases were refused
-by name.
+**Proved on the deployed estate, 2026-08-12**, by `scripts/e2e_verify.py` — **14 of 14 checks**,
+with the escalation tiers on. A bill of lading arrived, was read into 53 words with genuine
+confidences from 0.179 to 0.969 and a box for each, two fields cleared their thresholds and
+seven abstained, **those seven went up to Textract**, the gate verified both published fields
+**by cropping the page and reading it again**, the record was written keyed by document and
+version, and all seven abstentions reached the queue. Five edge cases were refused by name.
+
+The run on 2026-08-11 was the same thing with the tiers off, 13 of 13. Two of the five edge
+cases now pass a stricter assertion than they did then: *"the execution reached a terminal
+state"* is every state an execution can reach, so a document that sailed through and published a
+record passed under the name of the check written to catch it. They assert the absence of a
+published record instead.
 
 **And the warehouse is a schema over nothing.** The lakehouse and the analytics layer both
 applied cleanly; neither has ever held a row. Nothing writes the Iceberg table — the pipeline
@@ -202,11 +208,20 @@ makes eligible, and re-thresholds only what came back with a score. It is off by
 `enable_escalation_tiers`: with the flag down the states are not in the machine, the function
 does not exist, and no grant to Textract or Bedrock exists anywhere in the account.
 
-Today the estate demonstrates tier 0 end to end and nothing above it. The routing rule is real
-and proved offline against the corpus; what has never happened is a page actually going up. The
-sentence *"the upper tiers are written and have never been called"* is honest and weak. The
-sentence *"a page escalated on this date, and here is what it cost"* is the one worth having —
-and it is a few cents of Textract away.
+**Superseded on 2026-08-12, which is why the paragraph above is left standing rather than
+rewritten.** It said the sentence worth having was *"a page escalated on this date"*, and that
+the distance to it was a few cents of Textract. It was — and the few cents bought four defects
+that no offline check had found, each of which would have made the escalation silently useless:
+`publish` returned an outcome with no language, `escalate` read the tier-0 pointer one level
+short and handed S3 an empty bucket name, its execution role could not attach to the VPC, and a
+`Box` is not iterable.
+
+A page escalated on **2026-08-12**: seven fields of one bill of lading, to tier 1, recorded in
+CloudTrail as `DetectDocumentText` against the `manifest-escalate` role at 06:40:39 EEST. What
+that buys is the *routing* — the seven that abstained went up, the two that cleared their
+thresholds did not. What it does not buy is the other half of the sentence: **there is still no
+"here is what it cost"**, because two calls are not a bill, and no accuracy figure, because one
+document is not a measurement.
 
 Redshift is the same argument for the analytics half: `contracts/` declares the marts and
 `scripts/check_marts.py` proves they only read columns the warehouse has, offline. Standing the

@@ -148,10 +148,17 @@ What that changed, exactly, and nothing more:
 
 What it did **not** change, and these are the ones a reader should check first:
 
-- **No AWS extraction engine has ever been called.** Textract, Bedrock Data Automation and the
-  LLM extractor are adapters written against documented schemas and exercised against authored
-  fixtures. The estate that ran, read with the tier-0 local reader and nothing else. There is
-  no accuracy figure for the escalated fraction of the cascade and there cannot be one.
+- **Textract has now been called; Bedrock Data Automation and the LLM extractor have not.**
+  Superseded on **2026-08-12**, deliberately and by dispatch: the estate was applied with
+  `enable_escalation_tiers=true`, one bill of lading abstained on seven fields, and those seven
+  went up to tier 1. CloudTrail records `DetectDocumentText` against the `manifest-escalate`
+  role at 06:40:39 EEST. `bda.py` and `llm.py` remain adapters against documented schemas,
+  exercised against authored fixtures, never called.
+
+  **The accuracy sentence does not move with it.** There is still no accuracy figure for the
+  escalated fraction, because one document is not a measurement. What the run established is
+  that the routing climbs — the abstaining fields were sent up, the confident ones were not —
+  and that is a different claim, stated as one.
 - **No distributed job has ever executed.** `batch` was never applied. Claim 7 is proved by the
   pure planner and its ledger, on a laptop, and says so.
 - **Every cost figure is still modelled.** A bill existing does not make a number measured; the
@@ -204,8 +211,13 @@ the lesson, and it generalises past this project.
 **15 · The cost figure is a model, and it says so.** Tier-routing distribution measured over
 the corpus × published unit prices, each price cited with the pricing page and the date read.
 Written as *modelled* everywhere it appears — README, CV, site. A modelled number that
-announces itself is a stronger artefact than a measured one nobody can reproduce, and it is
-the only honest option for a repository that has never called a billed API.
+announces itself is a stronger artefact than a measured one nobody can reproduce.
+
+It stays modelled after 2026-08-12, and the reason is worth stating rather than assuming: a
+billed API *has* now been called, twice, for seven fields of one document. Two Textract calls
+are not a bill and they are not a routing distribution. The figure becomes a measurement when a
+corpus goes through a standing estate and an invoice exists to quote, with its date — not when
+the first call succeeds.
 
 **16 · A local open-source OCR engine is the bottom tier of the cascade, and it actually
 runs.** This is the decision that makes the project possible at zero cost, and it was nearly

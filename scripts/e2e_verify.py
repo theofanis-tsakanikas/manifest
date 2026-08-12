@@ -23,10 +23,11 @@ published and everything queued.
 repository is scored offline; this is not one of the claims. It is the check that the estate
 behaves the way the offline claims say the design does, and it can only run against an estate.
 
-**What it deliberately does not claim.** No managed extraction engine is called here — every
-page is read by the tier-0 image, so nothing below is evidence about Textract, Bedrock Data
-Automation or an LLM extractor. No cost figure is produced. No figure here is a claim about
-production: it is one run, of documents this repository generated, on one day.
+**What it deliberately does not claim.** With the escalation tiers deployed a managed engine
+*is* called — and what that proves is that the routing sends abstaining fields up, not that the
+tier read them better. There is no accuracy figure for the escalated fraction here and there
+cannot be one from a single document. No cost figure is produced. No figure here is a claim
+about production: it is one run, of documents this repository generated, on one day.
 """
 
 from __future__ import annotations
@@ -635,12 +636,32 @@ def main() -> int:
             print(f"  {result.name}: {result.detail}", file=sys.stderr)
         return 1
 
+    # **The closing line is a claim, and it has to be one this run can support.**
+    #
+    # It read "No managed extraction engine was called" — a true sentence for every run this
+    # script had ever done, printed unconditionally, and therefore a sentence that would go on
+    # being printed for the first run where it was false. It was: the escalation called Textract
+    # for seven fields and the verifier congratulated the estate for not having done so, three
+    # lines under the check that says it did.
+    escalated = next(
+        (result for result in estate.results if result.name.startswith("3b")), None
+    )
     print(
         "end to end: a document arrived, was read by the tier-0 image, thresholded against\n"
         "  derived thresholds, checked field by field against its own pages, published with its\n"
-        "  provenance, and its abstentions reached a human. No managed extraction engine was\n"
-        "  called and no distributed job ran; this is one run, on one day, on documents this\n"
-        "  repository generated."
+        "  provenance, and its abstentions reached a human."
+    )
+    if escalated:
+        print(
+            f"  A managed engine WAS called — {escalated.detail.split('.')[0]}. That is a billed\n"
+            "  read, and nothing here is an accuracy figure for it: what is shown is that the\n"
+            "  routing sent the abstaining fields up, not that the tier read them better."
+        )
+    else:
+        print("  No managed extraction engine was called; every page was read by the image.")
+    print(
+        "  No distributed job ran; this is one run, on one day, on documents this repository\n"
+        "  generated."
     )
     return 0
 

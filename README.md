@@ -15,20 +15,25 @@ Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageM
 > schemas across six layers, checkov at zero findings, and a check that the figures on this page
 > are the ones the run produced. All of them pass, in the reader image the recording came from.
 >
-> **The estate was deployed on 2026-08-10, verified on 2026-08-11 and destroyed the same day.**
-> `scripts/e2e_verify.py` put documents through the running pipeline and asserted what came out —
-> **13 of 13 checks**, five edge cases refused by name. Then `destroy.yml` tore all five layers
-> down in reverse, and what is standing now is `infra/bootstrap` alone: the state backend, its
-> key, the OIDC role and the budget guard, applied from a laptop on 2026-08-10.
+> **The estate has been deployed, verified end to end, and torn down — twice.** First on
+> 2026-08-10 with the escalation tiers off (13 of 13 checks), and again on **2026-08-12 with them
+> on: 14 of 14**, including the check that the cascade actually climbs. `scripts/e2e_verify.py`
+> puts documents through the running pipeline and asserts what came out, with five edge cases
+> that must each be refused by name.
 >
 > An earlier revision of this block said "not yet deployed" and "neither workflow has been
 > dispatched". Both were true when written and false the moment the first apply succeeded, and a
 > repository describing a posture it no longer holds is the same defect whichever way the error
 > points.
 >
-> **What the first deploy did not license.** No managed extraction engine has ever been called —
-> the escalation tiers stayed off, so every page was read by the local tier-0 image. There is no
-> accuracy figure for the escalated fraction and there cannot be one until a page goes up a tier.
+> **A managed extraction engine has now been called, and the date matters.** On **2026-08-12** a
+> bill of lading published 2 fields at tier 0 and abstained on 7, and those 7 went up to
+> **Textract** — CloudTrail records `DetectDocumentText` against the `manifest-escalate` role at
+> 06:40:39 EEST. That is the first billed read this project has performed. What it proves is that
+> the **routing works**: the abstaining fields were sent up and the confident ones were not.
+> It is **not** an accuracy figure for the escalated fraction — one document is not a
+> measurement, and *"accuracy held at X for Y% of the cost"* remains unavailable here.
+>
 > No distributed job has run. There are no screenshots and no wall-clock figures. The one cost
 > figure here is labelled **modelled** everywhere it appears and says what it is built from; it
 > becomes a measurement when a run produces one, with that run's date beside it, and not before.
@@ -156,10 +161,13 @@ a `0`/`O` confusion reproduces on both passes. The gate also does **not** catch 
 at an identical string elsewhere on the page, stated in ADR-0003 in advance, with a fixture
 whose expected result is *not caught*.
 
-**No accuracy figure exists for the cascade's upper tiers.** No page has been sent to one, so
-there is nothing to report. *"Accuracy held at X for Y% of the cost"* is unavailable here and
-does not appear — and after a real run it would be a figure with a date and an N beside it,
-reported separately from the offline eval rather than merged into it.
+**No accuracy figure exists for the cascade's upper tiers.** Pages have now been sent to tier 1
+— seven fields of one document, on 2026-08-12 — and that changes the sentence without changing
+the claim: **N=1 is not a measurement.** *"Accuracy held at X for Y% of the cost"* is still
+unavailable here and still does not appear. What the run establishes is the *routing*: the
+fields that abstained went up and the fields that cleared their thresholds did not. An accuracy
+figure needs a labelled corpus put through the tier, with its N and its date, reported separately
+from the offline eval rather than merged into it. **Tiers 2 and 3 have still never been called.**
 
 **The cost is a model.** The routing distribution is measured over the recording; the tier-1
 unit price is published, cited and dated. **Tier 2 carries no price at all** — it is charged per
@@ -173,8 +181,12 @@ nothing here pretends to. Near-matches become *candidates* for a human, never me
 damage and two different companies sit in the same similarity band, and no threshold separates
 them.
 
-**The AWS fixtures are authored, never captured.** No call has ever been made, so no response
-has ever been recorded. See [`tests/extraction/fixtures/AUTHORED.md`](tests/extraction/fixtures/AUTHORED.md).
+**The AWS fixtures are authored, never captured — and that is now a choice rather than a
+circumstance.** Until 2026-08-12 no call had ever been made, so no response could have been
+recorded. One has been made since, to Textract, and the fixtures are *still* authored: replacing
+one is a deliberate act that changes that fixture's provenance in the same commit, and it has not
+been done. What is forbidden either way is an authored fixture presented as captured. See
+[`tests/extraction/fixtures/AUTHORED.md`](tests/extraction/fixtures/AUTHORED.md).
 
 **The AI Act finding is narrow on purpose.** No high-risk classification arises — Annex III does
 not list customs, and its nearest point is about natural persons crossing a border rather than
@@ -258,7 +270,7 @@ data. No AWS account, no credentials, no network.
 | [`contracts/`](contracts/) | **The source of truth** — document types, agreement rules, the party model, review capacity, cascade routing. YAML, never imported by name |
 | [`corpus/`](corpus/) | The generator, its ground truth, and `envelope.yaml` — the declared operating range |
 | [`src/manifest/core/`](src/manifest/core/) | **Pure.** No cloud SDK, no engine, no clock, and no engine named anywhere — enforced by a gate and three mutations |
-| [`src/manifest/extraction/`](src/manifest/extraction/) | `local/` runs; `aws/` is written and schema-tested against published schemas, not yet called |
+| [`src/manifest/extraction/`](src/manifest/extraction/) | `local/` runs; `aws/textract.py` has been called against the real service (2026-08-12); `bda.py` and `llm.py` are schema-tested and still uncalled |
 | [`src/manifest/handlers/`](src/manifest/handlers/) | The three functions that run in the estate. Each one calls `core` and decides nothing itself |
 | [`Dockerfile`](Dockerfile) | The tier-0 reader as an image — the same binary and language data that produced the recording, version asserted at build time |
 | [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
