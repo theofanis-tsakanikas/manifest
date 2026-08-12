@@ -1,0 +1,68 @@
+# A job the deploy's gate does not run, by whom, why, and when it comes back.
+#
+# This file exists for the same reason `contracts/deploy/acceptance.yaml` does, and it is the
+# same shape deliberately. `deploy.yml`'s header says the gate "re-runs CI against the exact ref
+# being deployed" — and it no longer runs all of it. Leaving that sentence standing while quietly
+# dropping a job would be the exact overclaim this repository spends its life removing: a control
+# named in the documentation and absent from the system.
+#
+# Doctrine rule 6: exceptions expire. `scripts/check_deploy_path.py` refuses a missing or expired
+# acceptance, so this cannot become permanent by being forgotten.
+version: 1
+
+acceptance:
+  what: >-
+    `deploy.yml` calls `ci.yml` with `run_corpus: false`, so the job that regenerates the 3,000
+    document corpus inside the reader image and compares it against the committed ground truth
+    does not run as part of the deploy gate. Every push to `main` still runs it, unchanged.
+
+  accepted_by: "Theofanis Tsakanikas"
+  accepted_on: "2026-08-12"
+  expires_on: "2026-09-12"
+
+  why: >-
+    Measured on run 31591747023: the gate takes 36 minutes and the corpus job is 24 of them. The
+    five apply jobs together take 3. So roughly nine tenths of every deploy cycle is spent
+    re-proving a property that has nothing to do with the deployment, on a commit that already
+    proved it minutes earlier in its own push run.
+
+    That cost is only worth naming because of how it compounds. Bringing this estate up found
+    twenty-eight defects that no offline check could have seen — an IAM condition mismatch, a
+    catalogue governed by Lake Formation because a sibling project turned it on, a five-megabyte
+    image ceiling, a model agreement held at account level, VPC endpoints whose absence produces
+    silence rather than an error. Each one is a one-line fix and a 36-minute wait, and the waiting
+    is what made the day long rather than the fixing.
+
+    **What the job actually proves is a property of the repository, not of the deployment.** The
+    generator is deterministic; the committed ground truth is what the runner would produce. No
+    threshold, no artefact and no handler in the estate depends on regenerating it — every
+    threshold comes from `recordings/ocr/`, which is committed, and the deploy renders
+    `thresholds.json` from that recording rather than recomputing anything.
+
+  # What is deliberately NOT given up. Skipping a job in one caller is not deleting it.
+  still_holds:
+    - >-
+      **Every push to `main` runs it**, so no commit reaches a deployable state without the
+      corpus having been reproduced on that exact tree. The deploy gate is the second time, not
+      the only time.
+    - >-
+      **The other seven jobs still run in the gate**, including `gate-proof`, the claim gates,
+      the reader-version check and `terraform validate` with checkov. Nothing about what the
+      estate *is* has been taken out of the path.
+    - >-
+      **`make preflight` is unchanged** and still runs the corpus check, so the local command
+      that produces the scoreboard is the strict one.
+
+  # The condition for it ending, stated as an event because the date is only a backstop.
+  ends_when: >-
+    The estate has been brought up, verified end to end and torn down without a defect being
+    found in the process — at which point the deploy stops being an iteration loop and becomes a
+    thing that runs occasionally, where 24 extra minutes cost nothing worth counting. At that
+    point `deploy.yml` drops the `with:` block, this file is deleted rather than renewed, and the
+    header's sentence about re-running CI is true again without a footnote.
+
+  # What this acceptance does not do, stated so it cannot drift into doing it:
+  #   - it does not remove the corpus job from CI
+  #   - it does not change what a push runs
+  #   - it does not touch `make preflight` or `make claims`
+  #   - it does not permit the repository to describe the deploy gate as running the whole suite

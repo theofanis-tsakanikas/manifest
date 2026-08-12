@@ -1107,6 +1107,62 @@ def _check_every_service_a_handler_calls_is_reachable() -> list[str]:
     return problems
 
 
+def _check_a_skipped_gate_job_is_accepted() -> list[str]:
+    """The deploy may run less than the whole suite. It may not do so silently or for ever.
+
+    `deploy.yml`'s header says the gate "re-runs CI against the exact ref being deployed", and it
+    now passes `run_corpus: false`. Leaving that sentence standing while quietly dropping a job
+    is the overclaim this repository spends its life removing — a control named in the
+    documentation and absent from the system.
+
+    So the same shape as the reviewer acceptance: a name, a date, a reason, an expiry, and a
+    check that refuses a missing or expired one. What makes this bearable rather than a
+    weakening is in the acceptance itself — every push still runs the job, so no commit reaches
+    a deployable state without it, and the deploy gate is the second time rather than the only
+    one.
+    """
+    import datetime  # noqa: PLC0415
+
+    deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+    skipped = re.findall(r"^\s+(\w+):\s*false\s*$", deploy, re.M)
+    passes_a_false_input = "uses: ./.github/workflows/ci.yml" in deploy and bool(skipped)
+    path = ROOT / "contracts" / "ci" / "acceptance.yaml"
+
+    if not passes_a_false_input:
+        # Nothing is switched off, so nothing needs accepting. A leftover acceptance is not a
+        # finding — it is a file to delete, and `ends_when` says so.
+        return []
+
+    if not path.exists():
+        return [
+            "deploy.yml switches a CI job off in its gate and nothing records that as a "
+            "decision. `contracts/ci/acceptance.yaml` is where it goes: who accepted it, why, "
+            "and when it ends. The header still claims the gate runs the whole suite"
+        ]
+
+    entry = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("acceptance") or {}
+    missing = [
+        field
+        for field in ("what", "accepted_by", "accepted_on", "expires_on", "why", "ends_when")
+        if not entry.get(field)
+    ]
+    if missing:
+        return [f"contracts/ci/acceptance.yaml is missing {missing}"]
+
+    expires = entry["expires_on"]
+    expires = (
+        expires if isinstance(expires, datetime.date) else datetime.date.fromisoformat(str(expires))
+    )
+    if expires < datetime.date.today():
+        return [
+            f"the acceptance for skipping a job in the deploy gate expired on {expires}. "
+            f"Doctrine rule 6: exceptions expire. Either the estate is stable and the `with:` "
+            f"block comes out of deploy.yml, or somebody accepts it again, by name, with a new "
+            f"date"
+        ]
+    return []
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -1124,23 +1180,29 @@ def main() -> int:
                 f"something"
             )
 
-    problems.extend(_check_resolution())
-    problems.extend(_resolver_covers_what_layers_publish())
-    problems.extend(_check_permissions_exist())
-    problems.extend(_check_the_teardown_scripts_can_run())
-    problems.extend(_check_every_vpc_function_can_attach_to_it())
-    problems.extend(_check_every_optional_feature_can_be_switched_on())
-    problems.extend(_check_the_gate_cannot_be_cancelled_by_a_push())
-    problems.extend(_check_the_machine_may_invoke_what_it_references())
-    problems.extend(_check_every_service_a_handler_calls_is_reachable())
-    problems.extend(_check_every_layer_can_evaluate())
-    problems.extend(_check_resolves_fail_loudly())
-    problems.extend(_check_nothing_names_what_nothing_creates())
-    problems.extend(_check_the_runtime_artefacts_are_deployed())
-    problems.extend(_check_a_trigger_can_actually_fire())
-    problems.extend(_check_actions_are_pinned())
-    problems.extend(_check_every_env_reference_is_defined())
-    problems.extend(_check_shell_variables_are_assigned_in_their_job())
+    # One list, so that adding a check is adding a name rather than editing control flow — and
+    # so `main` stays a function somebody can read to the end.
+    for check in (
+        _check_resolution,
+        _resolver_covers_what_layers_publish,
+        _check_permissions_exist,
+        _check_the_teardown_scripts_can_run,
+        _check_every_vpc_function_can_attach_to_it,
+        _check_every_optional_feature_can_be_switched_on,
+        _check_the_gate_cannot_be_cancelled_by_a_push,
+        _check_a_skipped_gate_job_is_accepted,
+        _check_the_machine_may_invoke_what_it_references,
+        _check_every_service_a_handler_calls_is_reachable,
+        _check_every_layer_can_evaluate,
+        _check_resolves_fail_loudly,
+        _check_nothing_names_what_nothing_creates,
+        _check_the_runtime_artefacts_are_deployed,
+        _check_a_trigger_can_actually_fire,
+        _check_actions_are_pinned,
+        _check_every_env_reference_is_defined,
+        _check_shell_variables_are_assigned_in_their_job,
+    ):
+        problems.extend(check())
 
     applied = _layer_jobs(deploy)
     destroyed = _layer_jobs(destroy)

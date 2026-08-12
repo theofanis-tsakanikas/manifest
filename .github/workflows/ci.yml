@@ -18,6 +18,22 @@ on:
   # the deploy fails before its first step — which is how a repository ends up with a deploy
   # path nobody has ever successfully started.
   workflow_call:
+    inputs:
+      run_corpus:
+        description: >-
+          Regenerate the 3,000-document corpus inside the reader image and compare it against
+          the committed ground truth. Default true, and it stays true for every push.
+
+          `deploy.yml` passes false, under a dated acceptance in `contracts/ci/acceptance.yaml`
+          that `check_deploy_path.py` refuses to let expire. The reasoning is in that file and
+          the short version is: this job proves a property of the *repository* — that the
+          generator is deterministic — and nothing the deploy applies depends on regenerating
+          the corpus, because every threshold comes from the committed recording. It is 24 of
+          the gate's 36 minutes against 3 minutes of actual applying, re-run on every attempt to
+          fix a one-line grant, having already passed on the same commit.
+        type: boolean
+        required: false
+        default: true
 
 # **Every third-party action is pinned to a commit SHA, never to a tag.**
 #
@@ -179,6 +195,8 @@ jobs:
 
   corpus:
     name: the generator reproduces the committed ground truth
+    # `null` on a push, where inputs do not exist, so the default is to run it.
+    if: ${{ inputs.run_corpus == null || inputs.run_corpus }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

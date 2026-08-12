@@ -120,6 +120,15 @@ jobs:
     name: the whole suite, against this ref
     needs: confirm
     uses: ./.github/workflows/ci.yml
+    # **Accepted, dated, and refused once it expires** — `contracts/ci/acceptance.yaml`.
+    #
+    # The corpus job is 24 of this gate's 36 minutes and the applies are 3. It proves the
+    # generator is deterministic, which is a property of the repository rather than of the
+    # deployment, and it has already passed on this commit in the push run. Skipping it here
+    # buys a three-fold cycle time during the period when the estate is being brought up and
+    # torn down repeatedly; it is not a permanent posture and the acceptance says when it ends.
+    with:
+      run_corpus: false
 
   foundation:
     name: "apply · foundation"
