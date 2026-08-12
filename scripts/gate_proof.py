@@ -560,6 +560,24 @@ def _leave_an_optional_feature_with_no_switch(root: Path) -> bool:
     )
 
 
+def _let_a_push_cancel_a_deploy_in_flight(root: Path) -> bool:
+    """Put the CI gate back in the same concurrency group as an ordinary push.
+
+    **This was the repository's actual state**, and it cost a deploy mid-run: a commit pushed to
+    `main` while a dispatch was applying cancelled the dispatch's gate, and the whole run with
+    it. `deploy.yml` says `cancel-in-progress: false` for exactly this reason and could not
+    enforce it — nothing connects a workflow's concurrency to that of a workflow it calls.
+
+    The mutation is the removal of one interpolation. Every workflow still parses, every job
+    still runs, and the only difference is which runs can kill which.
+    """
+    return _replace(
+        root / ".github/workflows/ci.yml",
+        "  group: ci-${{ github.workflow }}-${{ github.ref }}",
+        "  group: ci-${{ github.ref }}",
+    )
+
+
 def _let_a_layer_run_without_the_variables_it_requires(root: Path) -> bool:
     """Stop supplying `expires_at` to the batch teardown.
 
@@ -1057,6 +1075,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _remove_a_layer_from_the_teardown,
         "Acquired one layer at a time and never on purpose. The repository reads as complete "
         "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "let a push cancel a deploy in flight",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "does not distinguish its callers",
+        _let_a_push_cancel_a_deploy_in_flight,
+        "A declaration in the right place that could not defend itself: deploy.yml refuses to "
+        "be cancelled, and the gate it calls was cancellable by anyone merging a README fix.",
     ),
     Mutation(
         "leave an optional feature with no switch",

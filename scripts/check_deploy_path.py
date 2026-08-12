@@ -978,6 +978,44 @@ def _check_every_optional_feature_can_be_switched_on() -> list[str]:
     return problems
 
 
+def _check_the_gate_cannot_be_cancelled_by_a_push() -> list[str]:
+    """The deploy's CI gate is not in the same concurrency group as an ordinary push.
+
+    **`deploy.yml` declares `cancel-in-progress: false` and a push cancelled it anyway.** The
+    gate runs `ci.yml` through `uses:`, and a reusable workflow's concurrency group is evaluated
+    against the *caller's* context — so `ci-${{ github.ref }}` resolved to the same key for a
+    push to `main` and for a deploy dispatched from `main`, and the newer run cancelled the
+    older. A deploy that has begun applying can be stopped by somebody merging a README fix.
+
+    The declaration was in the right place and could not defend itself: nothing connects a
+    workflow's own concurrency to that of a workflow it calls. So the key has to distinguish the
+    callers, and `github.workflow` is what does it — in a called workflow it is the caller's name.
+
+    Checked as a property of the key rather than by simulating GitHub's scheduler: what can be
+    read offline is whether the group can *possibly* differ between the two callers, and a key
+    made only of `github.ref` provably cannot.
+    """
+    text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    block = re.search(r"^concurrency:\n((?:\s+.*\n|\s*#.*\n)+)", text, re.M)
+    if not block:
+        return [
+            "ci.yml declares no concurrency group. Two pushes to the same ref then run the full "
+            "suite twice over, which is waste rather than a defect — but the group is also what "
+            "keeps a deploy's gate separate from a push, so its absence is not neutral"
+        ]
+    group = re.search(r"group:\s*(.+)", block.group(1))
+    cancels = re.search(r"cancel-in-progress:\s*true", block.group(1))
+    if group and cancels and "github.workflow" not in group.group(1):
+        return [
+            f"ci.yml cancels in progress on the group `{group.group(1).strip()}`, which does not "
+            f"distinguish its callers. deploy.yml runs this workflow as its gate, so that key is "
+            f"the same for a push to a branch and for a deploy dispatched from it — and a push "
+            f"then cancels an apply that is already running, past deploy.yml's own "
+            f"`cancel-in-progress: false`"
+        ]
+    return []
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -1000,6 +1038,7 @@ def main() -> int:
     problems.extend(_check_the_teardown_scripts_can_run())
     problems.extend(_check_every_vpc_function_can_attach_to_it())
     problems.extend(_check_every_optional_feature_can_be_switched_on())
+    problems.extend(_check_the_gate_cannot_be_cancelled_by_a_push())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())

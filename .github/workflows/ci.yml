@@ -33,7 +33,23 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # **`github.workflow` is in the key because this workflow has two callers, and one of them
+  # applies infrastructure.**
+  #
+  # `deploy.yml` runs this as its gate with `uses:`. A reusable workflow's concurrency group is
+  # evaluated against the *caller's* context, so both a push to `main` and a deploy dispatched
+  # from `main` resolved to `ci-refs/heads/main` — and with `cancel-in-progress: true`, pushing
+  # anything cancelled the gate of a deploy already in flight.
+  #
+  # That is not a slow deploy, it is the property `deploy.yml` declares `cancel-in-progress:
+  # false` to protect: *"a cancelled apply leaves state that describes half an estate, and the
+  # next plan wants to destroy things nobody created"*. The intent was written on the deploy and
+  # defeated one level down, by a group key that could not tell the two runs apart.
+  #
+  # In a called workflow `github.workflow` is the caller's name, so a push is `ci-CI-...` and a
+  # deploy's gate is `ci-deploy-...`. Two pushes still cancel each other, which is the behaviour
+  # this was for.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
