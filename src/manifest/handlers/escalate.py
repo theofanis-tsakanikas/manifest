@@ -414,8 +414,8 @@ def _prompt() -> str:
 
 def _reading(event: dict[str, Any]) -> ReadDocument:
     """Rebuild tier 0's reading — the grounding every unscored tier borrows its provenance from."""
-    pointer = (event.get("tier0") or {}).get("reading") or event.get("reading") or {}
-    if not pointer.get("bucket") or not pointer.get("key"):
+    pointer = reading_pointer(event)
+    if not pointer:
         raise HandlerError(
             "the event carries no tier-0 reading pointer. The model tier locates its proposals "
             "in tier 0's words, so without it a proposal has no provenance and cannot publish"
@@ -453,8 +453,39 @@ def _reading(event: dict[str, Any]) -> ReadDocument:
     )
 
 
+def reading_pointer(event: dict[str, Any]) -> dict[str, Any]:
+    """Where tier 0's reading is, in whichever shape this handler was handed.
+
+    **`$.tier0.reading` is not the pointer. It is `read_tier0`'s whole payload.** The reader
+    state stores its result with `ResultSelector = {"reading.$": "$.Payload"}` under
+    `ResultPath = "$.tier0"`, so the pointer — the object with a bucket and a key — is one level
+    further in, at `$.tier0.reading.reading`. The extraction state has always spelled it that
+    way. This handler read `$.tier0.reading`, got a payload with no `bucket`, and called S3 with
+    the empty string: `ParamValidationError: Invalid bucket name ""`, from the second state of
+    an escalation, on an estate where everything else was correct.
+
+    Resolved by looking for the object that *has* a bucket and a key rather than by trusting one
+    path, and refusing when none of them does. A pointer is recognisable; a path is a guess about
+    who called us, and this handler has two callers with different envelopes — the state machine,
+    which passes the whole of `$`, and a direct invocation shaped like `publish`'s event.
+    """
+    tier0 = event.get("tier0") or {}
+    inner = tier0.get("reading") or {}
+    for candidate in (inner.get("reading"), inner, event.get("reading")):
+        if isinstance(candidate, dict) and candidate.get("bucket") and candidate.get("key"):
+            return candidate
+    return {}
+
+
 def _reader_of(event: dict[str, Any]) -> ReaderIdentity:
-    pointer = (event.get("tier0") or {}).get("reading") or event.get("reading") or {}
+    pointer = reading_pointer(event)
+    if not pointer:
+        raise HandlerError(
+            "the event carries no tier-0 reading pointer, so the reader that produced the "
+            "reading cannot be identified and no threshold artefact can be chosen. Every "
+            "threshold is a statement about one reader's scores; guessing which reader would "
+            "apply one distribution's numbers to another's"
+        )
     payload = _load_json(pointer.get("bucket", ""), pointer.get("key", ""))
     return ReaderIdentity(
         name=str(payload["reader"]["name"]), version=str(payload["reader"]["version"])
