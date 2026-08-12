@@ -940,6 +940,44 @@ def _check_every_vpc_function_can_attach_to_it() -> list[str]:
     return problems
 
 
+def _check_every_optional_feature_can_be_switched_on() -> list[str]:
+    """A layer's `enable_*` variable is reachable from the workflow that applies the layer.
+
+    **Written, validated, checkov-clean and unreachable is a different thing from off.** Three
+    features here are declared with `enable_* = false`; `deploy.yml` passed exactly one of them.
+    `enable_classifier` and `enable_search` could not be turned on by any dispatch, so the
+    SageMaker endpoint and the OpenSearch collection were not "off by default" — they were
+    unbuildable, while the README advertised both services in its subtitle and `preflight`'s
+    subtitle check passed because a *layer* declares them.
+
+    Same family as the two layers that were described as separate dispatches and had no job:
+    every offline gate reads the configuration, and a configuration nothing can reach is
+    type-correct, well-formed and dead.
+
+    A default of `false` is not what this objects to — a costly surface behind a deliberate flag
+    is the discipline. What it objects to is a flag with no switch.
+    """
+    problems: list[str] = []
+    deploy = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+    for layer in sorted((ROOT / "infra").iterdir()):
+        variables = layer / "variables.tf"
+        if not layer.is_dir() or layer.name == "bootstrap" or not variables.exists():
+            continue
+        declared = set(re.findall(r'^variable "(enable_\w+)"', variables.read_text("utf-8"), re.M))
+        for name in sorted(declared):
+            # A flag whose *on* shape is undeployable is still required to be reachable: the
+            # refusal an operator gets must come from the variable's own validation, naming what
+            # is missing, rather than from a dispatch form that has no box to tick.
+            if not re.search(rf"-var\s+\"?{name}=", deploy):
+                problems.append(
+                    f"infra/{layer.name} declares `{name}` and deploy.yml never passes it. The "
+                    f"feature cannot be switched on by any dispatch, which is not the same as "
+                    f"being off: nothing it builds has ever been applied, and no offline check "
+                    f"can tell the two apart"
+                )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -961,6 +999,7 @@ def main() -> int:
     problems.extend(_check_permissions_exist())
     problems.extend(_check_the_teardown_scripts_can_run())
     problems.extend(_check_every_vpc_function_can_attach_to_it())
+    problems.extend(_check_every_optional_feature_can_be_switched_on())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())

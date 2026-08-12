@@ -434,9 +434,24 @@ data "aws_iam_policy_document" "escalate" {
   dynamic "statement" {
     for_each = length(var.escalation_model_arns) > 0 ? [1] : []
     content {
-      sid       = "ReadAPageAtTierThree"
-      effect    = "Allow"
-      actions   = ["bedrock:InvokeModel", "bedrock:Converse"]
+      sid     = "ReadAPageAtTierThree"
+      effect  = "Allow"
+      actions = ["bedrock:InvokeModel", "bedrock:Converse"]
+      # **A cross-Region inference profile is two resources, and the policy named one.**
+      #
+      # `Converse` against a profile is authorised twice: once on the profile, and once on the
+      # *foundation model in whichever Region the profile routes the request to*. The first
+      # Greek page refused with `AccessDenied ... bedrock:InvokeModel on resource:
+      # arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-sonnet-5` — a Region this
+      # estate does not deploy into and never names anywhere, chosen by Bedrock at call time.
+      #
+      # The six ARNs are **derived from the profile**, not transcribed. Which Regions a profile
+      # spans is AWS's decision and it changes without notice; a hardcoded list is a policy that
+      # is correct until the day the routing picks a Region nobody wrote down, and that failure
+      # arrives as an AccessDenied on one page in one language.
+      # The list is the profile **and every foundation model it routes to**, resolved by
+      # `deploy.yml` from `bedrock:GetInferenceProfile` rather than transcribed here. Six ARNs
+      # in six Regions, and which six is AWS's decision that changes without notice.
       resources = var.escalation_model_arns
     }
   }
@@ -560,3 +575,4 @@ resource "aws_lambda_function" "escalate" {
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
+

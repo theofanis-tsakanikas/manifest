@@ -61,6 +61,19 @@ on:
           those services answer on are not stood up. Nothing is present-and-disabled.
         type: boolean
         default: false
+      enable_search:
+        description: >-
+          Stand up the OpenSearch Serverless collection over published records. Off by default —
+          it bills per OCU-hour with a floor, whether or not anything is indexed, and nothing in
+          this pipeline writes to it yet.
+        type: boolean
+        default: false
+      enable_classifier:
+        description: >-
+          Stand up the SageMaker endpoint behind the tariff-classification path. Off by default:
+          an endpoint bills per instance-hour from the moment it is InService.
+        type: boolean
+        default: false
       confirm:
         description: 'Type "apply" to confirm. Nothing in this repository has ever been applied.'
         required: true
@@ -157,10 +170,32 @@ jobs:
           # extraction job passed an empty `escalation_model_arns` and the variable's own
           # validation refused it, after the image had been built and pushed.
           ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
+          # **The profile is not the only thing a Converse call is authorised against.**
+          #
+          # A cross-Region inference profile routes to a foundation model in a Region Bedrock
+          # picks at call time, and IAM checks `bedrock:InvokeModel` on *that* ARN too. The first
+          # Greek page was refused on `eu-north-1` — a Region this estate does not deploy into
+          # and names nowhere. Which Regions a profile spans is AWS's decision and changes
+          # without notice, so the list is asked for rather than written down.
+          #
+          # Resolved here rather than by a Terraform data source, deliberately: a data source
+          # would make `terraform plan` require a real profile, and the offline check that plans
+          # every optional feature with its flag on and off would need an account to run.
+          ESCALATION_MODEL_ARNS=$(
+            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+              --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
+              --query 'models[].modelArn' --output json \
+            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+          )
+          if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
+            echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
+            exit 1
+          fi
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
             echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
+            echo "ESCALATION_MODEL_ARNS=$ESCALATION_MODEL_ARNS"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: init
@@ -224,10 +259,32 @@ jobs:
           # extraction job passed an empty `escalation_model_arns` and the variable's own
           # validation refused it, after the image had been built and pushed.
           ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
+          # **The profile is not the only thing a Converse call is authorised against.**
+          #
+          # A cross-Region inference profile routes to a foundation model in a Region Bedrock
+          # picks at call time, and IAM checks `bedrock:InvokeModel` on *that* ARN too. The first
+          # Greek page was refused on `eu-north-1` — a Region this estate does not deploy into
+          # and names nowhere. Which Regions a profile spans is AWS's decision and changes
+          # without notice, so the list is asked for rather than written down.
+          #
+          # Resolved here rather than by a Terraform data source, deliberately: a data source
+          # would make `terraform plan` require a real profile, and the offline check that plans
+          # every optional feature with its flag on and off would need an account to run.
+          ESCALATION_MODEL_ARNS=$(
+            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+              --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
+              --query 'models[].modelArn' --output json \
+            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+          )
+          if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
+            echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
+            exit 1
+          fi
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
             echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
+            echo "ESCALATION_MODEL_ARNS=$ESCALATION_MODEL_ARNS"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
@@ -341,8 +398,9 @@ jobs:
             -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
             -var "publish_package_key=${{ steps.package.outputs.key }}" \
             -var "publish_package_hash=${{ steps.package.outputs.hash }}" \
-            -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
+            -var "escalation_model_arns=$ESCALATION_MODEL_ARNS" \
             -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
+            -var "enable_classifier=${{ inputs.enable_classifier }}" \
             -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
 
   lakehouse:
@@ -387,10 +445,32 @@ jobs:
           # extraction job passed an empty `escalation_model_arns` and the variable's own
           # validation refused it, after the image had been built and pushed.
           ESCALATION_MODEL_ARN=$(read_param escalation_model_arn)
+          # **The profile is not the only thing a Converse call is authorised against.**
+          #
+          # A cross-Region inference profile routes to a foundation model in a Region Bedrock
+          # picks at call time, and IAM checks `bedrock:InvokeModel` on *that* ARN too. The first
+          # Greek page was refused on `eu-north-1` — a Region this estate does not deploy into
+          # and names nowhere. Which Regions a profile spans is AWS's decision and changes
+          # without notice, so the list is asked for rather than written down.
+          #
+          # Resolved here rather than by a Terraform data source, deliberately: a data source
+          # would make `terraform plan` require a real profile, and the offline check that plans
+          # every optional feature with its flag on and off would need an account to run.
+          ESCALATION_MODEL_ARNS=$(
+            PROFILE_ARN="$ESCALATION_MODEL_ARN" aws bedrock get-inference-profile \
+              --inference-profile-identifier "${ESCALATION_MODEL_ARN##*/}" \
+              --query 'models[].modelArn' --output json \
+            | python3 -c 'import json, os, sys; print(json.dumps([os.environ["PROFILE_ARN"], *json.load(sys.stdin)]))'
+          )
+          if [ -z "$ESCALATION_MODEL_ARNS" ] || [ "$ESCALATION_MODEL_ARNS" = "[]" ]; then
+            echo "::error::the inference profile ${ESCALATION_MODEL_ARN##*/} resolved to no models; the escalation would be granted nothing to call"
+            exit 1
+          fi
           {
             echo "TF_STATE_BUCKET=$TF_STATE_BUCKET"
             echo "BUDGET_EMAIL=$BUDGET_EMAIL"
             echo "ESCALATION_MODEL_ARN=$ESCALATION_MODEL_ARN"
+            echo "ESCALATION_MODEL_ARNS=$ESCALATION_MODEL_ARNS"
           } >> "$GITHUB_ENV"
           echo "resolved from /${{ env.PROJECT }}/bootstrap/*"
       - name: resolve what foundation published
@@ -423,7 +503,8 @@ jobs:
         run: |
           terraform -chdir=infra/lakehouse init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
           terraform -chdir=infra/lakehouse apply -auto-approve \
-            -var 'expires_at=${{ inputs.expires_at }}'
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var "enable_search=${{ inputs.enable_search }}"
 
   # `batch` and `analytics` are deliberately NOT applied by default. They are the two most
   # expensive layers in the estate — EMR Serverless and a Redshift workgroup — and an estate

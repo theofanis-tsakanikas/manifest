@@ -54,9 +54,28 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: The optional features, and the layer each one lives in. A feature added without an entry here
 #: is a feature nobody plans with off — which is how both defects above reached a deploy.
-OPTIONAL: dict[str, str] = {
-    "extraction": "enable_escalation_tiers",
-    "foundation": "enable_escalation_tiers",
+#:
+#: A list per layer, not one flag per layer: `extraction` has two, and the single-flag shape
+#: silently covered whichever one was written first. `scripts/check_deploy_path.py` holds the
+#: matching rule from the other end — every `enable_*` a layer declares must be reachable from
+#: `deploy.yml` — so a flag added and forgotten fails there whether or not it is listed here.
+OPTIONAL: dict[str, list[str]] = {
+    "extraction": ["enable_escalation_tiers"],
+    "foundation": ["enable_escalation_tiers"],
+    "lakehouse": ["enable_search"],
+}
+
+#: Flags whose *on* shape cannot be planned here, with the reason. Not a convenience: an entry
+#: is a statement that the feature is undeployable as the repository stands, and it has to name
+#: what is missing.
+#:
+#: `enable_classifier` needs a trained artefact in S3 and this project has never produced one —
+#: the classification path is a similarity ranker over declared headings. The variable's own
+#: `validation` refuses the combination by name, which is the check; planning it here would need
+#: a placeholder S3 URI, and a plan that succeeds against an artefact that does not exist proves
+#: nothing except that Terraform accepts a string.
+UNPLANNABLE: dict[str, str] = {
+    "enable_classifier": "needs a trained artefact; refused by the variable's own validation",
 }
 
 
@@ -183,10 +202,13 @@ def _plan(copy: Path, flag: str, enabled: bool, varfile: Path) -> tuple[bool, st
 
 def main() -> int:
     problems: list[str] = []
-    for layer, flag in OPTIONAL.items():
+    for layer, flags in OPTIONAL.items():
+        # One working copy per layer, reused across its flags: the copy costs a provider
+        # download and the flags differ only in a `-var`.
         with tempfile.TemporaryDirectory(prefix=f"optional-{layer}-") as scratch:
             copy = _working_copy(layer, Path(scratch) / layer)
-            problems.extend(_plan_both_ways(layer, flag, copy))
+            for flag in flags:
+                problems.extend(_plan_both_ways(layer, flag, copy))
 
     if problems:
         print(f"\noptional layers: {len(problems)} problem(s)\n", file=sys.stderr)
@@ -195,7 +217,8 @@ def main() -> int:
         return 1
 
     print(
-        f"optional layers: {len(OPTIONAL)} feature(s) plan with their flag both on and off. "
+        f"optional layers: {sum(len(f) for f in OPTIONAL.values())} feature(s) plan with their "
+        f"flag both on and off. "
         f"`terraform validate` cannot see this — both shapes are type-correct."
     )
     return 0

@@ -738,6 +738,23 @@ data "aws_iam_policy_document" "deploy_compute" {
     resources = ["*"]
   }
 
+  # **Reading the inference profile, so the escalation's policy can name what it routes to.**
+  #
+  # `Converse` against a cross-Region profile is authorised on the profile *and* on the
+  # foundation model in whichever Region Bedrock picks — the first Greek page was refused on
+  # `eu-north-1`, a Region this estate does not deploy into and never names. `infra/extraction`
+  # derives those ARNs from the profile rather than transcribing six of them, and this is the
+  # read that makes the derivation possible.
+  #
+  # A read, and only a read. `bedrock:InvokeModel` is not here and must not be: the deploy role
+  # builds the thing that calls the model, it does not call it.
+  statement {
+    sid       = "ReadTheInferenceProfileTheEscalationRoutesThrough"
+    effect    = "Allow"
+    actions   = ["bedrock:GetInferenceProfile", "bedrock:ListInferenceProfiles"]
+    resources = ["*"]
+  }
+
   # SageMaker and OpenSearch Serverless, for the two opt-in surfaces.
   #
   # Granted whether or not those surfaces are enabled: the grant is on the deploy *role*, and a

@@ -643,9 +643,7 @@ def main() -> int:
     # being printed for the first run where it was false. It was: the escalation called Textract
     # for seven fields and the verifier congratulated the estate for not having done so, three
     # lines under the check that says it did.
-    escalated = next(
-        (result for result in estate.results if result.name.startswith("3b")), None
-    )
+    escalated = next((result for result in estate.results if result.name.startswith("3b")), None)
     print(
         "end to end: a document arrived, was read by the tier-0 image, thresholded against\n"
         "  derived thresholds, checked field by field against its own pages, published with its\n"

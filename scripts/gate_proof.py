@@ -541,6 +541,25 @@ def _stop_a_function_in_a_vpc_from_attaching_to_it(root: Path) -> bool:
     )
 
 
+def _leave_an_optional_feature_with_no_switch(root: Path) -> bool:
+    """Stop passing one `enable_*` flag, leaving the feature declared and unreachable.
+
+    **This was the repository's actual state on two of three flags.** `enable_classifier` and
+    `enable_search` were declared with `default = false` and no dispatch could set either, so the
+    SageMaker endpoint and the OpenSearch collection were not off — they were unbuildable, while
+    the README advertised both services in its subtitle and every offline gate agreed, because a
+    *layer* declares them and no check asked whether anything could reach the layer.
+
+    The mutation is a deletion of one line in a workflow, which is what the omission looked like:
+    nothing is broken, nothing is type-incorrect, and the estate simply never grows a component.
+    """
+    return _replace(
+        root / ".github/workflows/deploy.yml",
+        '            -var "enable_search=${{ inputs.enable_search }}"',
+        "",
+    )
+
+
 def _let_a_layer_run_without_the_variables_it_requires(root: Path) -> bool:
     """Stop supplying `expires_at` to the batch teardown.
 
@@ -1038,6 +1057,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _remove_a_layer_from_the_teardown,
         "Acquired one layer at a time and never on purpose. The repository reads as complete "
         "and the estate cannot be fully torn down.",
+    ),
+    Mutation(
+        "leave an optional feature with no switch",
+        "deploy path",
+        [sys.executable, "scripts/check_deploy_path.py"],
+        "cannot be switched on",
+        _leave_an_optional_feature_with_no_switch,
+        "Declared, validated, scanned clean and unreachable. Not the same as off, and no gate "
+        "that reads the configuration can tell the two apart.",
     ),
     Mutation(
         "stop a function in a VPC from attaching to it",

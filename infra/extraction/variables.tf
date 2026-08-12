@@ -148,6 +148,29 @@ variable "enable_classifier" {
   EOT
   type        = bool
   default     = false
+
+  # **The flag was unreachable and the feature is also unbuildable, and those are two problems.**
+  #
+  # `deploy.yml` now passes this — before, no dispatch could set it, so the endpoint was not
+  # "off by default", it was unbuildable-by-omission. Making it reachable immediately showed the
+  # second problem: with it on, the layer does not plan, because a SageMaker model needs an
+  # artefact and `classifier_model_data_url` is empty. There is no trained artefact in this
+  # repository and none is claimed — `classification` is a similarity ranker over declared
+  # headings, and the README says so.
+  #
+  # Refused here, by name, rather than four minutes later as a SageMaker API error about a model
+  # data URL. An operator who sets this flag is asking for something that does not exist yet, and
+  # the message is the place to say what is missing.
+  validation {
+    condition     = !var.enable_classifier || var.classifier_model_data_url != ""
+    error_message = <<-EOT
+      enable_classifier is on and classifier_model_data_url is empty. The endpoint needs a
+      trained artefact in S3 and this repository has never produced one: the classification path
+      is a similarity ranker over declared headings, not a model that was fitted. Supply the URI
+      of a real artefact, or leave the flag off — standing up an endpoint over nothing would be
+      a service in the estate that no request can be answered by.
+    EOT
+  }
 }
 
 variable "classifier_image_uri" {
