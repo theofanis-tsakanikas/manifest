@@ -90,7 +90,7 @@ command in this repository, not a summary of one.
 | `terraform validate` | **6/6 layers** against real provider schemas |
 | `checkov` | **606 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **330 passing**, offline, credential-free |
+| test suite | **331 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks 48 controls on purpose and requires the **named** gate to refuse
@@ -249,7 +249,7 @@ one function, and keeping it that size is what stops the untested region growing
 
 ```bash
 make install       # venv + editable install
-make test          # 330 tests, offline, under a minute
+make test          # 331 tests, offline, under a minute
 make claims        # every claim gate that exists
 make gate-proof    # break 48 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability

@@ -217,9 +217,9 @@ class TestTheModelAdapterAgainstTheAuthoredShape:
     def test_the_box_is_never_taken_from_the_model_even_when_offered(self) -> None:
         """A model asked for coordinates returns plausible ones. Plausible is the problem."""
         reply = _load("authored_model_reply.json")
-        reply["output"]["message"]["content"][0]["text"] = json.dumps(
-            {"gross_weight": {"value": "27000 KGS", "page": 9, "box": [0.9, 0.9, 0.05, 0.01]}}
-        )
+        reply["output"]["message"]["content"][0]["toolUse"]["input"]["fields"] = {
+            "gross_weight": {"value": "27000 KGS", "page": 9, "box": [0.9, 0.9, 0.05, 0.01]}
+        }
         found = llm.proposals(response=reply, grounding=_grounding())
         assert found[0].page == 1, "the page comes from the reading that measured it"
         assert found[0].box == Box.hull([word.box for word in _grounding().pages[0].lines[0].words])
@@ -235,9 +235,9 @@ class TestTheModelAdapterAgainstTheAuthoredShape:
         score that means something.
         """
         reply = _load("authored_model_reply.json")
-        reply["output"]["message"]["content"][0]["text"] = json.dumps(
-            {"gross_weight": {"value": "27000 KGS", key: 0.97}}
-        )
+        reply["output"]["message"]["content"][0]["toolUse"]["input"]["fields"] = {
+            "gross_weight": {"value": "27000 KGS", key: 0.97}
+        }
         with pytest.raises(llm.ResponseError, match="self-reported score"):
             llm.proposals(response=reply, grounding=_grounding())
 
@@ -248,10 +248,26 @@ class TestTheModelAdapterAgainstTheAuthoredShape:
         with pytest.raises(llm.ResponseError, match="token limit"):
             llm.proposals(response=reply, grounding=_grounding())
 
-    def test_a_reply_that_is_not_json_is_refused_rather_than_repaired(self) -> None:
+    def test_a_reply_that_answers_in_prose_is_refused_rather_than_read(self) -> None:
+        """The failure that took this tier from "written" to "called and useless".
+
+        The first real reply began with something other than `{`. The old adapter parsed the
+        text block and refused, which was right and left the tier unusable; the request now
+        forces a tool call, so prose is the model *declining the schema* rather than choosing a
+        format. Reading it anyway is how a sentence becomes a customs field.
+        """
         reply = _load("authored_model_reply.json")
-        reply["output"]["message"]["content"][0]["text"] = "Here is the weight: 27000 KGS"
-        with pytest.raises(llm.ResponseError, match="not JSON"):
+        reply["output"]["message"]["content"] = [{"text": "Here is the weight: 27000 KGS"}]
+        with pytest.raises(llm.ResponseError, match="no `toolUse` block"):
+            llm.proposals(response=reply, grounding=_grounding())
+
+    def test_two_tool_calls_are_refused_rather_than_merged(self) -> None:
+        """Merging would pick a winner per field and never say which."""
+        reply = _load("authored_model_reply.json")
+        reply["output"]["message"]["content"].append(
+            json.loads(json.dumps(reply["output"]["message"]["content"][0]))
+        )
+        with pytest.raises(llm.ResponseError, match="tool calls in one reply"):
             llm.proposals(response=reply, grounding=_grounding())
 
     def test_a_proposal_carries_no_confidence_field_at_all(self) -> None:

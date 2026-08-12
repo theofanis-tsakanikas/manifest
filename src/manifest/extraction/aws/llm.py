@@ -44,7 +44,6 @@ says so where the tiers are declared, and `evals/review/` counts the cost agains
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -129,25 +128,36 @@ def proposals(
     allow a caller to obtain proposals with no provenance at all and publish them, and the
     whole of claim 2 would rest on every call site remembering to pass an argument.
     """
-    body = _text_content(response)
-    try:
-        proposed = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise ResponseError(
-            f"the model's reply is not JSON: {exc}. It is not repaired here — a partial parse "
-            f"of a truncated reply produces a subset of fields with no indication that it is a "
-            f"subset, and a document short by three fields looks exactly like a document that "
-            f"did not have them"
-        ) from exc
-
-    if not isinstance(proposed, dict):
-        raise ResponseError(f"the model returned a {type(proposed).__name__}, not an object")
-
+    proposed = _proposed_object(response)
     return tuple(_proposal(field, value, grounding) for field, value in sorted(proposed.items()))
 
 
-def _text_content(response: dict[str, Any]) -> str:
-    """The assistant's text, from the documented `Converse` response shape."""
+#: The name of the tool the request forces the model to call. It appears here and in
+#: `handlers/escalate.py`, and the two must agree; a mismatch is a reply this refuses by name
+#: rather than a value quietly missing.
+TOOL_NAME = "propose_fields"
+
+
+def _proposed_object(response: dict[str, Any]) -> dict[str, Any]:
+    """The proposal, from the tool the request obliged the model to call.
+
+    **Read from a `toolUse` block rather than parsed out of prose, and that is the fix for a
+    real failure rather than a preference.** The first Greek page to reach this tier came back
+    with a reply whose first character was not `{`, and this module refused it — correctly, and
+    with a good reason: *"a partial parse of a truncated reply produces a subset of fields with
+    no indication that it is a subset"*. But refusing every reply is not a working tier.
+
+    The instinct is to strip a code fence. That is repair, which this module argues against in
+    its own docstring, and it works until the day a model explains itself first. The alternative
+    is not to ask politely for JSON — it is to make prose unavailable: `Converse` with a
+    `toolConfig` and a forced `toolChoice` returns `toolUse.input` as an object the service has
+    already validated against the schema the request declared. There is no text to parse and no
+    fence to strip.
+
+    What is kept from before is everything that was about *meaning* rather than syntax: the
+    `max_tokens` refusal, because a truncated tool call is as partial as truncated JSON and says
+    so no more loudly, and the refusal of a self-reported score, which is enforced per field.
+    """
     try:
         content = response["output"]["message"]["content"]
     except (KeyError, TypeError) as exc:
@@ -156,9 +166,8 @@ def _text_content(response: dict[str, Any]) -> str:
     if not isinstance(content, list) or not content:
         raise ResponseError("`output.message.content` is empty")
 
-    # A `stopReason` of `max_tokens` means the reply was cut off mid-structure. Parsing it would
-    # succeed often enough to be dangerous — JSON truncated after a complete field is still
-    # valid JSON with fewer fields — so it is refused on the flag rather than on the parse.
+    # Refused on the flag rather than on the shape. A tool call cut off at the token limit can
+    # still arrive as a well-formed object with fields missing, and nothing in it says so.
     if response.get("stopReason") == "max_tokens":
         raise ResponseError(
             "the reply stopped at the token limit, so it is a prefix of an answer. A prefix "
@@ -166,10 +175,34 @@ def _text_content(response: dict[str, Any]) -> str:
             "missing and nothing in the value says so"
         )
 
-    texts = [block["text"] for block in content if isinstance(block, dict) and "text" in block]
-    if not texts:
-        raise ResponseError("no text block in `output.message.content`")
-    return "\n".join(texts)
+    uses = [
+        block["toolUse"]
+        for block in content
+        if isinstance(block, dict) and isinstance(block.get("toolUse"), dict)
+    ]
+    if not uses:
+        raise ResponseError(
+            f"no `toolUse` block in the reply. The request forces `{TOOL_NAME}` with "
+            f"`toolChoice`, so a reply without one is the model declining the schema rather "
+            f"than answering in another format — and reading its prose instead is how a "
+            f"proposal with no structure becomes a field value"
+        )
+    if len(uses) > 1:
+        raise ResponseError(
+            f"{len(uses)} tool calls in one reply. The request asks for one; merging several "
+            f"would silently pick a winner per field, and which one won would be invisible"
+        )
+
+    proposed = uses[0].get("input")
+    if not isinstance(proposed, dict):
+        raise ResponseError(
+            f"`toolUse.input` is a {type(proposed).__name__}, not an object of field proposals"
+        )
+    # One level of nesting is allowed, because the schema declares `fields` as its property and
+    # a model that returns the object bare is answering the same question. Anything deeper is
+    # not unwrapped: a guess about which key holds the answer is the repair this avoids.
+    inner = proposed.get("fields")
+    return inner if isinstance(inner, dict) else proposed
 
 
 def _proposal(field: str, value: Any, grounding: ReadDocument) -> Proposal:

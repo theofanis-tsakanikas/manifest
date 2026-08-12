@@ -10,7 +10,7 @@ which version it was authored from cannot be checked against a later one.
 |---|---|---|
 | `authored_ocr_response.json` | per-page OCR `Blocks` | 2026-08-09 |
 | `authored_document_automation_response.json` | document standard output | 2026-08-10 |
-| `authored_model_reply.json` | `Converse` response | 2026-08-10 |
+| `authored_model_reply.json` | `Converse` response, tool-use form | 2026-08-12 |
 
 **When the estate is applied, a captured response may replace an authored one — and the `_note`
 changes in the same commit.** Decision 14's revision permits that in one direction and forbids

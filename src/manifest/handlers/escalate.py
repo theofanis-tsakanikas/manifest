@@ -385,6 +385,52 @@ def _read_at(
                 }
             ],
             inferenceConfig={"temperature": 0, "maxTokens": 2048},
+            # **The schema is the format, rather than a sentence in the prompt asking for one.**
+            #
+            # The first real reply to this tier was not JSON — `Expecting value: line 1 column
+            # 1` — and `llm.proposals` refused it, correctly, because repairing a partial parse
+            # is how a document short by three fields comes to look like a document that did not
+            # have them. Asking harder in the prompt is the same gamble with a longer prompt.
+            #
+            # `toolChoice` obliges the model to answer through `propose_fields`, and Bedrock
+            # validates the arguments against this schema before the response is returned. There
+            # is no prose to strip and no fence to guess at.
+            #
+            # **Values only, no scores and no coordinates**, and the schema is where that is
+            # enforced rather than hoped for: `additionalProperties: false` means a model that
+            # tries to attach a confidence produces a *schema* failure at the service, not a
+            # field this repository has to notice and refuse. The adapter still refuses one, for
+            # the day the schema is loosened by somebody who does not read that far.
+            toolConfig={
+                "tools": [
+                    {
+                        "toolSpec": {
+                            "name": llm.TOOL_NAME,
+                            "description": (
+                                "Report the value of each requested field exactly as it is "
+                                "printed on the page, or omit the field if it is not there."
+                            ),
+                            "inputSchema": {
+                                "json": {
+                                    "type": "object",
+                                    "properties": {
+                                        "fields": {
+                                            "type": "object",
+                                            "description": (
+                                                "Field name to the value printed on the page."
+                                            ),
+                                            "additionalProperties": {"type": "string"},
+                                        }
+                                    },
+                                    "required": ["fields"],
+                                    "additionalProperties": False,
+                                }
+                            },
+                        }
+                    }
+                ],
+                "toolChoice": {"tool": {"name": llm.TOOL_NAME}},
+            },
         )
         found = llm.proposals(response=response, grounding=grounding)
         return type("Proposed", (), {"proposals": found})()

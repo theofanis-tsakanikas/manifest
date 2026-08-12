@@ -1,14 +1,26 @@
 {
-  "_note": "AUTHORED from the documented Converse response shape. Never captured — see AUTHORED.md. Source: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html, read 2026-08-10.",
+  "_note": "AUTHORED from the documented Converse response shape, tool-use form. Never captured — see AUTHORED.md. Source: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_Converse.html and API_runtime_ToolUseBlock.html, read 2026-08-12.",
   "output": {
     "message": {
       "role": "assistant",
       "content": [
-        { "text": "{\"gross_weight\": \"27000 KGS\", \"port_of_loading\": \"Πειραιάς\", \"consignee\": \"ACME Trading BV\"}" }
+        {
+          "toolUse": {
+            "toolUseId": "tooluse_AUTHORED_0000000000",
+            "name": "propose_fields",
+            "input": {
+              "fields": {
+                "gross_weight": "27000 KGS",
+                "port_of_loading": "Πειραιάς",
+                "consignee": "ACME Trading BV"
+              }
+            }
+          }
+        }
       ]
     }
   },
-  "stopReason": "end_turn",
+  "stopReason": "tool_use",
   "usage": { "inputTokens": 1832, "outputTokens": 41, "totalTokens": 1873 },
   "metrics": { "latencyMs": 0 }
 }

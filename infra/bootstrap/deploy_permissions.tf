@@ -767,12 +767,28 @@ data "aws_iam_policy_document" "deploy_compute" {
     sid    = "TheNamespaceCredentialRedshiftMints"
     effect = "Allow"
     actions = [
+      # **`CreateSecret` was the one missing, and its absence read as the service's fault.**
+      #
+      # Redshift mints the credential *on the caller's behalf*, so the permission is checked
+      # against this role — and the error AWS returns is `Unable to create namespace credential
+      # secret: Amazon Redshift can't access the secret`, which names Redshift. The first fix
+      # attempt granted five actions around the secret and not the one that makes it, and the
+      # message afterwards was character for character the same.
+      "secretsmanager:CreateSecret",
       "secretsmanager:DescribeSecret",
       "secretsmanager:GetResourcePolicy",
       "secretsmanager:ListSecretVersionIds",
       "secretsmanager:TagResource",
       "secretsmanager:DeleteSecret",
+      # Rotation is configured by Redshift when it manages the password. Not granting it leaves
+      # a namespace whose credential can never be rotated, which is a security control missing
+      # rather than a deploy that fails — the quieter of the two.
+      "secretsmanager:RotateSecret",
     ]
+    # **`GetSecretValue` is deliberately absent.** The whole point of `manage_admin_password` is
+    # that no principal in this repository ever holds the warehouse credential. A deploy role
+    # that could read it would put the password one compromised workflow away, in exchange for
+    # nothing the apply needs.
     resources = [
       "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:redshift!${var.project}-*",
     ]
