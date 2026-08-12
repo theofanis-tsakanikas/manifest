@@ -260,7 +260,7 @@ def _redecide(
                     "value": found.value if found else entry.get("value"),
                     "confidence": confidence,
                     "page": found.page if found else entry.get("page"),
-                    "box": list(found.box) if found and found.box else entry.get("box"),
+                    "box": list(found.box.as_tuple()) if found and found.box else entry.get("box"),
                     "reason": f"re-read at tier {target}",
                     "queued_because": because.value if because else None,
                     "publishable": because is None and bool(found and found.value),

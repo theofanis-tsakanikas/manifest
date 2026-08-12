@@ -101,6 +101,20 @@ class Box:
     def area(self) -> float:
         return self.width * self.height
 
+    def as_tuple(self) -> tuple[float, float, float, float]:
+        """`(left, top, width, height)` — the order every record in this repository stores.
+
+        **A `Box` is deliberately not a sequence, and this exists so nobody has to find that
+        out.** `list(box)` reads as obviously correct, raises `TypeError: 'Box' object is not
+        iterable`, and does so only where the line actually runs — which for the escalation is
+        the fourth state of a tier that had never been reached, on a deployed estate.
+
+        `publish` had the unpacking written out by hand and `escalate` assumed a sequence. Two
+        hand conversions of one value is the drift; this is the one both call, so the order is
+        decided once and a `Box` that grows a field cannot mean two different tuples.
+        """
+        return (self.left, self.top, self.width, self.height)
+
     # ── Building one ─────────────────────────────────────────────────────────
 
     @classmethod

@@ -211,9 +211,7 @@ def _outcome(field: str, found: Extracted, thresholds: dict[str, float | None]) 
         value=found.value,
         confidence=found.confidence,
         page=found.page,
-        box=(found.box.left, found.box.top, found.box.width, found.box.height)
-        if found.box
-        else None,
+        box=found.box.as_tuple() if found.box else None,
         reason=found.reason,
         queued_because=because,
     )
