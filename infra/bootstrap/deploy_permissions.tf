@@ -752,6 +752,32 @@ data "aws_iam_policy_document" "deploy_compute" {
     resources = ["*"]
   }
 
+  # **The namespace's admin secret, which Redshift creates and Terraform then reads back.**
+  #
+  # `manage_admin_password` means the service mints the credential rather than the configuration
+  # carrying one — which is the point of it, and the reason no password appears anywhere in this
+  # repository. The provider still describes the secret to record its ARN in state, and the
+  # teardown still deletes it, so the deploy role needs to see and remove a secret it never
+  # writes the contents of.
+  #
+  # Scoped by name to what Redshift calls it: `redshift!<namespace>-*`. A grant on every secret
+  # in the account would put this role one bug away from reading credentials belonging to
+  # everything else in it.
+  statement {
+    sid    = "TheNamespaceCredentialRedshiftMints"
+    effect = "Allow"
+    actions = [
+      "secretsmanager:DescribeSecret",
+      "secretsmanager:GetResourcePolicy",
+      "secretsmanager:ListSecretVersionIds",
+      "secretsmanager:TagResource",
+      "secretsmanager:DeleteSecret",
+    ]
+    resources = [
+      "arn:aws:secretsmanager:*:${data.aws_caller_identity.current.account_id}:secret:redshift!${var.project}-*",
+    ]
+  }
+
   # **Reading the inference profile, so the escalation's policy can name what it routes to.**
   #
   # `Converse` against a cross-Region profile is authorised on the profile *and* on the

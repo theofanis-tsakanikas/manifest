@@ -369,6 +369,7 @@ def _read_at(
     if tier == TIER_MODEL:
         from manifest.extraction.aws import llm  # noqa: PLC0415
 
+        images = [_within_the_model_limit(raster) for raster in rasters]
         response = _client("bedrock-runtime").converse(
             modelId=_env("ESCALATION_MODEL_ID"),
             messages=[
@@ -376,8 +377,8 @@ def _read_at(
                     "role": "user",
                     "content": [
                         *(
-                            {"image": {"format": "png", "source": {"bytes": image}}}
-                            for image in rasters
+                            {"image": {"format": fmt, "source": {"bytes": data}}}
+                            for fmt, data in images
                         ),
                         {"text": _prompt()},
                     ],
@@ -393,6 +394,59 @@ def _read_at(
         f"contract declares a tier this handler does not implement, or this handler has lost "
         f"one — and a page routed to a tier nothing calls would abstain silently"
     )
+
+
+#: Bedrock's documented ceiling for one image in a `Converse` request. A full page rendered for
+#: OCR is routinely over it: the corpus's pages are 2481×3508, and one arrived at 7,054,160 bytes.
+MODEL_IMAGE_LIMIT_BYTES = 5 * 1024 * 1024
+
+#: How far JPEG quality is allowed to fall before resolution is given up instead. Below this the
+#: artefacts start eating thin strokes, which on a degraded scan is the difference between a `3`
+#: and an `8`.
+LOWEST_USEFUL_QUALITY = 55
+
+
+def _within_the_model_limit(raster: bytes) -> tuple[str, bytes]:
+    """The page, as a format and bytes the model will accept.
+
+    **Re-encoded before it is shrunk, and that order is the decision.** The renders are PNG —
+    lossless, and for a full page of text, enormous. A JPEG of the *same* page at the *same*
+    resolution is usually a tenth the size, and what it loses is colour fidelity on a document
+    that is black text on white paper. Resolution is what a reader needs; PNG's exactness is not.
+
+    So quality drops first and pixels only if that is not enough. A page shrunk to fit is a page
+    the tier reads worse, and this tier is the only escalation Greek and Dutch have — losing
+    detail there is losing the reading, not just some bytes.
+
+    **What this does not do is refuse.** A page that cannot be made to fit is still sent at the
+    smallest form reached, because the alternative is an abstention caused by an encoder rather
+    than by the evidence, and the fields in question are already abstaining.
+    """
+    if len(raster) <= MODEL_IMAGE_LIMIT_BYTES:
+        return "png", raster
+
+    from io import BytesIO  # noqa: PLC0415 - kept off the import path of the offline suite
+
+    from PIL import Image  # noqa: PLC0415
+
+    page = Image.open(BytesIO(raster)).convert("RGB")
+    for quality in (90, 80, 70, LOWEST_USEFUL_QUALITY):
+        buffer = BytesIO()
+        page.save(buffer, "JPEG", quality=quality, optimize=True)
+        if buffer.tell() <= MODEL_IMAGE_LIMIT_BYTES:
+            return "jpeg", buffer.getvalue()
+
+    # Only now, and by halving rather than by a computed ratio: the relationship between pixels
+    # and encoded bytes is not linear, and a single computed scale would either overshoot or need
+    # the same loop anyway.
+    smaller = page
+    for _ in range(4):
+        smaller = smaller.resize((smaller.width // 2, smaller.height // 2))
+        buffer = BytesIO()
+        smaller.save(buffer, "JPEG", quality=LOWEST_USEFUL_QUALITY, optimize=True)
+        if buffer.tell() <= MODEL_IMAGE_LIMIT_BYTES:
+            return "jpeg", buffer.getvalue()
+    return "jpeg", buffer.getvalue()
 
 
 def _prompt() -> str:

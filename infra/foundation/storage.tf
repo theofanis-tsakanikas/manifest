@@ -56,6 +56,55 @@ data "aws_iam_policy_document" "data_key" {
       identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
     }
   }
+
+  # **A service acting on its own behalf is not covered by the root statement.**
+  #
+  # Everything else that uses this key does so as a role in this account, and `kms:*` to the
+  # account root plus an IAM policy on the role is the whole of the permission. Redshift
+  # Serverless is different: with `manage_admin_password`, *the service* creates the namespace's
+  # credential secret and encrypts it, not the caller. `CreateNamespace` was refused with
+  # `ConflictException: Unable to create namespace credential secret: Amazon Redshift can't
+  # access the secret for this namespace` — a message about a secret, produced by a key policy.
+  #
+  # Scoped by account, so the grant is to this account's Redshift rather than to the service
+  # everywhere. `CreateGrant` is in the list because that is how a service holds usage across
+  # the life of a resource it manages, and it is conditioned on being for AWS's own use.
+  statement {
+    sid       = "RedshiftEncryptsItsOwnAdminSecret"
+    effect    = "Allow"
+    actions   = ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey*", "kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["redshift.amazonaws.com", "redshift-serverless.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  statement {
+    sid       = "RedshiftKeepsThatUsageForTheLifeOfTheNamespace"
+    effect    = "Allow"
+    actions   = ["kms:CreateGrant"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["redshift.amazonaws.com", "redshift-serverless.amazonaws.com"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "kms:GrantIsForAWSResource"
+      values   = ["true"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
 }
 
 resource "aws_kms_key_policy" "data" {

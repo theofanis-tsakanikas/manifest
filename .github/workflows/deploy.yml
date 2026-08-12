@@ -361,7 +361,7 @@ jobs:
         run: |
           set -euo pipefail
           staging="$(mktemp -d)"
-          python -m pip install --quiet --target "$staging" .
+          python -m pip install --quiet --target "$staging" ".[handlers]"
           cp -r contracts "$staging/contracts"
           (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/publish.zip" .)
           key="artifacts/publish-${{ github.sha }}.zip"

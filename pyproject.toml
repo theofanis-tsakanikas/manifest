@@ -36,6 +36,14 @@ dependencies = [
 # needed to reproduce any number on the scoreboard — so `dev` pulls them in. The tier-0 OCR
 # engine itself is a *binary* (`tesseract`), not a wheel; see ADR-0005 for why the adapter
 # shells out rather than depending on a Python wrapper.
+# What the deployed zip needs beyond the base package. `escalate` re-encodes a page render
+# before sending it to the model tier, because Bedrock caps a Converse image at 5 MB and a
+# full-resolution PNG page is routinely over it. Kept out of the base dependencies: importing
+# `manifest` must not require an imaging library, and the container-image functions get Pillow
+# from the corpus extra the image already installs.
+handlers = [
+    "pillow>=10.4",
+]
 corpus = [
     "pillow>=10.4",
     "numpy>=2.0",
