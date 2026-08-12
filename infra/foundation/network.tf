@@ -205,6 +205,18 @@ locals {
     "monitoring",
     "secretsmanager",
     "sts",
+    # **The landing function needs both, and the comment above predicted exactly what happened
+    # when they were missing.** It timed out at its full 180 seconds with *no log line at all* —
+    # not its own refusal, not a boto3 error, nothing — because the first call went to an
+    # address with no route and sat there until Lambda killed the invocation. Three retries, nine
+    # minutes of billed duration, and an execution history blaming a task.
+    #
+    # A missing grant fails in a second and names the action. A missing endpoint fails in three
+    # minutes and names nothing, which is why the list is a list rather than something derived
+    # per function: a service reachable by one function and not another is the same silence with
+    # a smaller blast radius.
+    "athena",
+    "glue",
   ]
 
   # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road

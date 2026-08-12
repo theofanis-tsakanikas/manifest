@@ -126,9 +126,30 @@ def _execute(statement: str) -> None:
 
 
 def _client(name: str):
-    import boto3  # noqa: PLC0415 - the offline suite imports this module without AWS
+    """A client that gives up quickly and says what it could not reach.
 
-    return boto3.client(name)
+    **The default is to hang, and hanging is the worst failure this estate produces.** With no
+    VPC endpoint for Athena, the first call went to an address with no route and sat there until
+    Lambda killed the invocation at 180 seconds — three retries, nine minutes of billed duration,
+    and **not one log line**: not a refusal, not a boto3 error, nothing. The execution history
+    blamed the task, the function's logs were empty, and the actual fact — *this subnet cannot
+    reach Athena* — appeared nowhere.
+
+    Five seconds to connect is generous for an endpoint inside the VPC and far short of the
+    function's timeout, so a missing route now arrives as `EndpointConnectionError` naming the
+    host. That is a minute of investigation instead of an hour.
+    """
+    import boto3  # noqa: PLC0415 - the offline suite imports this module without AWS
+    from botocore.config import Config  # noqa: PLC0415
+
+    return boto3.client(
+        name,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=30,
+            retries={"max_attempts": 2, "mode": "standard"},
+        ),
+    )
 
 
 def _s3():

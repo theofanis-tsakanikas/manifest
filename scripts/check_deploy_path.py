@@ -1060,6 +1060,53 @@ def _check_the_machine_may_invoke_what_it_references() -> list[str]:
     return []
 
 
+#: boto3 client name -> the VPC endpoint service that answers it, where they differ.
+_ENDPOINT_FOR = {
+    "stepfunctions": "states",
+    "bedrock-data-automation-runtime": "bedrock-data-automation-runtime",
+}
+
+#: Services reachable without an interface endpoint: the two gateway endpoints, and the two that
+#: are never called from inside the VPC. `sts` and `logs` are in the always-on list already; these
+#: are the ones that would otherwise be reported as missing and are not.
+_NO_INTERFACE_ENDPOINT_NEEDED = frozenset({"s3", "dynamodb"})
+
+
+def _check_every_service_a_handler_calls_is_reachable() -> list[str]:
+    """A function in the VPC can reach every service it calls.
+
+    **A missing endpoint is the quietest failure this estate can produce**, and
+    `infra/foundation/network.tf` says so in a comment written before it happened: *"a service
+    missing here does not fail at deploy time — it hangs until its client times out, and the
+    error names a socket"*. The landing function proved it. No endpoint for Athena, so the first
+    call went nowhere: 180 seconds, three retries, nine minutes of billed duration, and **no log
+    line at all** — no refusal, no boto3 error, nothing. The history blamed the task and the
+    function's own logs were empty.
+
+    Compare that with a missing IAM grant, which fails in under a second and names the action.
+    The two failures are a minute and an hour apart, and only one of them is checkable here.
+
+    Read from the handlers because that is where the calls are. A service added to a handler and
+    not to the list is the whole of the defect, and the two files are never open together.
+    """
+    network = (ROOT / "infra/foundation/network.tf").read_text(encoding="utf-8")
+    declared = set(re.findall(r'^\s*"([a-z0-9.\-]+)",\s*$', network, re.M))
+
+    problems: list[str] = []
+    for handler in sorted((ROOT / "src/manifest/handlers").glob("*.py")):
+        called = set(re.findall(r'_client\(\s*"([a-z0-9.\-]+)"\s*\)', handler.read_text("utf-8")))
+        for service in sorted(called - _NO_INTERFACE_ENDPOINT_NEEDED):
+            if _ENDPOINT_FOR.get(service, service) not in declared:
+                problems.append(
+                    f"src/manifest/handlers/{handler.name} calls {service} and "
+                    f"infra/foundation/network.tf declares no endpoint for it. Every function "
+                    f"here runs in private subnets with no route out, so the call does not fail "
+                    f"— it hangs until Lambda kills the invocation, with no log line naming a "
+                    f"cause"
+                )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -1085,6 +1132,7 @@ def main() -> int:
     problems.extend(_check_every_optional_feature_can_be_switched_on())
     problems.extend(_check_the_gate_cannot_be_cancelled_by_a_push())
     problems.extend(_check_the_machine_may_invoke_what_it_references())
+    problems.extend(_check_every_service_a_handler_calls_is_reachable())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())
