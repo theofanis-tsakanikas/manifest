@@ -154,6 +154,12 @@ data "aws_iam_policy_document" "pipeline" {
         aws_lambda_function.read_tier0.arn,
         aws_lambda_function.publish.arn,
         aws_lambda_function.provenance_gate.arn,
+        # **Added with the landing state, and the omission is why there is now a check.** The
+        # state referenced the function properly — by `.arn`, not by a name, which is what
+        # `_check_nothing_names_what_nothing_creates` was written to enforce — and the role that
+        # runs the machine still could not call it. Referencing a resource and being allowed to
+        # invoke it are two facts, and only one of them was being checked.
+        aws_lambda_function.land.arn,
       ],
       aws_lambda_function.escalate[*].arn,
     )

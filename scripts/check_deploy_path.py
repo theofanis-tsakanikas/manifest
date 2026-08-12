@@ -1016,6 +1016,50 @@ def _check_the_gate_cannot_be_cancelled_by_a_push() -> list[str]:
     return []
 
 
+def _check_the_machine_may_invoke_what_it_references() -> list[str]:
+    """Every function the state machine invokes is one its role is allowed to invoke.
+
+    **Referencing a resource and being permitted to call it are two facts, and only one of them
+    was checked.** `_check_nothing_names_what_nothing_creates` requires a state to name a
+    function by `.arn` rather than by a string — which the landing state did, correctly — and
+    the role running the machine still could not invoke it: three retries, no log stream,
+    `AccessDeniedException` on `lambda:InvokeFunction`.
+
+    The shape of that failure is worth the check on its own. Nothing fails at apply; the machine
+    is valid, the function exists, the reference resolves. It fails on the first document, after
+    the deploy has reported success, and the execution history says the *task* failed rather
+    than the function — so the first place anybody looks is the function's logs, which are
+    empty, because it never ran.
+    """
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "infra/extraction").glob("*.tf"))
+    )
+    # Every `"FunctionName"` in this layer is a state invoking a function; there is nowhere else
+    # the key appears. The first version of this anchored on the `jsonencode({...})` block and
+    # required it to close at column zero — it does not, it is indented inside a resource — so
+    # the match failed, `invoked` was empty, and the check passed over the very gap it was
+    # written for. Caught by trying to break it, which is the only reason it is not still there.
+    invoked = set(re.findall(r'"FunctionName"\s*:\s*[^,\n]*aws_lambda_function\.(\w+)', text))
+    granted_block = re.search(r'sid\s*=\s*"InvokeThePipelineFunctions".*?\n  \}', text, re.DOTALL)
+    granted = (
+        set(re.findall(r"aws_lambda_function\.(\w+)", granted_block.group(0)))
+        if granted_block
+        else set()
+    )
+
+    missing = sorted(invoked - granted)
+    if missing:
+        return [
+            f"the state machine invokes aws_lambda_function.{missing} and its role is not "
+            f"granted lambda:InvokeFunction on them. Nothing fails at apply — the machine is "
+            f"valid, the function exists, the reference resolves — it fails on the first "
+            f"document, and the history blames the task while the function's logs are empty "
+            f"because it never ran"
+        ]
+    return []
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -1040,6 +1084,7 @@ def main() -> int:
     problems.extend(_check_every_vpc_function_can_attach_to_it())
     problems.extend(_check_every_optional_feature_can_be_switched_on())
     problems.extend(_check_the_gate_cannot_be_cancelled_by_a_push())
+    problems.extend(_check_the_machine_may_invoke_what_it_references())
     problems.extend(_check_every_layer_can_evaluate())
     problems.extend(_check_resolves_fail_loudly())
     problems.extend(_check_nothing_names_what_nothing_creates())

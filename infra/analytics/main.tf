@@ -42,6 +42,21 @@ resource "aws_redshiftserverless_workgroup" "marts" {
   subnet_ids          = var.private_subnet_ids
   security_group_ids  = [var.endpoint_security_group_id]
 
+  # **All nine, not the two that matter, and the reason is idempotence.**
+  #
+  # Redshift maintains a full parameter set on every workgroup and fills in what the request did
+  # not mention. Declaring two left seven undeclared, so every later plan saw a difference, sent
+  # an `UpdateWorkgroup` — and Redshift refused it with `ValidationException: You didn't specify
+  # any changes to the configuration parameters`, because the two it was told about already
+  # matched. The layer applied once and could never be applied again: not drift, not a failed
+  # create, an **apply that is not repeatable**, which is the property every other layer here is
+  # relied on for.
+  #
+  # The alternative was `ignore_changes = [config_parameter]`, and it is worse: `require_ssl`
+  # and `enable_user_activity_logging` are the two controls in this block, and ignoring the
+  # attribute they live in means nothing notices when they change. Declaring the service's
+  # defaults turns them from assumptions into statements — and if a future Redshift version
+  # changes one, this is where the plan will say so.
   config_parameter {
     parameter_key   = "require_ssl"
     parameter_value = "true"
@@ -50,6 +65,43 @@ resource "aws_redshiftserverless_workgroup" "marts" {
   config_parameter {
     parameter_key   = "enable_user_activity_logging"
     parameter_value = "true"
+  }
+
+  config_parameter {
+    parameter_key   = "use_fips_ssl"
+    parameter_value = "false"
+  }
+
+  config_parameter {
+    parameter_key   = "auto_mv"
+    parameter_value = "true"
+  }
+
+  config_parameter {
+    parameter_key   = "datestyle"
+    parameter_value = "ISO, MDY"
+  }
+
+  config_parameter {
+    parameter_key   = "enable_case_sensitive_identifier"
+    parameter_value = "false"
+  }
+
+  config_parameter {
+    parameter_key   = "query_group"
+    parameter_value = "default"
+  }
+
+  config_parameter {
+    parameter_key   = "search_path"
+    parameter_value = "$user, public"
+  }
+
+  # Four hours. A query still running after that is not a slow query; it is a query nobody is
+  # waiting for any more, and Redshift Serverless bills for it the whole time.
+  config_parameter {
+    parameter_key   = "max_query_execution_time"
+    parameter_value = "14400"
   }
 
   # A ceiling on RPU-hours per period. The budget guard disables the deploy role and cannot
