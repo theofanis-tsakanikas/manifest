@@ -87,14 +87,30 @@ resource "aws_sagemaker_model" "classifier" {
     }
   }
 
-  # In the VPC, like everything else. An endpoint reachable from outside the network the
-  # documents live in is an endpoint whose inputs can come from somewhere nobody declared.
-  vpc_config {
-    subnets            = var.private_subnet_ids
-    security_group_ids = [var.endpoint_security_group_id]
-  }
-
-  enable_network_isolation = true
+  # **No `vpc_config` and no network isolation, because serverless inference supports neither.**
+  #
+  # Both were here and both were wrong, and the API said so at apply: *"The network isolation is
+  # not supported for serverless endpoint."* Serverless inference runs on AWS-managed capacity —
+  # that is what makes it scale to nothing and bill per request, and it is the reason this
+  # project chose it over a provisioned endpoint that bills by the hour whether anything is
+  # classified or not.
+  #
+  # So the honest description of the boundary, rather than the one that was written here before:
+  #
+  #   * **The endpoint is reached from inside the VPC**, over the `sagemaker.runtime` interface
+  #     endpoint `infra/foundation/network.tf` stands up with this flag. The caller has no route
+  #     out; the request does not cross the internet.
+  #   * **Exactly one principal may call it.** `manifest-classify` holds `sagemaker:InvokeEndpoint`
+  #     on this endpoint and nothing else — it cannot create a model, change a configuration or
+  #     read the artefact.
+  #   * **What is sent is a goods description**, not a document and not a page. It is the same
+  #     posture every other managed service in this estate has: Textract and Bedrock are reached
+  #     the same way, for the same reason, and `docs/REGULATORY.md` covers the region the
+  #     processing happens in.
+  #
+  # What is given up against a provisioned endpoint in the VPC is real and is one sentence: the
+  # container itself is not inside a network this project declares. A workload where the input
+  # were the document rather than a line off it would be the point to revisit that.
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }

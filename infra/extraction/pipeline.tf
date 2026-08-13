@@ -224,6 +224,45 @@ resource "aws_iam_role_policy" "pipeline" {
 # false they do not exist at all — not present-and-skipped. A dead state is a state somebody
 # maintains, and an execution history full of branches that never fire is one nobody reads.
 locals {
+  # The two states the search surface adds, merged into the machine only when it exists.
+  #
+  # In their own local for the same reason the escalation states are: a state whose resources
+  # carry `count` must not sit in the unconditional map, or the definition holds a Task pointing
+  # at `null` that nothing can reach.
+  search_states = {
+    # **Search is the least urgent thing in this pipeline and its failure says so.**
+    #
+    # Same `Catch` reasoning as the landing state, one step weaker: a record that is not
+    # searchable is published, in the bucket, in the lake and in the queue. Every consumer
+    # that decides anything already has it. Failing the execution here would turn "the search
+    # box is stale" into "this document looks unprocessed", which is the more expensive
+    # sentence by a wide margin.
+    IndexTheRecord = {
+      Type     = "Task"
+      Resource = "arn:aws:states:::lambda:invoke"
+      Parameters = {
+        "FunctionName" : one(aws_lambda_function.index[*].arn),
+        "Payload" : { "record.$" : "$.provenance.checked" }
+      }
+      ResultSelector = { "indexed.$" : "$.Payload" }
+      ResultPath     = "$.search"
+      Retry = [{
+        ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+        IntervalSeconds = 2
+        MaxAttempts     = 3
+        BackoffRate     = 2
+      }]
+      Catch = [{ ErrorEquals = ["States.ALL"], Next = "IndexingFailed", ResultPath = "$.error" }]
+      Next  = "Done"
+    }
+
+    IndexingFailed = {
+      Type  = "Fail"
+      Error = "IndexingFailed"
+      Cause = "The record is published, landed and queued; it is not searchable. The index is a view and can be rebuilt from the records bucket."
+    }
+  }
+
   escalation_states = {
     # Only the fields that abstained can be rescued, so a document where nothing abstained
     # never spends a billed call. `queued_count` is computed in `publish`, in Python, where a
@@ -305,6 +344,13 @@ resource "aws_sfn_state_machine" "extraction" {
     # states do not exist" has to mean.
     States = merge(
       { for name, state in local.escalation_states : name => state if var.enable_escalation_tiers },
+      # **Conditional, like the escalation states, and for the reason the reachability check
+      # found.** These were merged in unconditionally, so with search off the definition carried
+      # a Task whose `FunctionName` was `null` and which nothing transitioned to. AWS accepted
+      # it — which is worse than refusing it, because it means the off shape of this machine has
+      # been shipping a dead state with a null target since the surface was written, and the only
+      # reason anybody looked is that the *on* shape broke a different way.
+      { for name, state in local.search_states : name => state if var.search_endpoint != "" },
       {
         # **Tier 0 is the local reference reader, not a metered service.**
         #
@@ -566,43 +612,18 @@ resource "aws_sfn_state_machine" "extraction" {
           Next  = var.search_endpoint == "" ? "Done" : "IndexTheRecord"
         }
 
-        # A terminal state that exists so the machine has one when search is off. `End = true` on
-        # `LandInTheLake` would make the shape of the machine depend on a flag in a way that
-        # reads as two different pipelines; this way the tail is always the same and the only
-        # difference is whether one state sits in it.
-        Done = { Type = "Succeed" }
-
-        # **Search is the least urgent thing in this pipeline and its failure says so.**
+        # **The one terminal success, reached from whichever state is last.**
         #
-        # Same `Catch` reasoning as the landing state, one step weaker: a record that is not
-        # searchable is published, in the bucket, in the lake and in the queue. Every consumer
-        # that decides anything already has it. Failing the execution here would turn "the search
-        # box is stale" into "this document looks unprocessed", which is the more expensive
-        # sentence by a wide margin.
-        IndexTheRecord = {
-          Type     = "Task"
-          Resource = "arn:aws:states:::lambda:invoke"
-          Parameters = {
-            "FunctionName" : one(aws_lambda_function.index[*].arn),
-            "Payload" : { "record.$" : "$.provenance.checked" }
-          }
-          ResultSelector = { "indexed.$" : "$.Payload" }
-          ResultPath     = "$.search"
-          Retry = [{
-            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
-            IntervalSeconds = 2
-            MaxAttempts     = 3
-            BackoffRate     = 2
-          }]
-          Catch = [{ ErrorEquals = ["States.ALL"], Next = "IndexingFailed", ResultPath = "$.error" }]
-          End   = true
-        }
-
-        IndexingFailed = {
-          Type  = "Fail"
-          Error = "IndexingFailed"
-          Cause = "The record is published, landed and queued; it is not searchable. The index is a view and can be rebuilt from the records bucket."
-        }
+        # This used to exist only for the search-off shape, with `IndexTheRecord` carrying
+        # `End = true` — and Step Functions refused the machine the first time both were present:
+        # *MISSING_TRANSITION_TARGET: State "Done" is not reachable*. It was a real defect and not
+        # a validator being strict: with search on, nothing routed here, so the two shapes had
+        # two different terminal states and the tail was not "always the same" as the comment
+        # claimed. Both paths end here now, which is what the comment always meant.
+        #
+        # Worth naming because it was invisible until today: `enable_search` had never been on
+        # for an *extraction* apply, so the flag's other shape had never been built.
+        Done = { Type = "Succeed" }
 
         # A terminal state of its own rather than a shared failure, so that "the warehouse is
         # behind" is distinguishable in the execution history from "a document was refused".
