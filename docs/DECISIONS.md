@@ -363,6 +363,23 @@ that runs anywhere — a pure-Python engine, or a container the cluster can host
 the binary — this decision is the one to revisit, and the thing to check first is whether the
 recording still reproduces.
 
+**It ran on 2026-08-13, and what the run is evidence of.** Thirteen documents planned, ten
+completed — the three that did not are the malformed ones the edge-case checks upload, and they
+carry no version so the ledger does not record them. The second run planned `skip 10, process 3`:
+the remainder, not the whole. That is claim 7's idempotence *executed* rather than modelled, and
+it is worth exactly what it says and no more — the property is proved offline against the pure
+planner over three thousand documents in `evals/scale/`, and this is the adapter doing what the
+planner said. A figure from thirteen documents on one afternoon is not a throughput claim and
+does not appear on any scoreboard.
+
+**Three failures on the way there, each a deploy cycle, and all three of one kind.** The image
+needed Python 3.12 and EMR ships 3.9. The service pulls a custom image *as itself*, so an ECR
+repository policy and a KMS key statement were needed — the message named `ECR:BatchGetImage`
+and neither policy is ECR's IAM. And a custom image inherits no `AWS_REGION`, so every boto3
+client on the driver raised `NoRegionError`, which reads as a credential problem and is a
+missing environment variable. None was visible from any offline check, and each was found by the
+estate refusing something.
+
 **And two defects found on the way, both of the same shape.** `--dry-run` was `store_true` with
 `default=True`, so no spelling of the argument executed anything: a control that reads as a
 deliberate safety and is not one. `ec2:DeleteVpcEndpoints` was scoped by a tag the OpenSearch
