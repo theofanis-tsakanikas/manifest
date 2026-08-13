@@ -1,9 +1,19 @@
 # Which warehouse columns have a source, which are derivable, and which nothing produces.
 #
-# **The finding this file records.** `infra/lakehouse` and `infra/analytics` both applied
-# cleanly on 2026-08-11. Neither has ever held a row. Nothing in this repository writes the
-# Iceberg table: the pipeline publishes a JSON record per document to `records/{id}/{version}.json`
-# and no step converts those into the lake, let alone into Redshift.
+# **The finding this file recorded, and what changed on 2026-08-13.** `infra/lakehouse` and
+# `infra/analytics` both applied cleanly on 2026-08-11 and neither had ever held a row: nothing
+# in this repository wrote the Iceberg table, and nothing carried it into Redshift.
+#
+# Both halves are now built. `handlers/land.py` writes one row per field per version — and it
+# refuses to write a version twice, which took finding the lake holding three copies of one
+# document — and `scripts/load_warehouse.py` projects the current version of each document into
+# `gold`. So the categories below have stopped being hypothetical: `derivable` is a list of
+# mappings a loader performs, and `unsourced` is a list of columns it deliberately leaves NULL.
+#
+# Two entries left `unsourced` with it. `document_type` and `language` were listed as *known at
+# extraction and absent from the lake table*, "listed here rather than fixed because adding a
+# column to a table nothing writes fixes nothing" — a correct reason that expired the moment
+# something wrote it. They are columns of the lake now.
 #
 # `scripts/check_marts.py` proves the marts read only columns `analytics/schema.sql` declares.
 # That is true, useful, and says nothing about whether any of them has a source.
@@ -41,12 +51,6 @@ unsourced:
   shipment_id: >-
     Documents arrive as files; the shipment they belong to is a fact a broker's operational
     system holds. The corpus encodes it in a filename because the corpus generated both.
-  document_type: >-
-    The pipeline knows it — it is on the extraction outcome — and the Glue table does not carry
-    it. This one is a defect in the lake schema rather than a missing system, and it is listed
-    here rather than fixed because adding a column to a table nothing writes fixes nothing.
-  language: >-
-    Same shape as `document_type`: known at extraction, absent from the lake table.
   hs_code: >-
     Proposed by the classifier and always decided by a human. Known at extraction, absent from
     the lake table — the same defect as `document_type`, on the field that carries the duty.

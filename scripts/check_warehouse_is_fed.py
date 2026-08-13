@@ -49,7 +49,13 @@ def _warehouse_columns() -> dict[str, set[str]]:
     text = SCHEMA.read_text(encoding="utf-8")
     tables: dict[str, set[str]] = {}
     for match in re.finditer(
-        r"CREATE TABLE IF NOT EXISTS (\S+) \((.*?)\n\);", text, re.DOTALL | re.IGNORECASE
+        # `IF NOT EXISTS` optional: the schema stopped using it, because that form is idempotent
+        # and not evolutionary — a column change is silently ignored on a warehouse that already
+        # exists. This check then found **zero** tables and printed `0 in the lake, 0 derivable,
+        # 0 unsourced`, which reads as a clean bill and is a parser that matched nothing.
+        r"CREATE TABLE (?:IF NOT EXISTS )?(\S+) \((.*?)\n\);",
+        text,
+        re.DOTALL | re.IGNORECASE,
     ):
         name = match.group(1)
         columns = {
