@@ -343,6 +343,22 @@ jobs:
           terraform -chdir=infra/lakehouse apply -auto-approve \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "enable_search=${{ inputs.enable_search }}"
+      - name: evolve the table's schema, because the catalogue is not the schema
+        # **Terraform creates this table and cannot change it.** For a Glue-managed Iceberg
+        # table, `aws_glue_catalog_table`'s `columns` are the schema it is *created* with;
+        # editing them afterwards updates the catalogue, reports success, and leaves the table
+        # alone — Iceberg keeps its own metadata and that is what Athena reads. Four columns were
+        # added that way and every query went on using the old schema until a loader failed two
+        # layers later with `COLUMN_NOT_FOUND` about a column `get-table` listed.
+        #
+        # So evolution goes through `ALTER TABLE ADD COLUMNS`, here, after the layer applies and
+        # before anything reads it. The script only ever adds: dropping or retyping a column is a
+        # re-extraction event under `CLAUDE.md`'s contract rule and needs a version bump and a
+        # diff, not a deploy step.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --upgrade boto3
+          python3 scripts/evolve_lake_schema.py
 
   # `batch` and `analytics` are deliberately NOT applied by default. They are the two most
   # expensive layers in the estate — EMR Serverless and a Redshift workgroup — and an estate
