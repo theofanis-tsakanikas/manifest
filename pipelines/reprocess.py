@@ -31,7 +31,32 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from manifest.core.scale import Disposition, LedgerEntry, plan, record
+# **Checked before the import that would fail, and with the answer in the message.**
+#
+# `manifest.core.scale` uses `StrEnum` (3.11) and slotted dataclasses (3.10); `pyproject.toml`
+# asks for 3.12. An EMR Serverless application runs whatever Python its release image carries,
+# which is not a thing this repository controls or can see offline — so the failure would
+# otherwise be an `ImportError` inside a Spark stack trace, on a driver, minutes after a cluster
+# started, naming `StrEnum` and nothing about what to do.
+#
+# Refusing here costs one comparison and turns it into a sentence with the fix in it. The fix is
+# a custom image for the application; the alternative — weakening the core so a cluster can
+# import it — would make the estate's Python the repository's Python, which is backwards.
+#: What `pyproject.toml` asks for. A tuple rather than the literal in the comparison, because
+#: `ruff` reads a literal one as dead code — correctly, for a file that only ever runs here.
+#: This one also runs on a driver whose interpreter nobody in this repository chose.
+_NEEDED = (3, 12)
+
+if sys.version_info < _NEEDED:  # pragma: no cover - the laptop and CI are both 3.12
+    raise SystemExit(
+        f"this job needs Python 3.12 and the driver is running "
+        f"{sys.version_info.major}.{sys.version_info.minor}. `manifest.core.scale` — the planner "
+        f"claim 7 is proved against — uses language features this interpreter does not have, and "
+        f"the planner is the one part of this job that must not be reimplemented for the "
+        f"cluster. Give the EMR Serverless application a custom image carrying 3.12."
+    )
+
+from manifest.core.scale import Disposition, LedgerEntry, plan, record  # noqa: E402
 
 #: How long one document's pipeline may take before an executor stops waiting on it. The
 #: per-document path is bounded by the tier-0 function's own timeout plus the gate's; longer than
