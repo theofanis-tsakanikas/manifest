@@ -25,6 +25,23 @@
 # a workload that is bursty by nature — a customs broker's documents arrive when ships do.
 
 locals {
+  # **The artefact's revision, in the names of the model and the endpoint configuration.**
+  #
+  # Without it a new artefact is deployed and never served, and the deploy reports success.
+  # SageMaker's endpoint points at a *configuration by name*, and the configuration points at a
+  # *model by name*. With fixed names, uploading a new `model.tar.gz` changes only the model —
+  # Terraform replaces it in place, nothing about the configuration changes, so the endpoint is
+  # not updated and goes on running the container it started with.
+  #
+  # That happened, and it cost a full cycle to see: a fix was written, committed, deployed and
+  # applied green, and the endpoint answered with the identical traceback from the identical old
+  # code. Every piece of evidence said the fix had not worked.
+  #
+  # The endpoint's own name stays stable, because callers name it: `manifest-classify` holds
+  # `InvokeEndpoint` on that ARN and reads it from an environment variable. Only the two names
+  # nobody outside this file uses carry the revision.
+  classifier_revision = substr(sha1(var.classifier_model_data_url), 0, 8)
+
   # **The serving image, and why an account number is written down here.**
   #
   # AWS publishes the scikit-learn serving containers from a different account in each region,
@@ -62,7 +79,7 @@ check "classifier_artefacts_are_named" {
 resource "aws_sagemaker_model" "classifier" {
   count = var.enable_classifier ? 1 : 0
 
-  name               = "${var.project}-hs-classifier"
+  name               = "${var.project}-hs-classifier-${local.classifier_revision}"
   execution_role_arn = aws_iam_role.classifier[0].arn
 
   primary_container {
@@ -112,13 +129,19 @@ resource "aws_sagemaker_model" "classifier" {
   # container itself is not inside a network this project declares. A workload where the input
   # were the document rather than a line off it would be the point to revisit that.
 
+  # The endpoint points at the configuration and the configuration at this model, so the new one
+  # has to exist before the old one goes.
+  lifecycle {
+    create_before_destroy = true
+  }
+
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
 
 resource "aws_sagemaker_endpoint_configuration" "classifier" {
   count = var.enable_classifier ? 1 : 0
 
-  name        = "${var.project}-hs-classifier"
+  name        = "${var.project}-hs-classifier-${local.classifier_revision}"
   kms_key_arn = var.data_key_arn
 
   production_variants {
@@ -148,6 +171,10 @@ resource "aws_sagemaker_endpoint_configuration" "classifier" {
   # pairs — rather than the endpoint's raw ranking, which is the thing a reviewer actually saw;
   # and it lands in this project's own store, in a shape `evals/review/` can read, instead of a
   # capture format nothing offline can parse.
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }

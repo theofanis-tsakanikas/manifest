@@ -1182,6 +1182,59 @@ def _check_the_bulk_job_finds_the_code_it_is_pointed_at() -> list[str]:
     return problems
 
 
+def _check_a_new_model_artefact_reaches_the_endpoint() -> list[str]:
+    """The model and its endpoint configuration are named after the artefact they serve.
+
+    **A deploy that changes the model and does not change the endpoint is the quietest failure
+    SageMaker offers**, and it is quiet because everything reports success. An endpoint points at
+    a *configuration by name*; a configuration points at a *model by name*. With fixed names, a
+    new `model.tar.gz` replaces the model in place, nothing about the configuration changes, and
+    the endpoint goes on running the container it started with — serving the previous artefact
+    for as long as nobody notices.
+
+    It cost a full cycle. A fix was written, committed, deployed, applied green, and the endpoint
+    answered with the identical traceback from the identical old code, which reads as a fix that
+    did not work rather than as a fix that was never served.
+
+    The endpoint's own name must **not** carry the revision: callers name it, and
+    `manifest-classify` holds `InvokeEndpoint` on that exact ARN.
+    """
+    text = (ROOT / "infra/extraction/classification.tf").read_text(encoding="utf-8")
+    problems: list[str] = []
+
+    revisioned = re.findall(r'name\s+=\s+"\$\{var\.project\}-hs-classifier[^"]*"', text)
+    for resource, must_carry in (
+        ("aws_sagemaker_model", True),
+        ("aws_sagemaker_endpoint_configuration", True),
+        ("aws_sagemaker_endpoint", False),
+    ):
+        block = re.search(rf'resource "{resource}" "classifier" \{{(.*?)\n\}}', text, re.DOTALL)
+        if not block:
+            problems.append(f"{resource}.classifier is gone; this check is reading the wrong file")
+            continue
+        named = re.search(r'name\s+=\s+"([^"]+)"', block.group(1))
+        carries = bool(named) and "classifier_revision" in named.group(1)
+        if must_carry and not carries:
+            problems.append(
+                f"{resource}.classifier has a fixed name. A new artefact then changes nothing "
+                f"the endpoint can see, and it serves the previous one while the deploy reports "
+                f"success"
+            )
+        if not must_carry and carries:
+            problems.append(
+                f"{resource}.classifier carries the artefact revision in its name. Callers name "
+                f"the endpoint — `manifest-classify` holds InvokeEndpoint on that exact ARN — so "
+                f"a revisioned endpoint is a grant that stops matching on the next fit"
+            )
+    if revisioned and "create_before_destroy" not in text:
+        problems.append(
+            "the classifier's resources are revisioned and nothing declares "
+            "`create_before_destroy`. The endpoint points at the configuration that points at "
+            "the model, so the replacement has to exist before the original goes"
+        )
+    return problems
+
+
 def _check_a_skipped_gate_job_is_accepted() -> list[str]:
     """The deploy may run less than the whole suite. It may not do so silently or for ever.
 
@@ -1268,6 +1321,7 @@ def main() -> int:
         _check_a_skipped_gate_job_is_accepted,
         _check_the_machine_may_invoke_what_it_references,
         _check_the_bulk_job_finds_the_code_it_is_pointed_at,
+        _check_a_new_model_artefact_reaches_the_endpoint,
         _check_every_service_a_handler_calls_is_reachable,
         _check_every_layer_can_evaluate,
         _check_resolves_fail_loudly,
