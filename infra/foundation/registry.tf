@@ -52,6 +52,41 @@ resource "aws_ecr_repository" "job" {
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
 
+# **The service pulls this image as itself, and a repository policy is the only place to say so.**
+#
+# EMR Serverless does not pull a custom image as the job role; it pulls as
+# `emr-serverless.amazonaws.com`. Without this, `StartJobRun` is refused with *"EMR Serverless
+# service principal is not authorized to perform: ECR:BatchGetImage"* — at submission, after the
+# image is built, pushed and attached to an application that reports it correctly.
+#
+# The `aws:SourceArn` condition is what keeps it from being a grant to every EMR Serverless
+# application in every account: only applications in this one may pull.
+data "aws_iam_policy_document" "job_repository" {
+  statement {
+    sid    = "EmrServerlessPullsTheInterpreterImage"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["emr-serverless.amazonaws.com"]
+    }
+    actions = [
+      "ecr:BatchGetImage",
+      "ecr:DescribeImages",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+    condition {
+      test     = "StringLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:emr-serverless:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:/applications/*"]
+    }
+  }
+}
+
+resource "aws_ecr_repository_policy" "job" {
+  repository = aws_ecr_repository.job.name
+  policy     = data.aws_iam_policy_document.job_repository.json
+}
+
 # Keep the image the running functions point at, and nothing else.
 #
 # `IMMUTABLE` above means a tag never moves, so "latest" cannot silently become a different

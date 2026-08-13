@@ -85,6 +85,31 @@ data "aws_iam_policy_document" "data_key" {
     }
   }
 
+  # **The same shape again, for the same reason, one service along.** EMR Serverless pulls the
+  # reprocessing application's image as *itself*, not as the job role — so the repository's
+  # policy has to admit the service principal, and the layers this key encrypts have to let it
+  # decrypt. `StartJobRun` was refused with `EMR Serverless service principal is not authorized
+  # to perform: ECR:BatchGetImage`, which is a message about ECR produced by two policies
+  # neither of which is ECR's IAM.
+  #
+  # Scoped by account, like Redshift's above: the grant is to this account's EMR Serverless
+  # rather than to the service everywhere.
+  statement {
+    sid       = "EmrServerlessDecryptsTheImageItPulls"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:DescribeKey"]
+    resources = ["*"]
+    principals {
+      type        = "Service"
+      identifiers = ["emr-serverless.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
   statement {
     sid       = "RedshiftKeepsThatUsageForTheLifeOfTheNamespace"
     effect    = "Allow"
