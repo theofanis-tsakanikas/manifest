@@ -65,6 +65,38 @@ def _replace(path: Path, old: str, new: str) -> bool:
 # ── The mutations ────────────────────────────────────────────────────────────
 
 
+def _let_the_endpoint_raise_its_own_proposals(root: Path) -> bool:
+    """Accept whatever floor the model reports, instead of checking it against the uniform prior.
+
+    **Doctrine rule 5, in the one place the model can reach.** The minimum score is derived from
+    the fitted model rather than written in the contract — `headings.yaml` declares 0.35, correct
+    for a similarity ratio and meaningless against a softmax over twelve classes. That is right,
+    and it hands the model a number the system then applies to the model's own output. A model
+    reporting a smaller floor raises its own dispositions from `no_proposal` to `proposed`, and
+    every test about bands and contested pairs goes on passing while it does.
+    """
+    return _replace(
+        root / "src/manifest/handlers/classify.py",
+        "    if floor < uniform:",
+        "    if False:  # floor < uniform",
+    )
+
+
+def _let_the_index_answer_with_what_nobody_approved(root: Path) -> bool:
+    """Search every field in the index rather than the ones a record may be found by.
+
+    The index is one query away from a person about to make a customs decision. `document_for`
+    refuses to *index* anything outside a whitelist and `query_for` asks against a named list —
+    both halves, because either alone is a way for a value that arrived tomorrow to become a
+    value somebody reads. `_all` is the one-word version of removing the second half.
+    """
+    return _replace(
+        root / "src/manifest/core/search.py",
+        '                "fields": ["fields.*", "document_id"],',
+        '                "fields": ["_all"],',
+    )
+
+
 def _reach_for_the_cloud_from_the_core(root: Path) -> bool:
     """Fetch a page from object storage inside the core.
 
@@ -941,6 +973,27 @@ def _pass_a_shell_variable_nothing_assigns(root: Path) -> bool:
 
 
 MUTATIONS: tuple[Mutation, ...] = (
+    Mutation(
+        "let the endpoint raise its own proposals",
+        "classification",
+        [sys.executable, "-m", "pytest", "tests/handlers/test_classify.py", "-q"],
+        "not a floor",
+        _let_the_endpoint_raise_its_own_proposals,
+        "The floor is derived from the fitted model, which is correct and is also the one "
+        "number the model supplies to a decision about itself. Below the uniform prior every "
+        "candidate clears it by construction, so the endpoint would be promoting its own "
+        "rankings while every test about bands and contested pairs went on passing.",
+    ),
+    Mutation(
+        "let the index answer with what nobody approved",
+        "search",
+        [sys.executable, "-m", "pytest", "tests/handlers/test_search_records.py", "-q"],
+        "_all",
+        _let_the_index_answer_with_what_nobody_approved,
+        "The whitelist has two halves and only one of them is obvious. Refusing to index an "
+        "unapproved value is worth nothing if the query asks against every field, and the "
+        "second half is one word long.",
+    ),
     Mutation(
         "reach for the cloud from inside the core",
         "core purity",
