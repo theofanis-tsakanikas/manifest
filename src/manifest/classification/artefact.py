@@ -14,6 +14,14 @@ cannot be inspected — `joblib.load` returns an object whose behaviour is whate
 As JSON, the fitted model is a vocabulary, an array of inverse document frequencies and twelve
 rows of coefficients. Somebody can read it. A diff shows what changed between two fits.
 
+*It runs where this project does not choose the interpreter.* SageMaker's scikit-learn container
+is **Python 3.9**, and this module is copied into it verbatim. `zip(..., strict=True)` is 3.10
+and was here: the endpoint answered `500 Internal Server Error` on its first real request, with
+`TypeError: zip() takes no keyword arguments` in a log group nobody would look at until it did.
+Removing the scikit-learn coupling did not remove the interpreter coupling, and only one of the
+two was written down. `tests/classification/test_serving_interpreter.py` now refuses anything
+newer than 3.9 in the two files that ship.
+
 *It must not be code.* Unpickling executes what the stream tells it to. The artefact lives in S3
 and is loaded by a container inside the VPC; making it data rather than instructions removes that
 entirely, and it is the same reasoning the extraction prompts use on document text.
@@ -121,10 +129,20 @@ def scores(artefact: dict[str, Any], goods: str) -> list[dict[str, Any]]:
             f"changed and this scorer would be reading fields that no longer mean what it thinks"
         )
 
+    coefficients = artefact["coefficients"]
+    intercepts = artefact["intercepts"]
+    classes = artefact["classes"]
+    if not len(coefficients) == len(intercepts) == len(classes):
+        raise ValueError(
+            f"the artefact has {len(classes)} classes, {len(coefficients)} coefficient rows and "
+            f"{len(intercepts)} intercepts. They are one model and must be one length; scoring "
+            f"the shorter of them would silently drop a heading from every ranking"
+        )
+
     row = _features(artefact, goods)
     linear = [
-        intercept + sum(weight[index] * value for index, value in row.items())
-        for weight, intercept in zip(artefact["coefficients"], artefact["intercepts"], strict=True)
+        intercepts[index] + sum(weight[term] * value for term, value in row.items())
+        for index, weight in enumerate(coefficients)
     ]
 
     # Shifted by the maximum before exponentiating. Standard, and not a micro-optimisation: a
@@ -136,8 +154,8 @@ def scores(artefact: dict[str, Any], goods: str) -> list[dict[str, Any]]:
 
     return sorted(
         (
-            {"code": code, "score": value / total}
-            for code, value in zip(artefact["classes"], exponentiated, strict=True)
+            {"code": classes[index], "score": value / total}
+            for index, value in enumerate(exponentiated)
         ),
         key=lambda candidate: candidate["score"],
         reverse=True,

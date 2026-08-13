@@ -16,6 +16,7 @@ would be a wheel in the zip for the sake of two HTTP calls.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -68,14 +69,32 @@ def call(method: str, url: str, payload: dict[str, Any] | None = None) -> dict[s
 
 
 def _signature(method: str, url: str, body: bytes) -> dict[str, str]:
-    """SigV4 headers, from the role the function already runs as."""
+    """SigV4 headers, from the role the function already runs as.
+
+    **`x-amz-content-sha256` is set here and it is the whole reason this ever returned 403.**
+    `SigV4Auth` computes the payload hash and does not send it as a header — for most services it
+    is not required. OpenSearch Serverless requires it, and refuses a request without it with a
+    bare `403 Forbidden` carrying no reason: the same answer it gives a principal with no
+    permission at all.
+
+    That is why it cost a deploy. The access policy was correct, the role was correct, and every
+    piece of evidence pointed at the one thing that was right — a 403 from a data store reads as
+    "the policy is wrong" and nothing in the response says otherwise. The header must be added
+    **before** `add_auth`, or it is not part of what was signed.
+    """
     import boto3  # noqa: PLC0415 - the offline suite imports this module without AWS
     from botocore.auth import SigV4Auth  # noqa: PLC0415
     from botocore.awsrequest import AWSRequest  # noqa: PLC0415
 
     session = boto3.Session()
     request = AWSRequest(
-        method=method, url=url, data=body, headers={"Content-Type": "application/json"}
+        method=method,
+        url=url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Amz-Content-Sha256": hashlib.sha256(body).hexdigest(),
+        },
     )
     SigV4Auth(session.get_credentials(), SERVICE, session.region_name).add_auth(request)
     return dict(request.headers)

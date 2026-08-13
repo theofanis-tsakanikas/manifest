@@ -256,10 +256,23 @@ locals {
       Next  = "Done"
     }
 
+    # **A `Pass`, not a `Fail`, and the comment above has been arguing for this all along.**
+    #
+    # It said failing here "would turn *the search box is stale* into *this document looks
+    # unprocessed*, which is the more expensive sentence by a wide margin" — and then the state
+    # it routed to was `Type = "Fail"`, which does exactly that. The first index failure proved
+    # the point at full cost: every check in the end-to-end verifier went red, including the
+    # ones about publication and supersession, for a record that was published, landed and
+    # queued correctly.
+    #
+    # The execution succeeds and carries the reason. A stale index is visible in the output and
+    # in the function's own logs, and it is not a document that looks lost.
     IndexingFailed = {
-      Type  = "Fail"
-      Error = "IndexingFailed"
-      Cause = "The record is published, landed and queued; it is not searchable. The index is a view and can be rebuilt from the records bucket."
+      Type       = "Pass"
+      Comment    = "The record is published, landed and queued; it is not searchable. The index is a view and can be rebuilt from the records bucket."
+      Result     = { indexed = false, reason = "the search surface refused or could not be reached" }
+      ResultPath = "$.search"
+      Next       = "Done"
     }
   }
 
