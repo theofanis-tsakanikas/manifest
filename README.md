@@ -246,9 +246,16 @@ project does not have. What the fit is worth reading for is that **the abstentio
 the first three attempts**: two because the model separated contested pairs the trade does not,
 and the fix each time was the training set rather than the band.
 
-**The batch job has not been run yet.** `pipelines/reprocess.py` is written, tested and defaults to a
-dry run; claim 7 is proved against the pure planner it calls. The part that needs a cluster is
-one function, and keeping it that size is what stops the untested region growing.
+**The batch job has now been run, and what that is worth is narrow.** Two runs on 2026-08-13:
+thirteen documents planned and ten completed, then `skip 10, process 3` — the remainder, not the
+whole. The three are the malformed documents the edge-case checks upload; they carry no version,
+so the ledger does not record them and they are re-planned every time, which is the property that
+makes an interrupted job resumable.
+
+That is claim 7's idempotence **executed** rather than modelled. It is not a throughput figure and
+does not become one: the property is proved offline against the pure planner over three thousand
+documents in `evals/scale/`, on a laptop, which is where a claim anybody can reproduce belongs.
+Thirteen documents on one afternoon says only that the adapter does what the planner said.
 
 ---
 
