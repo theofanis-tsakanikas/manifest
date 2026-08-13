@@ -28,6 +28,9 @@ resource "aws_ecr_repository" "reader" {
   }
 
   tags = { "${var.project}:expires-at" = var.expires_at }
+
+  # The key existing is not permission to use it. See `scripts/check_deploy_path.py` — a first apply orders these two however it likes.
+  depends_on = [aws_kms_key_policy.data]
 }
 
 # The reprocessing job's interpreter. A second repository rather than a second tag in the first,
@@ -50,6 +53,9 @@ resource "aws_ecr_repository" "job" {
   }
 
   tags = { "${var.project}:expires-at" = var.expires_at }
+
+  # The key existing is not permission to use it. See `scripts/check_deploy_path.py` — a first apply orders these two however it likes.
+  depends_on = [aws_kms_key_policy.data]
 }
 
 # **The service pulls this image as itself, and a repository policy is the only place to say so.**

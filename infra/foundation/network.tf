@@ -279,6 +279,19 @@ resource "aws_cloudwatch_log_group" "flow" {
   name              = "/aws/vpc/${var.project}"
   retention_in_days = var.retention_days
   kms_key_id        = aws_kms_key.logs.arn
+
+  # **The key is not the permission to use it, and only a cold start shows the difference.**
+  #
+  # `kms_key_id` creates a dependency on the *key*; CloudWatch Logs needs the key's **policy** to
+  # name `logs.<region>.amazonaws.com` before it will accept one. Terraform is free to create
+  # this group the moment the key exists, and on an estate built from nothing it did:
+  # *"The specified KMS key does not exist or is not allowed to be used with Arn
+  # .../log-group:/aws/vpc/manifest"*.
+  #
+  # Every deploy for a week was incremental on a foundation that already had the policy, so the
+  # ordering was never exercised — which is a fair description of the whole class: a defect that
+  # only a first apply can find, in the layer a first apply starts with.
+  depends_on = [aws_kms_key_policy.logs]
 }
 
 data "aws_iam_policy_document" "flow_logs_assume" {

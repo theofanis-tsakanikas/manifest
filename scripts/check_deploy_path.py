@@ -1346,6 +1346,54 @@ def _check_what_terraform_cannot_manage_is_still_deleted() -> list[str]:
     return problems
 
 
+def _check_encrypted_resources_wait_for_the_key_policy() -> list[str]:
+    """A resource encrypted with a key defined in its own layer waits for that key's **policy**.
+
+    **A defect only a first apply can find, in the layer a first apply starts with.** Referring to
+    `aws_kms_key.logs.arn` makes Terraform order the resource after the *key*. CloudWatch Logs
+    needs the key's *policy* to name `logs.<region>.amazonaws.com` before it will accept one, and
+    those are two resources: on an estate built from nothing, the flow-log group was created
+    first and refused with *"The specified KMS key does not exist or is not allowed to be used"*.
+
+    Every deploy for a week was incremental on a foundation that already had the policy, so the
+    ordering was never exercised. That is the shape of the whole class — and the reason to check
+    it here rather than to remember it: the next resource encrypted with an in-layer key will be
+    added by somebody who never saw this failure.
+    """
+    problems: list[str] = []
+    for layer in sorted(ROOT.glob("infra/*/")):
+        sources = {path: path.read_text(encoding="utf-8") for path in layer.glob("*.tf")}
+        whole = "\n".join(sources.values())
+
+        # Only keys whose policy this layer also declares. A key from another layer arrives as a
+        # variable, and by then the layer that owns it has applied.
+        policied = set(re.findall(r'resource\s+"aws_kms_key_policy"\s+"(\w+)"', whole))
+        if not policied:
+            continue
+
+        for path, text in sources.items():
+            for block in re.finditer(r'resource\s+"(\w+)"\s+"(\w+)"\s*\{(.*?)\n\}', text, re.S):
+                kind, name, body = block.groups()
+                if kind in {"aws_kms_key", "aws_kms_key_policy", "aws_kms_alias"}:
+                    continue
+                used = set(re.findall(r"aws_kms_key\.(\w+)\.(?:arn|id)", body)) & policied
+                if not used:
+                    continue
+                waits = {
+                    dependency for dependency in re.findall(r"aws_kms_key_policy\.(\w+)", body)
+                }
+                missing = sorted(used - waits)
+                if missing:
+                    problems.append(
+                        f"{path.relative_to(ROOT)}: {kind}.{name} encrypts with "
+                        f"aws_kms_key.{missing[0]} and does not depend on "
+                        f"aws_kms_key_policy.{missing[0]}. The key existing is not permission to "
+                        f"use it, and on a first apply the two are created in whatever order "
+                        f"Terraform chooses"
+                    )
+    return problems
+
+
 def _check_a_skipped_gate_job_is_accepted() -> list[str]:
     """The deploy may run less than the whole suite. It may not do so silently or for ever.
 
@@ -1434,6 +1482,7 @@ def main() -> int:
         _check_the_bulk_job_finds_the_code_it_is_pointed_at,
         _check_a_new_model_artefact_reaches_the_endpoint,
         _check_what_terraform_cannot_manage_is_still_deleted,
+        _check_encrypted_resources_wait_for_the_key_policy,
         _check_every_service_a_handler_calls_is_reachable,
         _check_every_layer_can_evaluate,
         _check_resolves_fail_loudly,

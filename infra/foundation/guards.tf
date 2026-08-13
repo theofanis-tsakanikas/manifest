@@ -43,6 +43,9 @@ resource "aws_cloudwatch_event_target" "expiry" {
 resource "aws_sns_topic" "alerts" {
   name              = "${var.project}-alerts"
   kms_master_key_id = aws_kms_key.logs.arn
+
+  # The key existing is not permission to use it. See `scripts/check_deploy_path.py` — a first apply orders these two however it likes.
+  depends_on = [aws_kms_key_policy.logs]
 }
 
 resource "aws_sns_topic_subscription" "alerts" {

@@ -60,4 +60,7 @@ resource "aws_ssm_parameter" "budget_notification_email" {
   type        = "SecureString"
   key_id      = aws_kms_key.state.arn
   value       = var.budget_notification_email
+
+  # The key existing is not permission to use it. See `scripts/check_deploy_path.py` — a first apply orders these two however it likes.
+  depends_on = [aws_kms_key_policy.state]
 }

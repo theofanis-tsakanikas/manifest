@@ -192,6 +192,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
     }
     bucket_key_enabled = true
   }
+
+  # The key existing is not permission to use it. See `scripts/check_deploy_path.py` — a first apply orders these two however it likes.
+  depends_on = [aws_kms_key_policy.state]
 }
 
 resource "aws_s3_bucket_logging" "state" {
