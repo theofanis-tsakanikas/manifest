@@ -1298,6 +1298,17 @@ data "aws_iam_policy_document" "budget_brake" {
       "bedrock:Converse",
       "bedrock:ConverseStream",
       "bedrock:InvokeDataAutomationAsync",
+
+      # **Managing the data-automation project, because Terraform cannot.** The AWS provider
+      # declares no resource for one, so `scripts/bda_project.py` creates it from the deploy and
+      # `destroy.yml` deletes it — which means the deploy role holds its lifecycle rather than a
+      # state file. `List` is here because the script is idempotent *by name*: BDA chooses the
+      # identifier, so finding the existing project means listing them.
+      "bedrock:ListDataAutomationProjects",
+      "bedrock:GetDataAutomationProject",
+      "bedrock:CreateDataAutomationProject",
+      "bedrock:UpdateDataAutomationProject",
+      "bedrock:DeleteDataAutomationProject",
       # The two layers that bill by the hour whether or not anything is asked of them.
       "emr-serverless:CreateApplication",
       "emr-serverless:StartApplication",
