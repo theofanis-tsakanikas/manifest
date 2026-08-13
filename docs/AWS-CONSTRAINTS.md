@@ -316,6 +316,41 @@ rather than a per-page figure.
 
 ---
 
+## SageMaker Serverless Inference
+
+Source: the API, refusing three configurations at apply on 2026-08-13. Each cost one deploy
+cycle, and each is a documented limitation that a plan cannot see — the endpoint configuration
+is accepted by Terraform, validated by the provider's schema, and refused by the service.
+
+| Asked for | What the API answered |
+|---|---|
+| `enable_network_isolation = true` | *"The network isolation is not supported for serverless endpoint. Please disable the network isolation."* |
+| `vpc_config` on the model | Not supported; serverless inference runs on AWS-managed capacity |
+| `data_capture_config` | *"The data capture config is not supported for serverless endpoint. Please disable data capture config."* |
+
+**The three are one fact.** Serverless inference is capacity AWS operates, which is exactly what
+makes it scale to nothing and bill per request — the property this project chose it for, against
+a provisioned endpoint that bills by the hour whether anything is classified or not. Everything
+on that list is a control that assumes capacity *you* operate.
+
+**What the estate does instead, per control, because "unsupported" is not an answer:**
+
+- **Network.** The caller is in the VPC and reaches the endpoint over a `sagemaker.runtime`
+  interface endpoint; the request does not cross the internet. The container is not inside a
+  network this project declares, and that sentence is written in `infra/extraction/
+  classification.tf` rather than implied.
+- **Access.** One principal holds `sagemaker:InvokeEndpoint` on this endpoint and nothing else.
+  It cannot create a model, change a configuration or read the artefact.
+- **Capture.** `handlers/classify.py` writes the decided proposal to the evidence bucket. Better
+  than the capture for claim 5's purposes: it records what a reviewer is shown rather than the
+  raw ranking, and it lands in a shape `evals/review/` can read.
+
+**And what it means for anyone reading this to plan their own.** The trade is not "serverless is
+cheaper"; it is *per-request billing in exchange for three controls*. Where the input is a
+document rather than a line off one, the answer is likely the other way round.
+
+---
+
 ## What this file deliberately does not record: prices
 
 No unit price appears above. `CLAUDE.md` requires every price to be cited *and dated at the time
