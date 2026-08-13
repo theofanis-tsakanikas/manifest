@@ -967,6 +967,317 @@ def _the_model_tier_reads_what_no_managed_ocr_can(estate: Estate, page: Path) ->
     )
 
 
+def _a_whole_shipment(estate: Estate, project: str) -> None:
+    """Six documents, two shipments, and the five claims that had no estate path until today.
+
+    **What this covers that nothing covered before.** Every check above this one sends a bill of
+    lading or a packing list, one page, in English or Greek. Four of the six declared document
+    types had never been through the pipeline; no two-page document had ever been through it;
+    Dutch had never been read; no two documents had ever been compared; no two party names had
+    ever been resolved; and the decisions table had never held a row.
+
+    The two shipments are chosen from the corpus's own ground truth: `SHP00001` has **no**
+    planted mismatch and `SHP00002` has one — the arrival notice's container number, altered by
+    the generator blind to the rules that will find it. Claim 4 asserts both halves and so does
+    this.
+    """
+    print(f"\n{DIM}a whole shipment — six types, two pages, three languages{RESET}\n")
+    landed: dict[str, dict[str, str]] = {}
+
+    for shipment, documents in SHIPMENTS.items():
+        for document_type, pages in documents.items():
+            document_id = f"{shipment}-{document_type}"
+            language = LANGUAGES[(shipment, document_type)]
+            source = _rendered_pages(
+                [ROOT / "corpus/rendered" / page for page in pages], document_id.lower()
+            )
+            started = time.time()
+            _upload(
+                estate,
+                f"incoming/{language}/{document_type}/{document_id}.pdf",
+                source.read_bytes(),
+            )
+            execution = _await_execution(estate, started, document_id)
+            if execution is None or execution["status"] != "SUCCEEDED":
+                continue
+            outcome = (_from_history(execution["executionArn"]).get("extraction") or {}).get(
+                "outcome"
+            ) or {}
+            if outcome.get("fingerprint"):
+                landed.setdefault(shipment, {})[document_type] = outcome["fingerprint"]
+
+    every_type = set(SHIPMENTS["SHP00001"])
+    reached = set(landed.get("SHP00001", {}))
+    estate.check(
+        "14 · every declared document type goes through",
+        reached == every_type,
+        f"{len(reached)}/{len(every_type)} types published a record: {sorted(reached)}"
+        if reached == every_type
+        else f"never published: {sorted(every_type - reached)}. A type nothing has ever sent "
+        f"through is a contract nobody has tested against a page",
+    )
+
+    _check_the_second_page(estate, landed)
+    _check_the_check_digit(estate, landed)
+    _check_reconciliation(estate, project, landed)
+    _check_entities(estate, project, landed)
+    _check_the_human_decision(estate, project, landed)
+
+
+def _check_the_check_digit(estate: Estate, landed: dict[str, dict[str, str]]) -> None:
+    """No published container number is provably wrong by its own arithmetic.
+
+    **A falsifier, not ground truth**, and `docs/SCENARIO.md` has a section saying so: a
+    consistent digit proves the read is not obviously wrong and nothing more — about one
+    corruption in eleven passes it. What it *can* do is refuse, and claim 2 lists that refusal as
+    the third of its three checks: a check-digit field that disagrees with its own arithmetic is
+    refused outright.
+
+    Recomputed here from the published values rather than read out of the record's verdict. A
+    verifier that trusted the gate's own answer would be asking the gate whether the gate ran.
+    """
+    from manifest.core.checkdigit import check  # noqa: PLC0415
+
+    checked, wrong = 0, []
+    for shipment, versions in landed.items():
+        for document_type, version in versions.items():
+            record = _json_object(
+                estate.records, f"records/{shipment}-{document_type}/{version}.json"
+            )
+            for entry in (record or {}).get("fields", []):
+                if entry.get("field") != "container_number" or not entry.get("publishable"):
+                    continue
+                if not entry.get("value"):
+                    continue
+                checked += 1
+                result = check(str(entry["value"]))
+                if result.provably_wrong:
+                    wrong.append(f"{shipment}-{document_type}: {entry['value']}")
+
+    estate.check(
+        "23 · no published container number contradicts its own check digit",
+        not wrong,
+        f"{checked} published container number(s), recomputed here rather than taken from the "
+        f"gate's verdict; none is provably wrong. A consistent digit proves the read is not "
+        f"obviously wrong and nothing more — about one corruption in eleven passes it"
+        if not wrong
+        else f"published and provably wrong: {wrong}. Claim 2's third check is that this is "
+        f"refused outright",
+    )
+
+
+def _check_the_human_decision(estate: Estate, project: str, landed: dict) -> None:
+    """Claim 5's structural half, on the estate: nothing below threshold publishes without one.
+
+    **The decisions table had never held a row.** `evals/review/` scores a generated queue and
+    `core.review.publishable` has always had the rule; no human decision had ever been recorded
+    against a real record, so the property was true of a function and untested of the system.
+
+    Two decisions, and the second is the one that matters: a field the system cannot point to on
+    a page cannot be approved into existence. Doctrine rule 7, the one door with no key.
+    """
+    queued: list[tuple[str, str, dict]] = []
+    for shipment, versions in landed.items():
+        for document_type, version in versions.items():
+            document_id = f"{shipment}-{document_type}"
+            record = _json_object(estate.records, f"records/{document_id}/{version}.json")
+            for entry in (record or {}).get("fields", []):
+                if entry.get("queued_because"):
+                    queued.append((document_id, version, entry))
+
+    with_a_box = next((q for q in queued if q[2].get("box")), None)
+    without = next((q for q in queued if not q[2].get("box")), None)
+
+    if with_a_box is None:
+        estate.check(
+            "24 · a recorded decision publishes what abstained",
+            False,
+            "no field abstained with provenance, so there is nothing to decide about",
+        )
+    else:
+        document_id, version, entry = with_a_box
+        answer, error = _invoke(
+            f"{project}-decide",
+            {
+                "document_id": document_id,
+                "version": version,
+                "field": entry["field"],
+                "reviewer": "e2e-verifier",
+                "decision": "approved",
+                "seconds_on_task": 31,
+            },
+        )
+        estate.check(
+            "24 · a recorded decision publishes what abstained, as a new version",
+            not error and answer.get("published") is True and answer.get("supersedes") == version,
+            error
+            or (
+                f"{entry['field']} published on a recorded approval as "
+                f"{answer.get('version', '—')}, superseding {version}. A decision never edits: "
+                f"doctrine rule 4 applies to a reviewer exactly as it applies to a re-extraction"
+            ),
+        )
+
+    if without is None:
+        estate.check(
+            "25 · a field with no provenance cannot be approved into existence",
+            True,
+            "every abstention on this shipment carried a box, so the door was not reachable "
+            "here. It is proved offline in tests/handlers/test_decide.py and by evals/review",
+        )
+        return
+
+    document_id, version, entry = without
+    answer, error = _invoke(
+        f"{project}-decide",
+        {
+            "document_id": document_id,
+            "version": version,
+            "field": entry["field"],
+            "reviewer": "e2e-verifier",
+            "decision": "approved",
+            "seconds_on_task": 12,
+        },
+    )
+    estate.check(
+        "25 · a field with no provenance cannot be approved into existence",
+        not error and answer.get("published") is False,
+        f"{entry['field']} was refused: {answer.get('reason', '')[:150]}"
+        if not error and answer.get("published") is False
+        else (
+            error
+            or f"it published. Doctrine rule 7 is the one door with no key, and "
+            f"{document_id}.{entry['field']} went through it"
+        ),
+    )
+
+
+def _check_the_second_page(estate: Estate, landed: dict[str, dict[str, str]]) -> None:
+    """A field on page two of the invoice published, which no single-page run could show.
+
+    *Tables that break across pages* is the third of the twelve properties `docs/SCENARIO.md`
+    names, and the one where naive extraction silently loses rows while the total still looks
+    plausible.
+    """
+    version = landed.get("SHP00001", {}).get("commercial_invoice")
+    if not version:
+        estate.check(
+            "15 · a two-page document is read on both pages",
+            False,
+            "the two-page commercial invoice published no record",
+        )
+        return
+
+    record = _json_object(estate.records, f"records/SHP00001-commercial_invoice/{version}.json")
+    pages = sorted({int(f["page"]) for f in (record or {}).get("fields", []) if f.get("page")})
+    estate.check(
+        "15 · a two-page document is read on both pages",
+        len(pages) > 1,
+        f"fields were located on pages {pages} — the reader saw the whole document"
+        if len(pages) > 1
+        else f"every field landed on page {pages or '—'}. A second page nothing reads is a "
+        f"table this system loses rows from while the total still adds up",
+    )
+
+
+def _check_reconciliation(estate: Estate, project: str, landed: dict[str, dict[str, str]]) -> None:
+    """Claim 4 on the estate, both halves, on two shipments chosen for the difference."""
+    for shipment, expect_disagreement in (("SHP00001", False), ("SHP00002", True)):
+        documents = [
+            {"document_id": f"{shipment}-{document_type}", "version": version}
+            for document_type, version in sorted(landed.get(shipment, {}).items())
+        ]
+        if len(documents) < _A_COMPARISON:
+            estate.check(
+                f"16 · {shipment} reconciles",
+                False,
+                f"only {len(documents)} document(s) published; a comparison needs two",
+            )
+            continue
+
+        answer, error = _invoke(
+            f"{project}-reconcile", {"shipment": shipment, "documents": documents}
+        )
+        if error:
+            estate.check(f"16 · {shipment} reconciles", False, error)
+            continue
+
+        found = answer.get("disagreements", 0)
+        estate.check(
+            f"16 · {shipment} reconciles — "
+            + ("a planted mismatch" if expect_disagreement else "a shipment that agrees"),
+            bool(found) == expect_disagreement,
+            f"{answer.get('rules_applied')} rule(s) applied, {answer.get('compared')} with both "
+            f"sides present, {found} disagreement(s) — "
+            + (
+                "the generator planted one, blind to the rules that found it"
+                if expect_disagreement
+                else "and none, on a shipment whose documents agree"
+            )
+            if bool(found) == expect_disagreement
+            else f"expected {'a disagreement' if expect_disagreement else 'none'} and got "
+            f"{found}. Claim 4 is exactly-N-found *and* zero false positives, and this is one "
+            f"of the two",
+        )
+
+
+def _check_entities(estate: Estate, project: str, landed: dict[str, dict[str, str]]) -> None:
+    """Claim 6 on the estate: resolve the parties, then undo it with nothing left dangling."""
+    documents = [
+        {"document_id": f"SHP00001-{document_type}", "version": version}
+        for document_type, version in sorted(landed.get("SHP00001", {}).items())
+    ]
+    if not documents:
+        estate.check("17 · party names resolve across documents", False, "nothing published")
+        return
+
+    resolved, error = _invoke(
+        f"{project}-entities",
+        {"action": "resolve", "shipment": "SHP00001", "documents": documents},
+    )
+    if error:
+        estate.check("17 · party names resolve across documents", False, error)
+        return
+
+    estate.check(
+        "17 · party names resolve across documents",
+        resolved.get("mentions", 0) > 0,
+        f"{resolved.get('mentions')} party mention(s) across {len(documents)} document(s) "
+        f"resolved into {resolved.get('entities')} entity/entities, {resolved.get('merged')} of "
+        f"them merged. Only exact equality after a declared normalisation merges — similarity "
+        f"never does, because a merge attaches every shipment of one party to another",
+    )
+
+    merged = next((e for e in resolved.get("resolved", []) if e.get("merged")), None)
+    if merged is None:
+        estate.check(
+            "22 · a merge can be undone with nothing left dangling",
+            True,
+            "no two mentions merged on this shipment, so there is no merge to undo. That is a "
+            "fact about these names rather than a pass: the reversibility itself is proved "
+            "offline in evals/entities over the corpus's transliterated forms",
+        )
+        return
+
+    undone, error = _invoke(
+        f"{project}-entities",
+        {"action": "unmerge", "shipment": "SHP00001", "entity_id": merged["entity_id"]},
+    )
+    if error:
+        estate.check("22 · a merge can be undone with nothing left dangling", False, error)
+        return
+
+    estate.check(
+        "22 · a merge can be undone with nothing left dangling",
+        len(undone.get("replacements", [])) == len(merged["members"])
+        and set(undone.get("repointed", {})) == set(merged["members"]),
+        f"{merged['entity_id']} split into {len(undone.get('replacements', []))} and every one "
+        f"of its {len(merged['members'])} references was re-pointed. The re-pointing is the half "
+        f"nobody builds: a partial answer leaves a pointer that is invisible until somebody "
+        f"follows it",
+    )
+
+
 def _landing_is_idempotent(
     estate: Estate, document: Path, document_id: str, rows: int, first: str
 ) -> None:
@@ -1159,6 +1470,84 @@ GREEK_ONLY_TIER = max(
 )
 
 
+#: One shipment's six documents, and the second shipment's, from the committed corpus.
+#:
+#: **Two shipments, because claim 4 has two halves.** `SHP00001` carries no planted mismatch, so
+#: every rule with both sides present must agree — the zero-false-positives half. `SHP00002`
+#: carries one: the arrival notice's container number was altered by the generator, blind to the
+#: rules that will find it. A run that found a disagreement in the first, or missed the one in
+#: the second, would be a reconciler nobody should trust.
+#:
+#: The first shipment is also where three other never-exercised cases live: all six declared
+#: document types, a **two-page** commercial invoice, and Dutch — which `contracts/cascade/
+#: routing.yaml` gives `[0, 3]`, so those pages reach the model tier for the same reason Greek
+#: does.
+#: The fewest documents a comparison can be made from. Named because `< 2` in that condition is
+#: a number somebody reads as a threshold rather than as the definition of the word.
+_A_COMPARISON = 2
+
+SHIPMENTS: dict[str, dict[str, list[str]]] = {
+    "SHP00001": {
+        "bill_of_lading": ["SHP00001_bill_of_lading_p1.jpg"],
+        "commercial_invoice": [
+            "SHP00001_commercial_invoice_p1.jpg",
+            "SHP00001_commercial_invoice_p2.jpg",
+        ],
+        "packing_list": ["SHP00001_packing_list_p1.jpg"],
+        "certificate_of_origin": ["SHP00001_certificate_of_origin_p1.jpg"],
+        "customs_declaration": ["SHP00001_customs_declaration_p1.jpg"],
+        "arrival_notice": ["SHP00001_arrival_notice_p1.jpg"],
+    },
+    "SHP00002": {
+        "bill_of_lading": ["SHP00002_bill_of_lading_p1.jpg"],
+        "commercial_invoice": ["SHP00002_commercial_invoice_p1.jpg"],
+        "packing_list": ["SHP00002_packing_list_p1.jpg"],
+        "certificate_of_origin": ["SHP00002_certificate_of_origin_p1.jpg"],
+        "customs_declaration": ["SHP00002_customs_declaration_p1.jpg"],
+        "arrival_notice": ["SHP00002_arrival_notice_p1.jpg"],
+    },
+}
+
+#: The language each of those documents was rendered in, from the corpus's own ground truth.
+#: The landing key carries it, and a key that named the wrong one would route the page to a tier
+#: that cannot read it — which the routing contract refuses, correctly, and which would make this
+#: a test of the refusal rather than of the document.
+LANGUAGES: dict[tuple[str, str], str] = {
+    ("SHP00001", "bill_of_lading"): "en",
+    ("SHP00001", "commercial_invoice"): "nl",
+    ("SHP00001", "packing_list"): "nl",
+    ("SHP00001", "certificate_of_origin"): "en",
+    ("SHP00001", "customs_declaration"): "nl",
+    ("SHP00001", "arrival_notice"): "en",
+    ("SHP00002", "bill_of_lading"): "en",
+    ("SHP00002", "commercial_invoice"): "en",
+    ("SHP00002", "packing_list"): "en",
+    ("SHP00002", "certificate_of_origin"): "en",
+    ("SHP00002", "customs_declaration"): "nl",
+    ("SHP00002", "arrival_notice"): "en",
+}
+
+
+def _rendered_pages(pages: list[Path], name: str) -> Path:
+    """Several committed corpus pages as **one** PDF.
+
+    **No multi-page document had ever gone through this estate.** 255 of the corpus's documents
+    run to a second page and every check here built a PDF from a single image — so *tables that
+    break across pages*, the third of the twelve properties `docs/SCENARIO.md` says make this
+    hard, was exercised by nothing. The escalation handler even carries a comment about reading
+    the page a field is actually on, written after a defect that no run could have found.
+    """
+    from PIL import Image  # noqa: PLC0415 - the offline suite must import this module without it
+
+    for page in pages:
+        if not page.exists():
+            raise SystemExit(f"{page} is not in the repository; this is a checkout problem")
+    images = [Image.open(page).convert("RGB") for page in pages]
+    destination = Path(tempfile.gettempdir()) / f"manifest-{name}.pdf"
+    images[0].save(destination, "PDF", resolution=200.0, save_all=True, append_images=images[1:])
+    return destination
+
+
 def _rendered(page: Path, name: str) -> Path:
     """A committed corpus page as a one-page PDF, written beside the run.
 
@@ -1225,6 +1614,7 @@ def main() -> int:
     if landed is not None:
         _landing_is_idempotent(estate, document, arguments.document_id, *landed)
     _the_model_tier_reads_what_no_managed_ocr_can(estate, greek)
+    _a_whole_shipment(estate, arguments.project)
     _re_extraction(estate, document, corrected)
     _optional_surfaces(estate, arguments.project, arguments.document_id)
     if not arguments.skip_edge_cases:
