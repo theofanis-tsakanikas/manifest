@@ -169,8 +169,13 @@ resource "aws_sagemaker_endpoint_configuration" "classifier" {
   # evidence bucket. That is better than the capture would have been, for two reasons rather than
   # as consolation: it records the **proposal** — after the band, the floor and the contested
   # pairs — rather than the endpoint's raw ranking, which is the thing a reviewer actually saw;
-  # and it lands in this project's own store, in a shape `evals/review/` can read, instead of a
-  # capture format nothing offline can parse.
+  # and it lands in this project's own store as JSON carrying the disposition, the candidates
+  # and the reason, instead of a capture format nothing offline can parse.
+  #
+  # **Nothing reads it yet, and that is stated rather than implied.** Claim 5's agreement rate
+  # needs both sides, and the reviewer's side is not wired to this estate either — `evals/review`
+  # scores a generated queue offline. What exists today is the half that would otherwise be
+  # impossible to add later: the proposals are being kept, from the first one.
 
   lifecycle {
     create_before_destroy = true

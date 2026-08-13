@@ -219,6 +219,11 @@ def _record(proposal: dict[str, Any]) -> None:
     thing a reviewer is actually shown — rather than the endpoint's raw ranking. The capture
     would have held the other one.
 
+    **Nothing reads these yet.** An agreement rate needs the reviewer's answer too, and that side
+    is not wired to the estate — `evals/review` scores a generated queue offline. Saying this out
+    loud rather than letting a writer imply a metric: what exists is the half that cannot be
+    added retroactively, because a proposal nobody kept is a proposal nobody can compare against.
+
     **A failure here does not fail the classification.** The proposal is correct and the caller
     is waiting for it; losing the evidence write is a gap in a metric, and turning that into a
     refusal would make the measurement more important than the thing being measured. It is

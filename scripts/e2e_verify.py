@@ -38,6 +38,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -246,8 +247,12 @@ def _json_object(bucket: str, key: str) -> dict | None:
     return parsed
 
 
-def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
-    """One English bill of lading, and everything that must be true afterwards."""
+def _happy_path(estate: Estate, document: Path, document_id: str) -> int | None:
+    """One English bill of lading, and everything that must be true afterwards.
+
+    Returns the number of rows this document has in the lake, so the idempotence check can ask
+    whether a second identical run changed it.
+    """
     key = f"incoming/en/bill_of_lading/{document_id}.pdf"
     started = time.time()
     _upload(estate, key, document.read_bytes())
@@ -393,12 +398,42 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> None:
 
     _check_a_box_against_the_page(estate, document_id, record)
     _check_the_record_reached_the_lake(estate, document_id, outcome)
+    return _rows_in_the_lake(estate, document_id)
 
 
 def _query_failure(execution_id: str) -> str:
     """Why Athena refused, in its own words."""
     described = _client("athena").get_query_execution(QueryExecutionId=execution_id)
     return described["QueryExecution"]["Status"].get("StateChangeReason", "no reason given")
+
+
+def _rows_in_the_lake(estate: Estate, document_id: str) -> int:
+    """Every row under this document id, across every version. `-1` when the query would not run.
+
+    By document rather than by version, deliberately: a *duplicate* of one version and a genuine
+    second version both change this number, and the check that uses it sends identical bytes —
+    where a second version is not a thing that can happen.
+    """
+    athena = _client("athena")
+    started = athena.start_query_execution(
+        QueryString="SELECT count(*) FROM document_version WHERE document_id = ?",
+        ExecutionParameters=[document_id],
+        WorkGroup=estate.athena_workgroup,
+        QueryExecutionContext={"Database": estate.glue_database},
+    )["QueryExecutionId"]
+
+    deadline = time.time() + 180
+    while time.time() < deadline:
+        state = athena.get_query_execution(QueryExecutionId=started)["QueryExecution"]["Status"][
+            "State"
+        ]
+        if state == "SUCCEEDED":
+            rows = athena.get_query_results(QueryExecutionId=started)["ResultSet"]["Rows"]
+            return int(rows[1]["Data"][0]["VarCharValue"])
+        if state in {"FAILED", "CANCELLED"}:
+            return -1
+        time.sleep(3)
+    return -1
 
 
 def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome: dict) -> None:
@@ -881,6 +916,45 @@ def _records_under(estate: Estate, document_id: str) -> list[str]:
     return [entry["Key"] for entry in listing.get("Contents", [])]
 
 
+def _landing_is_idempotent(estate: Estate, document: Path, document_id: str, rows: int) -> None:
+    """The same bytes, sent again, add nothing to the lake.
+
+    **Claim 7's property, at the one place it was not held.** A fingerprint is a function of the
+    bytes and the reader, so re-sending a document produces the *same version* — the records
+    bucket writes one object and the search index one document, both keyed by it. The lake
+    appended. Three runs of one document put twenty-seven rows in the table for nine fields, and
+    nothing failed: every count in the analytics layer was a multiple of the truth, including the
+    abstention counts claim 5 is judged on.
+
+    Distinct from `10 · a correction supersedes`, which sends a *different* page under the same
+    id and requires a second version. This one sends identical bytes and requires no second
+    anything.
+    """
+    key = f"incoming/en/bill_of_lading/{document_id}.pdf"
+    started = time.time()
+    _upload(estate, key, document.read_bytes())
+    again = _await_execution(estate, started, document_id)
+    if again is None or again["status"] != "SUCCEEDED":
+        estate.check(
+            "12 · the same bytes land nothing new",
+            False,
+            f"the second run did not succeed ({again['status'] if again else 'no execution'})",
+        )
+        return
+
+    landed = (_from_history(again["executionArn"]).get("lake") or {}).get("landed") or {}
+    after = _rows_in_the_lake(estate, document_id)
+    estate.check(
+        "12 · the same bytes land nothing new",
+        after == rows and landed.get("landed") == 0,
+        f"{rows} row(s) before and {after} after, and the landing step reported "
+        f"{landed.get('landed', '?')} written — {landed.get('skipped', 'no reason given')}"
+        if after == rows
+        else f"the lake went from {rows} to {after} rows for one version. The same document read "
+        f"twice is the same version, so this is a duplicate rather than a correction",
+    )
+
+
 def _re_extraction(estate: Estate, first: Path, corrected: Path) -> None:
     """Claim 3 on the estate: a correction is a new version beside the old one, not over it.
 
@@ -1034,7 +1108,15 @@ def main() -> int:
             "script needs nothing a reader has to make by hand."
         ),
     )
-    parser.add_argument("--document-id", default="E2E-VERIFY")
+    parser.add_argument(
+        "--document-id",
+        default=f"E2E-VERIFY-{datetime.now(UTC):%Y%m%d%H%M%S}",
+        help=(
+            "Stamped per run by default. A fixed id makes every count in the lake a statement "
+            "about every run this estate has ever had — `9 · the published record reached the "
+            "lake` reported 27 rows against 9 fields, correctly, of a table holding three runs."
+        ),
+    )
     parser.add_argument("--skip-edge-cases", action="store_true")
     parser.add_argument(
         "--corrected",
@@ -1052,7 +1134,9 @@ def main() -> int:
     estate = _resolve(arguments.project)
     print(f"the deployed estate — {estate.state_machine}\n")
 
-    _happy_path(estate, document, arguments.document_id)
+    landed = _happy_path(estate, document, arguments.document_id)
+    if landed is not None:
+        _landing_is_idempotent(estate, document, arguments.document_id, landed)
     _re_extraction(estate, document, corrected)
     _optional_surfaces(estate, arguments.project, arguments.document_id)
     if not arguments.skip_edge_cases:

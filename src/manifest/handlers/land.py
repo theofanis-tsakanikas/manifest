@@ -65,9 +65,45 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         supersedes=_previous_version(document_id, version),
     )
 
+    # **Landed already? Then land nothing.** See `_already_landed`.
+    if _already_landed(document_id, version):
+        return {
+            "landed": 0,
+            "document_id": document_id,
+            "version": version,
+            "skipped": "this version is already in the table",
+        }
+
     statement = insert_statement(rows, database=_env("GLUE_DATABASE"), table=_env("LAKE_TABLE"))
     _execute(statement)
     return {"landed": len(rows), "document_id": document_id, "version": version}
+
+
+def _already_landed(document_id: str, version: str) -> bool:
+    """Whether this exact version already has rows in the table.
+
+    **Because the same document read twice is the same version, and this appended anyway.**
+    A fingerprint is a function of the bytes and the reader — that is claim 3, and it is the
+    property that makes re-extraction reproducible. It also means sending one document through
+    the pipeline three times produces *one* version and, before this check, twenty-seven rows for
+    nine fields. The records bucket was right (one object), the search index was right (keyed by
+    version), and the lake had three copies of everything.
+
+    Nothing failed. Every count in the analytics layer was simply a multiple of the truth,
+    including the abstention counts claim 5 is judged on — which is the shape of error that
+    survives a review, because the ratios still look plausible.
+
+    A `SELECT` before an `INSERT` is not a transaction and does not need to be: the value being
+    written is deterministic, so two runs racing here write identical rows and the worst outcome
+    is the duplicate this exists to avoid, at the same odds as before. What it buys is that the
+    ordinary case — a document reprocessed after a crash, a redrive, a bulk run over a corpus
+    that overlaps — costs one query instead of a permanent double count.
+    """
+    rows = _query(
+        "SELECT count(*) FROM document_version WHERE document_id = ? AND version = ?",
+        [document_id, version],
+    )
+    return bool(rows) and int(rows[0]) > 0
 
 
 def _previous_version(document_id: str, version: str) -> str | None:
@@ -91,6 +127,51 @@ def _previous_version(document_id: str, version: str) -> str | None:
         return None
     newest = max(others, key=lambda entry: entry["LastModified"])
     return newest["Key"].rsplit("/", 1)[-1].removesuffix(".json")
+
+
+def _query(statement: str, parameters: list[str]) -> list[str]:
+    """Run a parameterised read and return the first row's values.
+
+    Parameterised rather than interpolated, for the reason `core.lake` gives at length about the
+    insert: a value that reaches SQL by concatenation is a value that can end the statement it is
+    in. Athena's `ExecutionParameters` is the same control the landing statement's own encoder
+    exists to make unnecessary.
+    """
+    athena = _client("athena")
+    started = athena.start_query_execution(
+        QueryString=statement,
+        ExecutionParameters=parameters,
+        WorkGroup=_env("ATHENA_WORKGROUP"),
+        QueryExecutionContext={"Database": _env("GLUE_DATABASE")},
+    )["QueryExecutionId"]
+
+    deadline = time.monotonic() + QUERY_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        described = athena.get_query_execution(QueryExecutionId=started)["QueryExecution"]
+        state = described["Status"]["State"]
+        if state == "SUCCEEDED":
+            answered = athena.get_query_results(QueryExecutionId=started)["ResultSet"]["Rows"]
+            # Row 0 is the header. A result with no data row is not an error here — it is a
+            # table that has never been written to, which is the first document's case.
+            return (
+                [
+                    cell.get("VarCharValue", "")
+                    for cell in answered[1]["Data"]
+                    if isinstance(cell, dict)
+                ]
+                if len(answered) > 1
+                else []
+            )
+        if state in {"FAILED", "CANCELLED"}:
+            reason = described["Status"].get("StateChangeReason", "no reason given")
+            raise HandlerError(
+                f"the idempotence query {state.lower()}: {reason}. Refused rather than landing "
+                f"anyway: an append that cannot tell whether it is a duplicate is how the lake "
+                f"came to hold three copies of one version"
+            )
+        time.sleep(POLL_SECONDS)
+
+    raise HandlerError(f"the idempotence query did not finish within {QUERY_TIMEOUT_SECONDS}s")
 
 
 def _execute(statement: str) -> None:
