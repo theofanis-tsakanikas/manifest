@@ -44,11 +44,45 @@ SUBMIT_PARAMETERS = (
     "--conf spark.driver.memory=4g"
 )
 
+#: **The region, on both sides, because a custom image does not inherit one.**
+#:
+#: EMR Serverless sets `AWS_REGION` in its own release image. A custom image is a different
+#: image, and the interpreter installed into it reads an environment that has none — so every
+#: boto3 client in the driver raised `NoRegionError: You must specify a region`, which reads as
+#: a credential problem and is a missing environment variable.
+#:
+#: Driver *and* executors: the driver plans and reads the ledger, the executors start state
+#: machine executions, and both make AWS calls. Setting one leaves the other failing later, in a
+#: task rather than at start-up, which is the more expensive half to debug.
+REGION_PARAMETERS = (
+    "--conf spark.emr-serverless.driverEnv.AWS_REGION={region} "
+    "--conf spark.emr-serverless.driverEnv.AWS_DEFAULT_REGION={region} "
+    "--conf spark.executorEnv.AWS_REGION={region} "
+    "--conf spark.executorEnv.AWS_DEFAULT_REGION={region}"
+)
+
 
 def _client(name: str):
     import boto3  # noqa: PLC0415 - the offline suite imports this module without AWS
 
     return boto3.client(name)
+
+
+def _region() -> str:
+    """The region this submitter is talking to, handed on to the job.
+
+    Read from the session rather than written down: a constant here would be a second place the
+    estate's region lives, and the first one is whatever the caller's credentials point at.
+    """
+    import boto3  # noqa: PLC0415
+
+    region = boto3.Session().region_name
+    if not region:
+        raise SystemExit(
+            "this session has no region, so the job would be submitted without one and every "
+            "boto3 client on the driver would raise NoRegionError. Set AWS_REGION."
+        )
+    return region
 
 
 def _reference(project: str, path: str) -> str:
@@ -131,7 +165,11 @@ def main(argv: list[str] | None = None) -> int:
                     # printing, so a job started by accident costs a cluster and changes nothing.
                     "--no-dry-run",
                 ],
-                "sparkSubmitParameters": f"{SUBMIT_PARAMETERS} --py-files {packaged}",
+                "sparkSubmitParameters": (
+                    f"{SUBMIT_PARAMETERS} "
+                    f"{REGION_PARAMETERS.format(region=_region())} "
+                    f"--py-files {packaged}"
+                ),
             }
         },
         configurationOverrides={
