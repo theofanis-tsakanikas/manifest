@@ -252,11 +252,12 @@ def _json_object(bucket: str, key: str) -> dict | None:
     return parsed
 
 
-def _happy_path(estate: Estate, document: Path, document_id: str) -> int | None:
+def _happy_path(estate: Estate, document: Path, document_id: str) -> tuple[int, str] | None:
     """One English bill of lading, and everything that must be true afterwards.
 
-    Returns the number of rows this document has in the lake, so the idempotence check can ask
-    whether a second identical run changed it.
+    Returns `(rows in the lake, the execution that put them there)`. The idempotence check needs
+    both: the count to compare against, and the execution to *exclude* when it waits for the
+    next one — otherwise it reads this run's history and reports it as the second run's.
     """
     key = f"incoming/en/bill_of_lading/{document_id}.pdf"
     started = time.time()
@@ -403,7 +404,7 @@ def _happy_path(estate: Estate, document: Path, document_id: str) -> int | None:
 
     _check_a_box_against_the_page(estate, document_id, record)
     _check_the_record_reached_the_lake(estate, document_id, outcome)
-    return _rows_in_the_lake(estate, document_id)
+    return _rows_in_the_lake(estate, document_id), execution["executionArn"]
 
 
 def _query_failure(execution_id: str) -> str:
@@ -921,7 +922,9 @@ def _records_under(estate: Estate, document_id: str) -> list[str]:
     return [entry["Key"] for entry in listing.get("Contents", [])]
 
 
-def _landing_is_idempotent(estate: Estate, document: Path, document_id: str, rows: int) -> None:
+def _landing_is_idempotent(
+    estate: Estate, document: Path, document_id: str, rows: int, first: str
+) -> None:
     """The same bytes, sent again, add nothing to the lake.
 
     **Claim 7's property, at the one place it was not held.** A fingerprint is a function of the
@@ -938,7 +941,14 @@ def _landing_is_idempotent(estate: Estate, document: Path, document_id: str, row
     key = f"incoming/en/bill_of_lading/{document_id}.pdf"
     started = time.time()
     _upload(estate, key, document.read_bytes())
-    again = _await_execution(estate, started, document_id)
+    # **`exclude`, for the reason check 10 already found and this one repeated.**
+    #
+    # `_await_execution` matches on the *input*, and it looks back sixty seconds so a run that
+    # started just before the upload is not missed. That window returns the previous execution
+    # for the same document id — so this read the first run's history, saw `landed: 9`, and
+    # reported "9 rows before, 9 after, and the step wrote 9": three facts that cannot all be
+    # true, from two different executions.
+    again = _await_execution(estate, started, document_id, exclude=frozenset({first}))
     if again is None or again["status"] != "SUCCEEDED":
         estate.check(
             "12 · the same bytes land nothing new",
@@ -1144,7 +1154,7 @@ def main() -> int:
 
     landed = _happy_path(estate, document, arguments.document_id)
     if landed is not None:
-        _landing_is_idempotent(estate, document, arguments.document_id, landed)
+        _landing_is_idempotent(estate, document, arguments.document_id, *landed)
     _re_extraction(estate, document, corrected)
     _optional_surfaces(estate, arguments.project, arguments.document_id)
     if not arguments.skip_edge_cases:
