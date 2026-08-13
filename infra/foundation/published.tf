@@ -30,6 +30,7 @@ locals {
     evidence_bucket            = aws_s3_bucket.zone["evidence"].id
     access_logs_bucket         = aws_s3_bucket.access_logs.id
     alerts_topic_arn           = aws_sns_topic.alerts.arn
+    job_repository_url         = aws_ecr_repository.job.repository_url
     reader_repository_url      = aws_ecr_repository.reader.repository_url
   }
 }

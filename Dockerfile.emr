@@ -1,0 +1,58 @@
+# The reprocessing job's interpreter, as an EMR Serverless custom image.
+#
+# **Why this file exists at all, when `pipelines/reprocess.py` refuses to run without it.**
+#
+# EMR Serverless 7.5.0 ships Python 3.9. `manifest.core.scale` — the planner claim 7 is proved
+# against — uses `StrEnum` and slotted dataclasses, which are 3.11 and 3.10. The driver imports
+# it, so the job refuses at start-up with a message naming this file. That refusal is the correct
+# behaviour and it is not a fix: a bulk path that cannot run is a bulk path.
+#
+# The alternative was to weaken the core so a cluster could import it. That is backwards — it
+# would make the estate's Python the repository's Python, and every claim below claim 7 runs on
+# a laptop against the same module.
+#
+# **What this image is not.** It carries no reader. The tier-0 binary is `tesseract 5.5.0` from
+# Debian, asserted at build time in `Dockerfile`, and every threshold in this repository is keyed
+# to that exact build. Amazon Linux 2023 — which every EMR Serverless custom image is built on —
+# carries no tesseract at all, so putting one here means compiling it: a second build of the
+# binary whose exact build is the unit of evidence. Decision 23 works through it. The executors
+# start the per-document state machine instead, and the estate keeps one reader.
+#
+# So this image is the smallest thing that lets the *planner* run: an interpreter and the AWS
+# SDK. Nothing in it decides anything.
+
+FROM public.ecr.aws/emr-serverless/spark/emr-7.5.0:latest
+
+# Root for the install, `hadoop` for the run. EMR Serverless requires the image to end as the
+# user it started as — a custom image running as root is refused at application update, with a
+# validation error rather than at job time.
+USER root
+
+# **3.12, matching `requires-python` in `pyproject.toml`, and pinned no further.** The floor is
+# what the code needs; the exact patch is the distribution's business, and pinning it here would
+# be a version this repository has to keep true in a file nobody reads. The job's own guard
+# compares against the floor and says so if the image ever stops meeting it.
+RUN dnf install -y python3.12 python3.12-pip \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# `boto3` only. The driver reads the ledger, lists the landing bucket and starts state machine
+# executions; it reads no contract, because it decides nothing. A job that needed `pydantic` here
+# would be a job that had started interpreting the document contracts, which is the line
+# decision 23 draws.
+RUN python3.12 -m pip install --no-cache-dir boto3
+
+# **Both, and the difference matters.** `PYSPARK_PYTHON` is the interpreter the executors run;
+# `PYSPARK_DRIVER_PYTHON` is the driver's. Setting only the first leaves the driver on 3.9 —
+# which is precisely where the import happens, so the job would fail exactly as it does now
+# while the image looked correct.
+ENV PYSPARK_PYTHON=/usr/bin/python3.12 \
+    PYSPARK_DRIVER_PYTHON=/usr/bin/python3.12
+
+# Asserted here rather than discovered on a cluster. An image that builds and then cannot run the
+# job is a fifteen-minute round trip to find out; this is one line at build time.
+RUN /usr/bin/python3.12 -c "import sys, boto3; \
+assert sys.version_info >= (3, 12), f'image carries {sys.version_info}'; \
+print('interpreter', sys.version.split()[0], 'with boto3', boto3.__version__)"
+
+USER hadoop:hadoop

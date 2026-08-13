@@ -43,6 +43,16 @@ resource "aws_emrserverless_application" "reprocessing" {
     security_group_ids = [var.endpoint_security_group_id]
   }
 
+  # **The interpreter, when one is supplied.** `dynamic` rather than a plain block, because an
+  # `image_configuration` with an empty URI is not "no image" — it is a request to run an image
+  # called nothing, refused at apply.
+  dynamic "image_configuration" {
+    for_each = var.job_image_uri == "" ? [] : [var.job_image_uri]
+    content {
+      image_uri = image_configuration.value
+    }
+  }
+
   interactive_configuration {
     # Off. An interactive endpoint on a batch application is a way for somebody to run a
     # notebook against four million documents without a plan, a ledger entry or a diff.

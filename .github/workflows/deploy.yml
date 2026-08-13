@@ -687,6 +687,22 @@ jobs:
             exit 1
           fi
           echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
+      - name: build the job's interpreter image
+        # **The application runs Python 3.9 without this, and the job refuses to start on it.**
+        #
+        # `manifest.core.scale` needs 3.12 and `pipelines/reprocess.py` says so on the driver,
+        # by name, before an executor is allocated — which is the right failure and is still a
+        # bulk path that cannot run. `Dockerfile.emr` is the smallest thing that fixes it: an
+        # interpreter and the AWS SDK, and deliberately no reader. Decision 23 has the argument.
+        id: job_image
+        run: |
+          set -euo pipefail
+          repository="${TF_VAR_job_repository_url%%/*}"
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} \
+            | docker login --username AWS --password-stdin "$repository"
+          docker build -f Dockerfile.emr -t "$TF_VAR_job_repository_url:${{ github.sha }}" .
+          docker push "$TF_VAR_job_repository_url:${{ github.sha }}"
+          echo "uri=$TF_VAR_job_repository_url:${{ github.sha }}" >> "$GITHUB_OUTPUT"
       - name: package the reprocessing job
         # **The driver and the code it imports, from this commit, in one place.**
         #
@@ -723,7 +739,9 @@ jobs:
       - name: apply
         run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/batch apply -auto-approve -var 'expires_at=${{ inputs.expires_at }}'
+          terraform -chdir=infra/batch apply -auto-approve \
+            -var 'expires_at=${{ inputs.expires_at }}' \
+            -var "job_image_uri=${{ steps.job_image.outputs.uri }}"
 
   analytics:
     name: "apply · analytics (opt-in)"

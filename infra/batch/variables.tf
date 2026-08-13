@@ -66,3 +66,17 @@ variable "state_machine_arn" {
   EOT
   type        = string
 }
+
+variable "job_image_uri" {
+  description = <<-EOT
+    The custom image the application runs. Empty means the release's own, which carries Python
+    3.9 — and `pipelines/reprocess.py` refuses to start on it, by name, because
+    `manifest.core.scale` needs 3.12.
+
+    Empty is still allowed rather than refused: an application with no image is a valid thing to
+    stand up, and the job it cannot run says so itself, on the driver, before an executor is
+    allocated.
+  EOT
+  type        = string
+  default     = ""
+}

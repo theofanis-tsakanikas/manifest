@@ -30,6 +30,28 @@ resource "aws_ecr_repository" "reader" {
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
 
+# The reprocessing job's interpreter. A second repository rather than a second tag in the first,
+# because the two images have nothing in common and are rebuilt on different occasions: the
+# reader changes when the binary or the language data does, and this one when the driver needs a
+# different interpreter. One repository would make an image scan on either look like a finding
+# about both.
+resource "aws_ecr_repository" "job" {
+  name                 = "${var.project}-reprocessing"
+  image_tag_mutability = "IMMUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = aws_kms_key.data.arn
+  }
+
+  tags = { "${var.project}:expires-at" = var.expires_at }
+}
+
 # Keep the image the running functions point at, and nothing else.
 #
 # `IMMUTABLE` above means a tag never moves, so "latest" cannot silently become a different

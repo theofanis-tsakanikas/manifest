@@ -47,6 +47,7 @@ PLACEHOLDERS: dict[str, dict[str, str]] = {
         "access_logs_bucket": "{project}-access-logs-{account}",
         "alerts_topic_arn": "arn:aws:sns:{region}:{account}:{project}-alerts",
         "reader_repository_url": "{account}.dkr.ecr.{region}.amazonaws.com/{project}-reader",
+        "job_repository_url": "{account}.dkr.ecr.{region}.amazonaws.com/{project}-reprocessing",
     },
     "extraction": {
         "state_machine_arn": "arn:aws:states:{region}:{account}:stateMachine:{project}-extraction",
