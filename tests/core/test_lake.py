@@ -9,9 +9,13 @@ thresholding system is judged on.
 
 from __future__ import annotations
 
+import pathlib
+import re
+from dataclasses import fields as dataclass_fields
+
 import pytest
 
-from manifest.core.lake import insert_statement, rows_for
+from manifest.core.lake import Row, insert_statement, rows_for
 
 WHEN = "2026-08-12T04:00:00Z"
 
@@ -180,3 +184,36 @@ class TestTheInsertEncodesRatherThanInterpolates:
     def test_no_rows_is_refused_rather_than_emitted(self) -> None:
         with pytest.raises(ValueError, match="no rows to land"):
             insert_statement([], database="records", table="document_version")
+
+
+# ── The three lists that must agree ───────────────────────────────────────────
+
+
+def test_the_row_the_insert_and_the_table_declare_the_same_columns() -> None:
+    """`Row`, the `INSERT`'s column list and the Glue table are one schema written three times.
+
+    **They drifted, and nothing noticed.** The record carries a document type, a language and
+    the tier that read it; the row dropped all three. The marts group by exactly those — "error
+    rate by carrier and language", "modelled cost per tier" — so the analytics layer could not
+    ask the questions it was built for, of the only table it reads. Every test here passed
+    throughout, because each checked a value and none checked the *set*.
+
+    Order matters as well as membership: the `INSERT` names its columns, so a mismatch in order
+    is a value in the wrong column rather than an error — a page number in `confidence`, silently
+    plausible.
+    """
+    declared = [field.name for field in dataclass_fields(Row)]
+
+    row = rows_for(_record(), extracted_on=WHEN)[0]
+    statement = insert_statement([row], database="manifest", table="document_version")
+    named = [column.strip() for column in statement.split("(", 1)[1].split(")", 1)[0].split(",")]
+
+    terraform = pathlib.Path("infra/lakehouse/main.tf").read_text(encoding="utf-8")
+    block = terraform[terraform.index('resource "aws_glue_catalog_table" "document_version"') :]
+    in_table = re.findall(r'columns \{\s*\n\s*name\s*=\s*"(\w+)"', block)
+
+    # `extraction_date` is the table's partition on the day, derived in the statement from
+    # `extracted_on`. It is a column of the table and not a field of the row, and that is the
+    # one difference the three lists are allowed.
+    assert named == [*declared, "extraction_date"]
+    assert in_table[: len(named)] == named

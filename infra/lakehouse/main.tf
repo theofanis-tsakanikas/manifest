@@ -148,6 +148,34 @@ resource "aws_glue_catalog_table" "document_version" {
       type    = "string"
       comment = "Opaque reader identity. Part of the version, because a reader upgrade is a different reader for every purpose"
     }
+    # **Three facts the record carries and this table used to drop**, plus the flag that says a
+    # value reached a consumer. The marts group by document type, language and tier — "error
+    # rate by carrier and language", "modelled cost per tier" — so without them the analytics
+    # layer could not ask the questions it was built for, of the only table it reads.
+    columns {
+      name    = "document_type"
+      type    = "string"
+      comment = "Which contract decided this field. The marts group by it."
+    }
+
+    columns {
+      name    = "language"
+      type    = "string"
+      comment = "The language the routing contract read the page as."
+    }
+
+    columns {
+      name    = "reader_tier"
+      type    = "int"
+      comment = "The tier that produced this reading. `reader` is the identity; this is the number the cost model groups by."
+    }
+
+    columns {
+      name    = "published"
+      type    = "boolean"
+      comment = "Whether the value reached a consumer. Not the same as `value IS NOT NULL` the day a field publishes an empty string."
+    }
+
     columns {
       name = "field"
       type = "string"

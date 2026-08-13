@@ -51,6 +51,21 @@ class Row:
     version: str
     supersedes: str | None
     reader: str
+    #: **Three facts the record carries and this table used to drop.** The warehouse's marts
+    #: group by document type, by language and by tier — "error rate by carrier and language",
+    #: "modelled cost per tier" — and none of the three was in a row, so the questions the
+    #: analytics layer was built to answer could not be asked of the data it reads. The record
+    #: has all three; the mapping simply did not carry them.
+    #:
+    #: `reader_tier` is the number, beside `reader` which is the identity. Both, because the
+    #: identity is what claim 1's thresholds are keyed to and the tier is what the cost model
+    #: groups by, and deriving either from the other means parsing a string somebody will change.
+    document_type: str
+    language: str
+    reader_tier: int
+    #: Whether this value reached a consumer. Distinct from `value IS NOT NULL`, which is the
+    #: same thing today and stops being it the moment a field publishes an empty string.
+    published: bool
     field: str
     value: str | None
     confidence: float | None
@@ -98,6 +113,10 @@ def rows_for(
             version=version,
             supersedes=supersedes,
             reader=str(record.get("reader") or ""),
+            document_type=str(record.get("document_type") or ""),
+            language=str(record.get("language") or ""),
+            reader_tier=int(entry.get("reader_tier", record.get("reader_tier", 0)) or 0),
+            published=bool(entry.get("publishable")),
             field=str(entry["field"]),
             # **Published values only.** `publishable` is the record's own word for "this
             # cleared its threshold and the gate did not refuse it", and anything else is a
@@ -153,7 +172,8 @@ def insert_statement(rows: Sequence[Row], *, database: str, table: str) -> str:
         raise ValueError("no rows to land; an INSERT with no VALUES is a syntax error")
 
     columns = (
-        "document_id, version, supersedes, reader, field, value, confidence, threshold, "
+        "document_id, version, supersedes, reader, document_type, language, reader_tier, "
+        "published, field, value, confidence, threshold, "
         "page, box, provenance_verified, review_decision, extracted_on, extraction_date"
     )
     values = ",\n  ".join(_row_literal(row) for row in rows)
@@ -170,6 +190,10 @@ def _row_literal(row: Row) -> str:
                 _text(row.version),
                 _text(row.supersedes),
                 _text(row.reader),
+                _text(row.document_type),
+                _text(row.language),
+                _integer(row.reader_tier),
+                "true" if row.published else "false",
                 _text(row.field),
                 _text(row.value),
                 _double(row.confidence),

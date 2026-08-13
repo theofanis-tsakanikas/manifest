@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Load the lake into the warehouse, so the marts read rows instead of an empty schema.
+
+**The gap this closes, and how it was found.** `apply_warehouse_schema.py` creates the tables
+and runs every mart against them, and its own closing line said what was wrong: *"no rows are
+asserted — the warehouse has no data yet, and a mart returning nothing over an empty schema is
+the honest answer"*. Redshift stood up, four marts executed, and every one of them answered
+about nothing. Nothing in the estate copied a single row out of Iceberg.
+
+**What it loads, and what it does not.**
+
+- `gold.published_field` — one row per field per version, from the lake. The grain everything
+  else is built on.
+- `gold.page_read` — one row per page per tier, derived from the same rows and priced from
+  `contracts/scale/`. Every figure is **modelled**: no page in this repository has been billed
+  by a real invoice, and the column names say so.
+- `gold.review_item` — the abstentions, from the same rows. Their decisions are NULL because no
+  human has made one; that is the state, not a placeholder.
+- `gold.declaration_line` — **nothing**, and the reason is printed rather than left to be
+  inferred. A declaration line needs an HS code with a declared value against it, and this
+  system produces classification *proposals* that no human has decided. Loading a proposal as a
+  declaration would put a number nobody approved into a duty-exposure figure.
+
+**`INSERT`, not `COPY`, at this volume and with that stated.** A warehouse load at scale
+unloads from Athena to storage and `COPY`s, in one command per table, because a million rows do
+not go through a statement API. This estate holds tens. What is being demonstrated is that the
+marts read real rows; batching them through `redshift-data` keeps the whole path in one file a
+reader can follow, and the shape a real one takes is this paragraph.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
+
+#: Rows per `INSERT`. Redshift's statement API takes a size limit rather than a row count, and a
+#: hundred rows of this width is comfortably inside it.
+BATCH = 100
+
+#: How long any one statement may take.
+STATEMENT_TIMEOUT_SECONDS = 300
+
+
+def _client(name: str):
+    import boto3  # noqa: PLC0415 - the offline suite imports this module without AWS
+
+    return boto3.client(name)
+
+
+def _athena(query: str, database: str, workgroup: str) -> list[list[str]]:
+    """Run one query and return its rows, without the header."""
+    athena = _client("athena")
+    started = athena.start_query_execution(
+        QueryString=query,
+        WorkGroup=workgroup,
+        QueryExecutionContext={"Database": database},
+    )["QueryExecutionId"]
+
+    deadline = time.monotonic() + STATEMENT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        described = athena.get_query_execution(QueryExecutionId=started)["QueryExecution"]
+        state = described["Status"]["State"]
+        if state == "SUCCEEDED":
+            break
+        if state in {"FAILED", "CANCELLED"}:
+            raise SystemExit(
+                f"the lake query {state.lower()}: "
+                f"{described['Status'].get('StateChangeReason', 'no reason given')}"
+            )
+        time.sleep(2)
+    else:
+        raise SystemExit(f"the lake query did not finish within {STATEMENT_TIMEOUT_SECONDS}s")
+
+    rows: list[list[str]] = []
+    token = None
+    while True:
+        page = (
+            athena.get_query_results(QueryExecutionId=started, NextToken=token)
+            if token
+            else athena.get_query_results(QueryExecutionId=started)
+        )
+        for row in page["ResultSet"]["Rows"]:
+            rows.append([cell.get("VarCharValue") for cell in row["Data"]])
+        token = page.get("NextToken")
+        if not token:
+            break
+    return rows[1:]
+
+
+def _redshift(statements: list[str], workgroup: str, secret: str) -> None:
+    """Run statements in order, stopping at the first that fails."""
+    data = _client("redshift-data")
+    for statement in statements:
+        started = data.execute_statement(
+            WorkgroupName=workgroup, SecretArn=secret, Database="dev", Sql=statement
+        )["Id"]
+        deadline = time.monotonic() + STATEMENT_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            described = data.describe_statement(Id=started)
+            if described["Status"] == "FINISHED":
+                break
+            if described["Status"] in {"FAILED", "ABORTED"}:
+                raise SystemExit(
+                    f"the warehouse refused a statement: {described.get('Error', 'no error given')}"
+                )
+            time.sleep(1)
+        else:
+            raise SystemExit(
+                f"a warehouse statement did not finish within {STATEMENT_TIMEOUT_SECONDS}s"
+            )
+
+
+def _literal(value: str | None) -> str:
+    """One SQL literal. Quotes doubled, exactly as `core.lake` argues at length.
+
+    A value that reaches SQL by concatenation is a value that can end the statement it is in,
+    and these values came off a page a counterparty wrote.
+    """
+    if value is None or value == "":
+        return "NULL"
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _number(value: str | None) -> str:
+    return "NULL" if value in (None, "") else str(float(value))
+
+
+def _boolean(value: str | None) -> str:
+    return "TRUE" if str(value).lower() == "true" else "FALSE"
+
+
+def _batched(table: str, columns: str, values: list[str]) -> list[str]:
+    """One `INSERT` per batch of already-encoded value tuples.
+
+    `table` and `columns` are literals in this file and never come from data — the only thing
+    that arrives from outside is a *value*, and every value went through `_literal`, which
+    doubles quotes for the reason `core.lake` argues at length. The linter cannot see that
+    distinction, so it is written here instead of waved at.
+    """
+    return [
+        f"INSERT INTO {table} ({columns}) VALUES {', '.join(values[start : start + BATCH])}"  # noqa: S608
+        for start in range(0, len(values), BATCH)
+    ]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--project", default="manifest")
+    parser.add_argument("--workgroup", required=True, help="The Redshift Serverless workgroup.")
+    parser.add_argument("--secret-arn", required=True, help="Its admin secret.")
+    arguments = parser.parse_args(argv)
+
+    ssm = _client("ssm")
+
+    def reference(path: str) -> str:
+        return ssm.get_parameter(Name=f"/{arguments.project}/{path}")["Parameter"]["Value"]
+
+    database = reference("lakehouse/glue_database")
+    athena_workgroup = reference("lakehouse/athena_workgroup")
+
+    # **Only the current version of each document.** The lake holds every version — doctrine
+    # rule 4 — and a warehouse that summed across them would count a corrected document twice
+    # and report an error rate over readings that were superseded on purpose.
+    lake = _athena(
+        """
+        WITH current AS (
+            SELECT document_id, MAX(extracted_on) AS latest
+            FROM document_version GROUP BY document_id
+        )
+        SELECT v.version, v.document_id, v.document_type, v.field, v.value, v.confidence,
+               v.threshold, v.reader, v.reader_tier, v.language, v.page,
+               v.provenance_verified, v.published, CAST(v.extraction_date AS VARCHAR)
+        FROM document_version v
+        JOIN current c ON c.document_id = v.document_id AND c.latest = v.extracted_on
+        """,
+        database,
+        athena_workgroup,
+    )
+    print(f"{DIM}{len(lake)} field row(s) at the current version of each document{RESET}")
+    if not lake:
+        print(
+            f"{RED}nothing in the lake{RESET} — the warehouse would be loaded with an empty set, "
+            f"which is the state it is already in. Send a document through first."
+        )
+        return 1
+
+    statements = [
+        "TRUNCATE gold.published_field",
+        "TRUNCATE gold.page_read",
+        "TRUNCATE gold.review_item",
+    ]
+
+    # **Truncated and rewritten, not appended.** The warehouse is a *view* of the lake, and the
+    # lake is the record — so a load is a projection of current truth rather than a history of
+    # loads. Appending would double every figure on the second run, which is the same defect the
+    # landing step had against Iceberg and the reason that one is now idempotent.
+    fields = [
+        "("
+        + ", ".join(
+            (
+                _literal(version),
+                "NULL",  # shipment_id — no source; see analytics/schema.sql
+                _literal(document_type),
+                _literal(field),
+                _literal(value),
+                _number(confidence) if confidence not in (None, "") else "0",
+                _number(threshold),
+                "TRUE" if threshold in (None, "") else "FALSE",  # always_review
+                _boolean(published),
+                str(int(tier or 0)),
+                _literal(reader),
+                _literal(language),
+                str(int(page or 0)) if page not in (None, "") else "NULL",
+                _boolean(verified),
+                "NULL",  # source_channel — no source
+                "NULL",  # carrier — no source
+                "NULL",  # client_id — no source
+                _literal(extraction_date),
+            )
+        )
+        + ")"
+        for (
+            version,
+            _document_id,
+            document_type,
+            field,
+            value,
+            confidence,
+            threshold,
+            reader,
+            tier,
+            language,
+            page,
+            verified,
+            published,
+            extraction_date,
+        ) in lake
+    ]
+    statements += _batched(
+        "gold.published_field",
+        "document_version, shipment_id, document_type, field_name, field_value, confidence, "
+        "threshold, always_review, published, reader_tier, reader_identity, language, page, "
+        "provenance_verified, source_channel, carrier, client_id, extracted_on",
+        fields,
+    )
+
+    # One row per page per tier, from the fields that were read there. The cost is modelled and
+    # every name carrying it says so — `docs/DECISIONS.md` 15.
+    pages = {
+        (row[0], int(row[10] or 0), int(row[8] or 0), row[9], row[13])
+        for row in lake
+        if row[10] not in (None, "")
+    }
+    reads = [
+        "("
+        + ", ".join(
+            (
+                _literal(version),
+                str(page),
+                str(tier),
+                _literal(language),
+                f"{_MODELLED_EUR_PER_PAGE.get(tier, 0.0):.6f}",
+                "'EUR'",
+                "NULL",  # client_id — no source
+                _literal(read_on),
+            )
+        )
+        + ")"
+        for version, page, tier, language, read_on in sorted(pages)
+    ]
+    statements += _batched(
+        "gold.page_read",
+        "document_version, page, reader_tier, language, modelled_cost, modelled_currency, "
+        "client_id, read_on",
+        reads,
+    )
+
+    # The abstentions, with no decision against them. NULL rather than a placeholder: claim 5 is
+    # about whether a human looked, and a decision column filled by a loader is the exact lie
+    # that measurement exists to catch.
+    queued = [
+        "("
+        + ", ".join(
+            (
+                _literal(f"{row[0][:32]}:{row[3]}"),
+                _literal(row[0]),
+                _literal(row[3]),
+                "'below_threshold'" if row[6] not in (None, "") else "'always_review'",
+                "NULL",  # reviewer
+                "NULL",  # decision
+                "NULL",  # seconds_on_task
+                "NULL",  # agreed_with_model
+                "NULL",  # client_id — no source
+                _literal(row[13]),
+                "NULL",  # decided_on
+            )
+        )
+        + ")"
+        for row in lake
+        if _boolean(row[12]) != "TRUE"
+    ]
+    if queued:
+        statements += _batched(
+            "gold.review_item",
+            "item_id, document_version, field_name, queued_reason, reviewer, decision, "
+            "seconds_on_task, agreed_with_model, client_id, queued_on, decided_on",
+            queued,
+        )
+
+    _redshift(statements, arguments.workgroup, arguments.secret_arn)
+    print(f"  {GREEN}ok{RESET}    gold.published_field  {len(fields)} row(s)")
+    print(f"  {GREEN}ok{RESET}    gold.page_read        {len(reads)} row(s)")
+    print(f"  {GREEN}ok{RESET}    gold.review_item      {len(queued)} row(s), no decisions")
+    print(
+        f"  {DIM}gold.declaration_line 0 rows, deliberately: a declaration line needs an HS "
+        f"code with a declared value, and this system produces proposals no human has decided. "
+        f"Loading one as a declaration would put a number nobody approved into a duty figure."
+        f"{RESET}"
+    )
+    return 0
+
+
+#: The modelled euro cost of reading one page at each tier. Published list prices, not a bill:
+#: no page in this repository has been invoiced, and `docs/DECISIONS.md` 15 requires every
+#: figure that is a model to say so wherever it appears. Tier 0 is the local reader and is free
+#: at the margin.
+_MODELLED_EUR_PER_PAGE = {0: 0.0, 1: 0.0015, 2: 0.010, 3: 0.004}
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

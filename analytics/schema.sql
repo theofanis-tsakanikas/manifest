@@ -6,7 +6,17 @@
 -- available offline, and it catches the whole class of failure that a warehouse would otherwise
 -- catch for the first time in production.
 --
--- **Nothing here has been created.** `docs/DECISIONS.md` 14.
+-- **Four columns are nullable and nothing in this system fills them**, which is stated here
+-- rather than papered over. `shipment_id`, `source_channel`, `carrier` and `client_id` are
+-- business metadata a broker's own systems hold: which desk scanned the paper, which carrier
+-- moved the box, which client is billed. The pipeline reads a page. It never sees any of them,
+-- and `scripts/load_warehouse.py` leaves them NULL.
+--
+-- That is doctrine rule 3 working rather than a gap: *missing is missing, and it is stated*. The
+-- marts group by these columns and will show one NULL group until something upstream supplies
+-- them — visibly absent, which is what a reader needs, instead of a plausible value invented by
+-- a loader. Filling them with "unknown" or the document id would make every figure in
+-- `quality_by_source` look like a finding about a carrier.
 
 CREATE SCHEMA IF NOT EXISTS gold;
 
@@ -15,7 +25,7 @@ CREATE SCHEMA IF NOT EXISTS gold;
 -- are the same question asked twice.
 CREATE TABLE IF NOT EXISTS gold.published_field (
     document_version   VARCHAR(64)   NOT NULL,
-    shipment_id        VARCHAR(32)   NOT NULL,
+    shipment_id        VARCHAR(32),          -- no source; see the header
     document_type      VARCHAR(64)   NOT NULL,
     field_name         VARCHAR(64)   NOT NULL,
     field_value        VARCHAR(512),
@@ -30,9 +40,9 @@ CREATE TABLE IF NOT EXISTS gold.published_field (
     language           VARCHAR(8)    NOT NULL,
     page               SMALLINT,
     provenance_verified BOOLEAN      NOT NULL,
-    source_channel     VARCHAR(32)   NOT NULL,
+    source_channel     VARCHAR(32),            -- no source; see the header
     carrier            VARCHAR(32),
-    client_id          VARCHAR(32)   NOT NULL,
+    client_id          VARCHAR(32),
     extracted_on       DATE          NOT NULL
 );
 
@@ -47,7 +57,7 @@ CREATE TABLE IF NOT EXISTS gold.review_item (
     decision           VARCHAR(16),
     seconds_on_task    DECIMAL(8, 2),
     agreed_with_model  BOOLEAN,
-    client_id          VARCHAR(32)   NOT NULL,
+    client_id          VARCHAR(32),
     queued_on          DATE          NOT NULL,
     decided_on         DATE
 );
@@ -57,7 +67,7 @@ CREATE TABLE IF NOT EXISTS gold.review_item (
 -- every duty figure a sum over duplicates.
 CREATE TABLE IF NOT EXISTS gold.declaration_line (
     document_version   VARCHAR(64)   NOT NULL,
-    shipment_id        VARCHAR(32)   NOT NULL,
+    shipment_id        VARCHAR(32),          -- no source; see the header
     hs_code            VARCHAR(10)   NOT NULL,
     declared_value     DECIMAL(14, 2) NOT NULL,
     duty_amount        DECIMAL(14, 2),
@@ -66,7 +76,7 @@ CREATE TABLE IF NOT EXISTS gold.declaration_line (
     -- Whether a human decided this classification. Every one of them should have — `hs_code` is
     -- always-review — and a row where this is false is a control that did not run.
     human_decided      BOOLEAN       NOT NULL,
-    client_id          VARCHAR(32)   NOT NULL,
+    client_id          VARCHAR(32),
     declared_on        DATE          NOT NULL
 );
 
@@ -80,18 +90,18 @@ CREATE TABLE IF NOT EXISTS gold.page_read (
     language           VARCHAR(8)    NOT NULL,
     modelled_cost      DECIMAL(12, 6) NOT NULL,
     modelled_currency  VARCHAR(3)    NOT NULL,
-    client_id          VARCHAR(32)   NOT NULL,
+    client_id          VARCHAR(32),
     read_on            DATE          NOT NULL
 );
 
 -- One row per reconciliation finding.
 CREATE TABLE IF NOT EXISTS gold.reconciliation_finding (
-    shipment_id        VARCHAR(32)   NOT NULL,
+    shipment_id        VARCHAR(32),          -- no source; see the header
     rule_id            VARCHAR(64)   NOT NULL,
     outcome            VARCHAR(20)   NOT NULL,
     severity           VARCHAR(10)   NOT NULL,
     left_document      VARCHAR(64)   NOT NULL,
     right_document     VARCHAR(64)   NOT NULL,
-    client_id          VARCHAR(32)   NOT NULL,
+    client_id          VARCHAR(32),
     found_on           DATE          NOT NULL
 );

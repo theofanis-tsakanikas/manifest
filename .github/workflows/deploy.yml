@@ -869,3 +869,10 @@ jobs:
           fi
           python3 scripts/apply_warehouse_schema.py \
             --workgroup "${{ env.PROJECT }}-marts" --secret-arn "$SECRET"
+          # **Then load it**, because a mart that executes over an empty schema answers about
+          # nothing — which is what every one of them did until today, and what
+          # `apply_warehouse_schema.py`'s own closing line said out loud. The loader refuses
+          # rather than succeeding when the lake is empty: a warehouse loaded with nothing is
+          # the state it was already in, and reporting that as a load is the lie.
+          python3 scripts/load_warehouse.py \
+            --workgroup "${{ env.PROJECT }}-marts" --secret-arn "$SECRET"
