@@ -136,26 +136,18 @@ resource "aws_sagemaker_endpoint_configuration" "classifier" {
     }
   }
 
-  # Every input and every proposal, captured to the evidence bucket.
+  # **No `data_capture_config`, because serverless inference does not support one** — the API
+  # says so at apply, in the same breath as network isolation. What it was for is real and does
+  # not go away with it: claim 5 needs the model's proposal and the reviewer's answer side by
+  # side to compute an agreement rate, and a reviewer who agrees with everything is a rubber
+  # stamp with a login. Without a denominator there is no metric.
   #
-  # Not for retraining and not for a dashboard: for claim 5. "A human decision is only evidence
-  # if the human was looking" needs the model's proposal *and* the reviewer's answer, side by
-  # side, to compute an agreement rate — and a reviewer whose agreement rate is 100% is a rubber
-  # stamp with a login. Without capture there is no denominator.
-  data_capture_config {
-    enable_capture              = true
-    initial_sampling_percentage = 100
-    destination_s3_uri          = "s3://${var.evidence_bucket}/classification-capture/"
-    kms_key_id                  = var.data_key_arn
-
-    capture_options {
-      capture_mode = "Input"
-    }
-
-    capture_options {
-      capture_mode = "Output"
-    }
-  }
+  # So the recording moved to `handlers/classify.py`, which writes the proposal it decided to the
+  # evidence bucket. That is better than the capture would have been, for two reasons rather than
+  # as consolation: it records the **proposal** — after the band, the floor and the contested
+  # pairs — rather than the endpoint's raw ranking, which is the thing a reviewer actually saw;
+  # and it lands in this project's own store, in a shape `evals/review/` can read, instead of a
+  # capture format nothing offline can parse.
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
@@ -295,10 +287,20 @@ data "aws_iam_policy_document" "classify" {
     resources = ["arn:aws:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/${var.project}-hs-classifier"]
   }
 
+  # The proposal it decided, written where claim 5 can find it. `PutObject` only: this role
+  # cannot read what it wrote, cannot list the bucket and cannot delete — an evidence store a
+  # writer can edit is an evidence store.
+  statement {
+    sid       = "RecordTheProposal"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["arn:aws:s3:::${var.evidence_bucket}/classification-proposals/*"]
+  }
+
   statement {
     sid       = "UseTheDataKey"
     effect    = "Allow"
-    actions   = ["kms:Decrypt"]
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
     resources = [var.data_key_arn]
   }
 
@@ -363,6 +365,8 @@ resource "aws_lambda_function" "classify" {
     variables = {
       CLASSIFIER_ENDPOINT = aws_sagemaker_endpoint.classifier[0].name
       CONTRACTS_DIR       = "/var/task/contracts"
+      EVIDENCE_BUCKET     = var.evidence_bucket
+      DATA_KEY_ARN        = var.data_key_arn
     }
   }
 

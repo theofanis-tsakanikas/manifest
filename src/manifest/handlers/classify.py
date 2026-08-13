@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 from decimal import Decimal
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -183,7 +184,7 @@ def handler(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
         margin=contract.margin,
     )
 
-    return {
+    answer = {
         "goods": proposal.goods,
         "disposition": str(proposal.disposition),
         "candidates": [
@@ -201,3 +202,53 @@ def handler(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
         # this response cannot mistake a proposal for a classification.
         "publishes": proposal.publishes,
     }
+    _record(answer)
+    return answer
+
+
+def _record(proposal: dict[str, Any]) -> None:
+    """Write the proposal where claim 5 can find it, or say why it could not.
+
+    **This is the denominator, and it exists because the obvious place for it does not.**
+    `infra/extraction/classification.tf` declared a SageMaker data capture until the API refused
+    it: serverless inference supports none. What the capture was for does not go away with it —
+    doctrine rule 2 measures a reviewer's agreement rate with the model, and a rate needs both
+    sides of the comparison written down.
+
+    What is recorded is the **proposal**, after the floor, the band and the contested pairs — the
+    thing a reviewer is actually shown — rather than the endpoint's raw ranking. The capture
+    would have held the other one.
+
+    **A failure here does not fail the classification.** The proposal is correct and the caller
+    is waiting for it; losing the evidence write is a gap in a metric, and turning that into a
+    refusal would make the measurement more important than the thing being measured. It is
+    logged, loudly, because a denominator quietly missing entries is claim 5 measuring a set it
+    does not describe.
+    """
+    bucket = os.environ.get("EVIDENCE_BUCKET")
+    if not bucket:
+        print("EVIDENCE_BUCKET is unset; this proposal is not recorded and claim 5 cannot count it")
+        return
+
+    from datetime import UTC, datetime  # noqa: PLC0415 - the clock is the adapter's, not core's
+
+    stamped = datetime.now(UTC)
+    # Keyed by day and then by content, so a repeated question does not write a second object and
+    # the count is of *proposals*, not of invocations. The digest is of the goods description
+    # and the disposition together: the same description decided differently is a different fact
+    # and must not overwrite the earlier one.
+    digest = sha256(
+        f"{proposal['goods']}|{proposal['disposition']}|{proposal['margin']}".encode()
+    ).hexdigest()[:32]
+    try:
+        _client("s3").put_object(
+            Bucket=bucket,
+            Key=f"classification-proposals/{stamped:%Y/%m/%d}/{digest}.json",
+            Body=json.dumps({**proposal, "proposed_at": stamped.isoformat()}).encode("utf-8"),
+            ContentType="application/json",
+            ServerSideEncryption="aws:kms",
+            SSEKMSKeyId=os.environ["DATA_KEY_ARN"],
+        )
+    # Broad on purpose: the classification stands whatever went wrong here.
+    except Exception as error:
+        print(f"the proposal was not recorded: {error}. Claim 5's denominator is short by one")
