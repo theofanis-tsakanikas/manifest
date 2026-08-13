@@ -525,7 +525,12 @@ jobs:
         if: ${{ inputs.enable_escalation_tiers }}
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet boto3
+          # `--upgrade`, because the runner ships a boto3 old enough not to know
+          # `bedrock-data-automation` exists at all: *"Unknown service"*, with a list of two
+          # hundred valid names that does not include it. Installing without it is a no-op
+          # against the preinstalled version, which is the shape that looks like a dependency
+          # being handled.
+          python3 -m pip install --quiet --upgrade boto3
           BDA_PROJECT_ARN=$(python3 scripts/bda_project.py --print-arn | tail -1)
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           PREFIX=${AWS_REGION%%-*}
@@ -859,7 +864,12 @@ jobs:
         # Redshift disagrees with.
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet boto3
+          # `--upgrade`, because the runner ships a boto3 old enough not to know
+          # `bedrock-data-automation` exists at all: *"Unknown service"*, with a list of two
+          # hundred valid names that does not include it. Installing without it is a no-op
+          # against the preinstalled version, which is the shape that looks like a dependency
+          # being handled.
+          python3 -m pip install --quiet --upgrade boto3
           SECRET=$(aws secretsmanager list-secrets \
             --query "SecretList[?contains(Name, 'redshift!${{ env.PROJECT }}-marts')].ARN | [0]" \
             --output text)
