@@ -546,6 +546,57 @@ def _check_a_trigger_can_actually_fire() -> list[str]:
     return problems
 
 
+def _object_calls(path: Path) -> list[tuple[str, set[str]]]:
+    """`(the call, the key prefixes named in the same function)` for every S3 call in a handler.
+
+    **Per function: per file was too wide and per call was too narrow, and `gate-proof` caught
+    both.**
+
+    *Per file* credited a whole file with every prefix it mentioned as soon as it contained a
+    `put_object(` anywhere. Adding the document-automation path to `escalate.py` — which puts a
+    page under `escalated/` — marked `thresholds/`, which that file only ever reads, as written.
+    A mutation that had been refused since it was written was accepted by an edit in an
+    unrelated function.
+
+    *Per call* then missed almost everything, because a key is rarely a literal at the call: it
+    is built two lines earlier and passed as `Key=key`. `renders/` stopped being seen as read at
+    all, and the mutation that stops uploading the pages the provenance gate re-reads was
+    accepted instead.
+
+    A function is the unit where a key is built and used, which is why it is the right one.
+    """
+    found: list[tuple[str, set[str]]] = []
+    interesting = {"put_object", "get_object", "download_file", "list_objects_v2"}
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+
+    for scope in ast.walk(tree):
+        if not isinstance(scope, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        calls = {
+            getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            for node in ast.walk(scope)
+            if isinstance(node, ast.Call)
+        } & interesting
+        if not calls:
+            continue
+
+        prefixes: set[str] = set()
+        for node in ast.walk(scope):
+            text = ""
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                text = node.value
+            elif isinstance(node, ast.JoinedStr):
+                first = node.values[0] if node.values else None
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    text = first.value
+            match = re.match(r"^([a-z][a-z0-9_]*)/", text)
+            if match:
+                prefixes.add(match.group(1))
+        if prefixes:
+            found.extend((call, prefixes) for call in sorted(calls))
+    return found
+
+
 def _check_the_runtime_artefacts_are_deployed() -> list[str]:
     """Every object prefix a handler *reads* is written by a handler or by the deploy.
 
@@ -579,23 +630,28 @@ def _check_the_runtime_artefacts_are_deployed() -> list[str]:
     #: Only strings used as an object key or a key prefix. Matching bare `word/` anywhere would
     #: collect `application/json` and `image/png` from content types — a check that reports
     #: three imaginary problems is a check somebody turns off before it finds the real one.
-    key_context = re.compile(
-        r"(?:Key=|prefix=|key\s*=\s*|_load_json\([^,]+,\s*)f?\"([a-z][a-z0-9_]*)/"
-    )
+    key_context = re.compile(r"^(?:[a-z][a-z0-9_]*)/")
 
     written: set[str] = set()
     read: set[str] = set()
     for path in sorted(ROOT.glob("src/manifest/handlers/*.py")):
-        source = path.read_text(encoding="utf-8")
-        prefixes = set(key_context.findall(source))
-        # A file that puts objects is credited with the prefixes it names; a file that fetches
-        # them is charged with them. `read_tier0` does both, and its own prefixes are written by
-        # it, so it settles its own account — which is correct and is why the sets are unioned
-        # rather than partitioned by file.
-        if "put_object(" in source:
-            written |= prefixes
-        if "get_object(" in source or "download_file(" in source or "prefix=" in source:
-            read |= prefixes
+        for call, prefixes in _object_calls(path):
+            if call == "put_object":
+                written |= prefixes
+            else:
+                read |= prefixes
+
+    # **The third way an object gets written, which this check did not know about.** A prefix
+    # can be produced by a handler, by a deploy step, or by the state machine itself through the
+    # SDK integration — `arn:aws:states:::aws-sdk:s3:putObject`. `records/` is the last of those:
+    # the published record is written by the machine, not by any function, which is deliberate
+    # (the record is what the pipeline decided, not what a handler happened to return) and made
+    # this check report it as read-and-unwritten the moment attribution became per-call.
+    machine = (ROOT / "infra/extraction/pipeline.tf").read_text(encoding="utf-8")
+    if "aws-sdk:s3:putObject" in machine:
+        written |= set(re.findall(r"States\.Format\('([a-z][a-z0-9_]*)/", machine))
+
+    del key_context
 
     for prefix in sorted(read - written):
         key = f"{prefix}/"
