@@ -633,6 +633,16 @@ data "aws_iam_policy_document" "deploy_data" {
       "glue:GetDatabases",
       "glue:GetTables",
       "glue:GetPartitions",
+      # **Running a query, not only creating the workgroup that runs them.** The deploy builds
+      # the analytics layer and then *loads* it — `scripts/load_warehouse.py` reads the lake
+      # through Athena and writes the rows into Redshift — so the role that applies the layer is
+      # also the principal that asks the question. It held every workgroup verb and none of the
+      # query ones, and the loader failed on `athena:StartQueryExecution` after the schema had
+      # been created and all four marts had run against it.
+      "athena:StartQueryExecution",
+      "athena:GetQueryExecution",
+      "athena:GetQueryResults",
+      "athena:StopQueryExecution",
       "athena:CreateWorkGroup",
       "athena:DeleteWorkGroup",
       "athena:GetWorkGroup",
