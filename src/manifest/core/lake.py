@@ -115,7 +115,16 @@ def rows_for(
             reader=str(record.get("reader") or ""),
             document_type=str(record.get("document_type") or ""),
             language=str(record.get("language") or ""),
-            reader_tier=int(entry.get("reader_tier", record.get("reader_tier", 0)) or 0),
+            # **`tier` is the key the escalation writes**, and this read `reader_tier` — so
+            # every rescued field landed as tier 0 and `modelled_cost_per_client` reported €0.00
+            # for a document that had paid for three billed reads. A cost model wrong in that
+            # direction is the one `docs/DECISIONS.md` 15 says it must never be.
+            #
+            # Both names are accepted because the record's own top level uses the longer one for
+            # the reader that produced the *document*; a field that went up carries the shorter.
+            reader_tier=int(
+                entry.get("tier", entry.get("reader_tier", record.get("reader_tier", 0))) or 0
+            ),
             published=bool(entry.get("publishable")),
             field=str(entry["field"]),
             # **Published values only.** `publishable` is the record's own word for "this

@@ -217,3 +217,20 @@ def test_the_row_the_insert_and_the_table_declare_the_same_columns() -> None:
     # one difference the three lists are allowed.
     assert named == [*declared, "extraction_date"]
     assert in_table[: len(named)] == named
+
+
+def test_a_rescued_field_lands_at_the_tier_that_rescued_it() -> None:
+    """`escalate` writes `tier`; this read `reader_tier` and every escalation landed as tier 0.
+
+    The consequence was not a wrong label. `modelled_cost_per_client` groups by `reader_tier`
+    and sums a modelled price per tier, so a document that climbed 0 → 1 → 2 → 3 and paid for
+    three billed reads reported **€0.00 at tier 0** — a cost model understating itself, which
+    `docs/DECISIONS.md` 15 names as the one direction it must never be wrong in.
+    """
+    record = _record()
+    record["fields"][0]["tier"] = 3
+
+    rows = rows_for(record, extracted_on=WHEN)
+
+    assert rows[0].reader_tier == 3
+    assert rows[1].reader_tier == 0, "a field that never went up stays where it was read"
