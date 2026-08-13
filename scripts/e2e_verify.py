@@ -947,13 +947,16 @@ def _landing_is_idempotent(estate: Estate, document: Path, document_id: str, row
         )
         return
 
-    landed = (_from_history(again["executionArn"]).get("lake") or {}).get("landed") or {}
+    # The landing step's own payload, not a value out of it. Unwrapping one level further gave
+    # `0 or {}` on the happy answer and an `int` on every other one — a line that worked only
+    # when the property held, which is the one case a check does not need help with.
+    landed = _from_history(again["executionArn"]).get("lake") or {}
     after = _rows_in_the_lake(estate, document_id)
     estate.check(
         "12 · the same bytes land nothing new",
         after == rows and landed.get("landed") == 0,
-        f"{rows} row(s) before and {after} after, and the landing step reported "
-        f"{landed.get('landed', '?')} written — {landed.get('skipped', 'no reason given')}"
+        f"{rows} row(s) before and {after} after, and the landing step wrote "
+        f"{landed.get('landed', '?')} — {landed.get('skipped', 'and gave no reason')}"
         if after == rows
         else f"the lake went from {rows} to {after} rows for one version. The same document read "
         f"twice is the same version, so this is a duplicate rather than a correction",
