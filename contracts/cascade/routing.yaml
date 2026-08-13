@@ -25,10 +25,18 @@ tiers:
     Written as an adapter, schema-tested against the documented shape, not yet called.
   2: >-
     Managed document automation, per page. Best on reading order and table structure, and it
-    measures its own raster. **Reports no confidence anywhere** — not per word, not per line,
-    not per element (verified against the published standard-output schema, 2026-08-10). A page
-    routed here can never publish on a score, because it will not have one. Written as an
-    adapter, schema-tested, not yet called.
+    measures its own raster. **It reports a per-word confidence, and this project does not
+    publish on it** — which is a different sentence from the one that was here, and the
+    difference is the point. This line read "reports no confidence anywhere, verified against
+    the published standard-output schema, 2026-08-10". The first real call, on 2026-08-13,
+    returned a confidence on every word, varying from 0.729 to 1.0. The published schema and the
+    running service disagreed, and the schema is what had been checked. A page routed here still
+    cannot publish on a score — not because there is no number, but because **no threshold here
+    is derived from that number**: claim 1's thresholds come from a committed recording of the
+    tier-0 engine against a labelled set, and there is no such recording for this tier. Doctrine
+    rule 3, applied to a number that exists rather than to one that does not. Its line-level
+    confidence, incidentally, is about 0.01 on every line of a page whose words score above 0.99,
+    so whatever that field measures it is not the probability that the line is right.
   3: >-
     A multilingual model with document input, per token. The only escalation path for Greek and
     Dutch. **Reports no confidence either**, and any it is asked for is refused at the adapter:
@@ -45,6 +53,25 @@ tiers:
 # services are — and it is written down here so that the review capacity model in
 # `contracts/review/` is costed against the truth rather than against an assumption that an
 # expensive tier returns something a threshold can compare.
+
+# **Which tiers may publish on their own score, as data rather than as a sentence.**
+#
+# This was prose, and a test grepped the prose for "no confidence" to check that the handler's
+# `SCORING_TIERS` agreed with it. Then tier 2's description was corrected — the service *does*
+# report a per-word confidence — and the correction *quotes the old sentence*, so the grep still
+# matched and the test still passed. It was checking that a phrase appeared somewhere in a
+# paragraph, which a paragraph about that phrase satisfies.
+#
+# So the fact is a field. `false` here does not mean "returns no number": tiers 2 and 3 both
+# return something. It means **no threshold in this repository is derived from that number** —
+# claim 1's thresholds come from a committed recording against a labelled set, and there is no
+# such recording for either tier. A tier flipped to `true` without one would be publishing on a
+# score nothing measured, which is the fabricated result this whole project argues against.
+publishes_on_its_own_score:
+  0: true
+  1: true
+  2: false
+  3: false
 
 languages:
   - language: en

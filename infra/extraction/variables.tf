@@ -123,9 +123,16 @@ variable "document_automation_arns" {
   description = <<-EOT
     The data-automation project ARNs the pipeline may invoke, same reasoning as the models.
 
-    May be empty: the document-automation tier is reachable only by a second escalation, which
-    the routing model does not attempt today (`evals/scale/`). An empty list produces a
-    statement with no resources, which grants nothing — which is the honest state.
+    **Reached, as of 2026-08-13.** This said the tier "is reachable only by a second escalation,
+    which the routing model does not attempt today" — accurate, and the reason was that
+    `handlers/escalate.py` called `route` once with `current_tier=0` and stopped. `route` returns
+    the *cheapest* tier above the current one, so English always went to tier 1 and tiers 2 and 3
+    were reachable in the contract and unreachable in the estate. The handler climbs now, so this
+    list is supplied.
+
+    Both the project and the profile go in it: `InvokeDataAutomationAsync` is authorised against
+    each. An empty list produces a statement with no resources, which grants nothing — the
+    honest state for a deploy with the tiers switched off.
   EOT
   type        = list(string)
   default     = []
@@ -233,7 +240,31 @@ variable "escalation_model_id" {
 }
 
 variable "bda_profile_arn" {
-  description = "The Bedrock Data Automation profile tier 2 submits to. Empty disables that tier."
+  description = <<-EOT
+    The Bedrock Data Automation profile tier 2 submits to. Empty means the tier cannot run.
+
+    Assembled by `deploy.yml` from the account and region rather than transcribed: a profile ARN
+    is `data-automation-profile/<region-prefix>.data-automation-v1` and the prefix is the one
+    thing about it that varies.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "bda_project_arn" {
+  description = <<-EOT
+    The document-automation project tier 2 reads through. Empty means the tier cannot run.
+
+    **Created by `scripts/bda_project.py`, not by Terraform, and that is an exception with a
+    reason.** The AWS provider declares no resource for a Bedrock Data Automation project —
+    checked against `hashicorp/aws ~> 6.0` on 2026-08-13 — and neither does CloudFormation. The
+    choice was a tier that cannot run or a resource the deploy creates itself; `destroy.yml`
+    deletes it, because a create path with no delete path is how an estate gets left standing.
+
+    AWS's own `public-default` project will not do: it returns `PAGE` and `ELEMENT` granularity
+    with bounding boxes **disabled**, and a reading with no boxes carries no provenance. Claim 2
+    is that every published field traces to a page and a box.
+  EOT
   type        = string
   default     = ""
 }

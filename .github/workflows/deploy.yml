@@ -513,6 +513,35 @@ jobs:
             exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: the document-automation project tier 2 reads through
+        # **Not Terraform, and the reason is in `infra/extraction/variables.tf`:** the AWS
+        # provider has no resource for a Bedrock Data Automation project and neither does
+        # CloudFormation. `scripts/bda_project.py` is idempotent by name and holds the whole
+        # configuration in one screen; `destroy.yml` deletes it.
+        #
+        # The profile is assembled rather than looked up: the ARN is
+        # `data-automation-profile/<region-prefix>.data-automation-v1`, and the prefix is the
+        # only part that varies.
+        if: ${{ inputs.enable_escalation_tiers }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet boto3
+          BDA_PROJECT_ARN=$(python3 scripts/bda_project.py --print-arn | tail -1)
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          PREFIX=${AWS_REGION%%-*}
+          # Assigned as shell variables first and exported second, rather than composed inside
+          # the `echo`. `check_deploy_path` requires a real assignment for anything reaching
+          # `-var`, and it is right to: `echo "VAR=$VAR" >> $GITHUB_ENV` on an unset variable
+          # writes `VAR=` and defines it as empty for every later step, which is the shape that
+          # once sent `[""]` to a policy.
+          BDA_PROFILE_ARN="arn:aws:bedrock:${AWS_REGION}:${ACCOUNT}:data-automation-profile/${PREFIX}.data-automation-v1"
+          BDA_ARNS="[\"$BDA_PROJECT_ARN\",\"$BDA_PROFILE_ARN\"]"
+          {
+            echo "BDA_PROJECT_ARN=$BDA_PROJECT_ARN"
+            echo "BDA_PROFILE_ARN=$BDA_PROFILE_ARN"
+            echo "BDA_ARNS=$BDA_ARNS"
+          } >> "$GITHUB_ENV"
+          echo "tier 2 reads through $BDA_PROJECT_ARN"
       - name: package the extraction handler
         # Code and contracts from the same commit, in one artefact. A deployment where they came
         # from different revisions would apply one version's comparison rules to another
@@ -597,6 +626,9 @@ jobs:
             -var "publish_package_hash=${{ steps.package.outputs.hash }}" \
             -var "escalation_model_arns=$ESCALATION_MODEL_ARNS" \
             -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
+            -var "bda_profile_arn=$BDA_PROFILE_ARN" \
+            -var "bda_project_arn=$BDA_PROJECT_ARN" \
+            -var "document_automation_arns=${BDA_ARNS:-[]}" \
             -var "enable_classifier=${{ inputs.enable_classifier }}" \
             -var "classifier_model_data_url=${{ steps.classifier.outputs.model_data_url }}" \
             -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"

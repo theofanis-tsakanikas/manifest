@@ -328,6 +328,18 @@ jobs:
             -var 'enable_escalation_tiers=true' \
             -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
             -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000'
+      - name: delete the document-automation project Terraform does not manage
+        # **The one resource in this estate no `terraform destroy` removes.** The AWS provider
+        # declares no resource for a Bedrock Data Automation project, so `deploy.yml` creates it
+        # with `scripts/bda_project.py` and this deletes it. A create path with no delete path is
+        # how an estate gets left standing, and this file exists because of that sentence.
+        #
+        # `always()` on the job already covers a partial teardown; the script itself says so and
+        # exits zero when there is nothing named to remove.
+        if: always()
+        run: |
+          python3 -m pip install --quiet boto3
+          python3 scripts/bda_project.py --delete
 
   lakehouse:
     name: "destroy · lakehouse"

@@ -739,6 +739,26 @@ def _check_every_env_reference_is_defined() -> list[str]:
     return problems
 
 
+def _commands(job: dict) -> str:
+    """A job's shell, with the comments removed.
+
+    **The third time this file has read prose as code.** A comment added to explain *why*
+    `echo "VAR=$VAR" >> $GITHUB_ENV` is the wrong shape contains that shape, so the check below
+    reported that the job passed `$VAR` to terraform and never assigned it. Decision 24 names
+    the pattern; this is it, in the check written to catch a different instance of it.
+
+    A `#` inside a quoted string is not a comment, and stripping one would corrupt a command.
+    Only lines whose first non-space character is `#` are dropped — which is what a comment
+    written by a human looks like, and leaves anything subtler intact rather than half-parsed.
+    """
+    lines: list[str] = []
+    for step in job.get("steps", []):
+        for line in str(step.get("run", "")).splitlines():
+            if not line.lstrip().startswith("#"):
+                lines.append(line)
+    return "\n".join(lines)
+
+
 def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
     """A `$VAR` passed to `-var` is assigned somewhere in the same job.
 
@@ -757,7 +777,7 @@ def _check_shell_variables_are_assigned_in_their_job() -> list[str]:
     for name in ("deploy.yml", "destroy.yml"):
         workflow = _load(name)
         for job_name, job in workflow["jobs"].items():
-            steps = "\n".join(str(step.get("run", "")) for step in job.get("steps", []))
+            steps = _commands(job)
             if not steps:
                 continue
             # Line by line, and every `$VAR` on a line that passes `-var`. The first version
@@ -1235,6 +1255,41 @@ def _check_a_new_model_artefact_reaches_the_endpoint() -> list[str]:
     return problems
 
 
+def _check_what_terraform_cannot_manage_is_still_deleted() -> list[str]:
+    """Every resource the deploy creates outside Terraform is one the destroy removes.
+
+    **There is exactly one, and it is an exception with a reason.** The AWS provider declares no
+    resource for a Bedrock Data Automation project, so `scripts/bda_project.py` creates it from
+    `deploy.yml`. Nothing in any state file knows it exists, which means no `terraform destroy`
+    will ever remove it — and a create path with no delete path is how an estate gets left
+    standing, which is the sentence `destroy.yml` was written around.
+
+    Checked from both ends: the deploy calls it, the destroy calls it with `--delete`. A second
+    such script added tomorrow and wired into only one of them fails here.
+    """
+    deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    destroy = (ROOT / ".github/workflows/destroy.yml").read_text(encoding="utf-8")
+
+    problems: list[str] = []
+    # A script that *accepts* `--delete`, not one that mentions it. The first version matched
+    # the substring and reported `check_deploy_path.py` itself, because this docstring contains
+    # it — a check reading its own prose, which is the defect it took decision 24 to name and
+    # which this file has now produced twice.
+    outside_terraform = sorted(
+        script.name
+        for script in (ROOT / "scripts").glob("*.py")
+        if re.search(r'add_argument\(\s*"--delete"', script.read_text(encoding="utf-8"))
+    )
+    for name in outside_terraform:
+        if name in deploy and f"{name} --delete" not in destroy:
+            problems.append(
+                f"deploy.yml runs scripts/{name} and destroy.yml never runs it with --delete. "
+                f"Nothing in any state file knows that resource exists, so no terraform destroy "
+                f"will remove it and the estate cannot be fully torn down"
+            )
+    return problems
+
+
 def _check_a_skipped_gate_job_is_accepted() -> list[str]:
     """The deploy may run less than the whole suite. It may not do so silently or for ever.
 
@@ -1322,6 +1377,7 @@ def main() -> int:
         _check_the_machine_may_invoke_what_it_references,
         _check_the_bulk_job_finds_the_code_it_is_pointed_at,
         _check_a_new_model_artefact_reaches_the_endpoint,
+        _check_what_terraform_cannot_manage_is_still_deleted,
         _check_every_service_a_handler_calls_is_reachable,
         _check_every_layer_can_evaluate,
         _check_resolves_fail_loudly,

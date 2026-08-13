@@ -262,24 +262,33 @@ class TestEscalation:
         """
         assert frozenset({0, 1}) == SCORING_TIERS
 
-    def test_the_contract_agrees_about_which_tiers_report_a_score(self) -> None:
-        """The handler's constant and the routing contract's prose must say the same thing.
+    def test_the_contract_agrees_about_which_tiers_may_publish(self) -> None:
+        """The handler's constant and the contract's declaration must say the same thing.
 
-        The contract describes each tier in a sentence a human reads, so the handler cannot
-        derive this from it. Two places holding one fact is one place drifting, so the test
-        reads the contract's own words: tiers 2 and 3 say they report no confidence, and the
-        handler's set must exclude exactly those.
+        **This test used to read the contract's prose, and it passed for the wrong reason.** It
+        grepped each tier's description for "no confidence" and required the phrase to appear
+        exactly where `SCORING_TIERS` excluded the tier. Then tier 2's description was corrected
+        — the service *does* report a per-word confidence, 0.729 to 1.0, contradicting the
+        published schema the description cited — and the correction **quotes the old sentence**.
+        The grep matched the quotation, the test stayed green, and the fact it was protecting had
+        reversed.
+
+        A paragraph about a phrase satisfies a search for that phrase. So the contract states it
+        as a field now, and this reads the field.
         """
-
         root = pathlib.Path(__file__).resolve().parents[2]
         contract = yaml.safe_load((root / "contracts/cascade/routing.yaml").read_text())
-        for tier, prose in contract["tiers"].items():
-            says_no_confidence = "no confidence" in prose.lower()
-            assert says_no_confidence != (int(tier) in SCORING_TIERS), (
-                f"tier {tier}: the contract says "
-                f"{'no confidence' if says_no_confidence else 'it reports one'} and the handler "
-                f"{'excludes' if int(tier) not in SCORING_TIERS else 'includes'} it"
-            )
+        declared = {
+            int(tier)
+            for tier, publishes in contract["publishes_on_its_own_score"].items()
+            if publishes
+        }
+
+        assert declared == SCORING_TIERS, (
+            f"the contract says tiers {sorted(declared)} may publish on their own score and the "
+            f"handler says {sorted(SCORING_TIERS)}. One of them is deciding whether a value "
+            f"reaches a customer on a number nothing in this repository has calibrated"
+        )
 
     def test_it_escalates_the_pages_the_fields_are_on(self) -> None:
         """Not page one, which is what the first version of this handler read.

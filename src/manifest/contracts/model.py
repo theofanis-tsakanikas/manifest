@@ -498,7 +498,24 @@ class CascadeContract(Strict):
 
     version: Annotated[int, Field(ge=1)]
     tiers: Annotated[dict[int, str], Field(min_length=1)]
+    #: Which tiers may publish on the confidence they report. Data rather than prose, because a
+    #: test used to grep the prose and a paragraph *about* the phrase satisfied the grep.
+    publishes_on_its_own_score: Annotated[dict[int, bool], Field(min_length=1)]
     languages: Annotated[tuple[TierEligibility, ...], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def _every_tier_says_whether_it_may_publish(self) -> Self:
+        missing = set(self.tiers) - set(self.publishes_on_its_own_score)
+        if missing:
+            raise ValueError(
+                f"tiers {sorted(missing)} do not declare whether they publish on their own "
+                f"score. A tier with no answer is a tier whose reading a caller has to guess "
+                f"about, and the safe guess and the useful one differ"
+            )
+        unknown = set(self.publishes_on_its_own_score) - set(self.tiers)
+        if unknown:
+            raise ValueError(f"tiers {sorted(unknown)} are declared and do not exist")
+        return self
 
     @model_validator(mode="after")
     def _eligibility_names_real_tiers(self) -> Self:

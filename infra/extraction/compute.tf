@@ -401,12 +401,18 @@ data "aws_iam_policy_document" "escalate" {
     ]
   }
 
-  # Document automation writes its output to storage rather than returning it inline, so this
-  # tier needs somewhere to put it. Scoped to one prefix that holds nothing else.
+  # Document automation reads from storage and writes to storage; it returns neither the page
+  # nor the reading inline. So this tier needs to *put* the page it is submitting — a full-page
+  # PNG is five megabytes and the service refuses it, so what is written is the same re-encoded
+  # JPEG the model tier sends — and to *get* the standard output back afterwards, which arrives
+  # as two files: a job metadata object naming the reading, and the reading.
+  #
+  # `GetObject` alongside `PutObject` was missing while nothing called this tier, and the
+  # failure would have been an AccessDenied on the last step of a successful read.
   statement {
-    sid       = "WriteWhereDocumentAutomationDelivers"
+    sid       = "SubmitAPageAndReadWhatComesBack"
     effect    = "Allow"
-    actions   = ["s3:PutObject"]
+    actions   = ["s3:PutObject", "s3:GetObject"]
     resources = ["arn:aws:s3:::${var.records_bucket}/escalated/*"]
   }
 
@@ -567,6 +573,7 @@ resource "aws_lambda_function" "escalate" {
       CONTRACTS_DIR       = "/var/task/contracts"
       ESCALATION_MODEL_ID = var.escalation_model_id
       BDA_PROFILE_ARN     = var.bda_profile_arn
+      BDA_PROJECT_ARN     = var.bda_project_arn
     }
   }
 

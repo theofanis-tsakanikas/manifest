@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,15 @@ class HandlerError(RuntimeError):
 SCORING_TIERS: frozenset[int] = frozenset({0, 1})
 
 #: The tiers by name, so the dispatch below reads as a decision rather than as arithmetic. A bare
+#: How long one page may spend in document automation. It is an asynchronous service with no
+#: callback, and the state machine's own step has a timeout above this — a read that has not
+#: finished in this long is a job that is stuck rather than slow, and the fields that abstained
+#: are still abstaining while a Lambda is held open for it.
+DOCUMENT_AUTOMATION_TIMEOUT_SECONDS = 180
+
+#: Between polls. Tighter spends the API quota discovering that a page is still a page.
+DOCUMENT_AUTOMATION_POLL_SECONDS = 5
+
 #: `if tier == 2` is the kind of line that gets renumbered when a tier is inserted, silently
 #: sending pages to the wrong service.
 TIER_MANAGED_OCR = 1
@@ -126,32 +136,89 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
     eligible = contracts.cascade.eligible(language)
     thresholds = _thresholds(_reader_of(event))
 
-    # **One routing decision per abstaining field, from `core`.** A field that already published
-    # is not re-read: it cleared a threshold derived from its own error budget, and spending a
-    # billed call to confirm a decision the evidence already supports is the shape of a system
-    # that escalates because it can.
-    decisions = []
-    for entry in fields:
-        if not entry.get("queued_because"):
-            continue
-        decisions.append(
-            (
-                entry,
-                route(
-                    page=f"{document_id}/{entry['field']}",
-                    language=language,
-                    confidence=entry.get("confidence"),
-                    threshold=thresholds.get(entry["field"]),
-                    eligible=eligible,
-                    current_tier=0,
-                ),
+    # **The cascade climbs, and until today it took one step.**
+    #
+    # `route` returns `min(higher)` — the cheapest tier above the current one — which is the
+    # right rule and only half a cascade. The handler called it once with `current_tier=0`, read
+    # at whatever came back, and stopped. For English that is always tier 1, so tiers 2 and 3
+    # were reachable in the contract and unreachable in the estate: `eligible_tiers: [0, 1, 2, 3]`
+    # described a ladder the code climbed one rung of.
+    #
+    # `current_tier` existed for this from the first version of `core.cascade` and nothing passed
+    # it anything but zero. The loop below is what the parameter was for.
+    #
+    # **It is bounded by the eligible tiers, not by a counter.** Each round re-decides only the
+    # fields that are still abstaining, at the tier that just read them — so a field that was
+    # rescued stops costing money, and a field that was not goes up exactly once more. When no
+    # tier is left above the current one, `route` returns ABSTAIN and the loop ends because there
+    # is nothing left to ask.
+    rounds: list[dict[str, Any]] = []
+    current = 0
+    while True:
+        # A field that already published is not re-read: it cleared a threshold derived from its
+        # own error budget, and spending a billed call to confirm a decision the evidence already
+        # supports is the shape of a system that escalates because it can.
+        going_up = []
+        for entry in fields:
+            if not entry.get("queued_because"):
+                continue
+            decision = route(
+                page=f"{document_id}/{entry['field']}",
+                language=language,
+                confidence=entry.get("confidence"),
+                threshold=thresholds.get(entry["field"]),
+                eligible=eligible,
+                current_tier=current,
             )
+            if decision.route is Route.ESCALATE:
+                going_up.append((entry, decision))
+
+        if not going_up:
+            break
+
+        #: The lowest tier any field asked for. One call, not one per field: these services read
+        #: a *page*, and asking twice for two fields on the same page pays twice for the same
+        #: work.
+        target = min(decision.to_tier for _, decision in going_up if decision.to_tier is not None)
+
+        # **The pages the abstaining fields are actually on, not page one.**
+        #
+        # 255 of this corpus's 3,000 documents run to a second page, and the first version of
+        # this handler read `page-0001.png` unconditionally. A field on page two would have been
+        # "escalated" against the wrong image and come back empty — the most expensive way to
+        # produce nothing, and silent, because an empty answer is indistinguishable from a tier
+        # that could not read it either.
+        pages = sorted({int(entry["page"]) for entry, _ in going_up if entry.get("page")}) or [1]
+        escalated = _read_at(
+            tier=target,
+            document_id=document_id,
+            language=language,
+            pages=pages,
+            grounding=_reading(event),
         )
 
-    going_up = [
-        (entry, decision) for entry, decision in decisions if decision.route is Route.ESCALATE
-    ]
-    if not going_up:
+        fields = _redecide(
+            fields=fields,
+            going_up={entry["field"] for entry, _ in going_up},
+            escalated=escalated,
+            target=target,
+            thresholds=thresholds,
+            contract=contracts.documents[document_type],
+            language=language,
+        )
+        rounds.append(
+            {
+                "tier": target,
+                "fields": sorted(entry["field"] for entry, _ in going_up),
+                # Stated per round rather than once, because the answer differs by tier and it
+                # is the fact that decides whether anything can publish. A round at a tier that
+                # scores nothing may rescue a reading for a human and may never publish on it.
+                "reports_confidence": target in SCORING_TIERS,
+            }
+        )
+        current = target
+
+    if not rounds:
         # Every abstention is staying where it is — a language with no higher tier, or fields the
         # derivation declared always-review. Returned unchanged rather than dressed up: an
         # escalation step that reports success having escalated nothing is the step somebody
@@ -161,38 +228,10 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
             "escalation": {"attempted": False, "reason": "no field is eligible to go up"},
         }
 
-    #: The lowest tier any field asked for. One call, not one per field: these services read a
-    #: *page*, and asking twice for two fields on the same page pays twice for the same work.
-    target = min(decision.to_tier for _, decision in going_up if decision.to_tier is not None)
-
-    # **The pages the abstaining fields are actually on, not page one.**
-    #
-    # 255 of this corpus's 3,000 documents run to a second page, and the first version of this
-    # handler read `page-0001.png` unconditionally. A field on page two would have been
-    # "escalated" against the wrong image and come back empty — the most expensive way to
-    # produce nothing, and silent, because an empty answer is indistinguishable from a tier that
-    # could not read it either.
-    pages = sorted({int(entry["page"]) for entry, _ in going_up if entry.get("page")}) or [1]
-    escalated = _read_at(
-        tier=target,
-        document_id=document_id,
-        language=language,
-        pages=pages,
-        grounding=_reading(event),
-    )
-
-    rewritten = _redecide(
-        fields=fields,
-        going_up={entry["field"] for entry, _ in going_up},
-        escalated=escalated,
-        target=target,
-        thresholds=thresholds,
-        contract=contracts.documents[document_type],
-        language=language,
-    )
-
+    rewritten = fields
     published = sum(1 for entry in rewritten if entry.get("publishable"))
     queued = sum(1 for entry in rewritten if entry.get("queued_because"))
+    highest = rounds[-1]["tier"]
     emit(
         extraction_span(
             trace_id=str(outcome.get("fingerprint", ""))[:32],
@@ -200,7 +239,7 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
             parent=f"publish-{str(outcome.get('fingerprint', ''))[:16]}",
             document_version=str(outcome.get("fingerprint", "")),
             document_type=document_type,
-            reader_tier=target,
+            reader_tier=highest,
             language=language,
             fields_extracted=len(rewritten),
             fields_published=published,
@@ -220,11 +259,13 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         },
         "escalation": {
             "attempted": True,
-            "tier": target,
-            "fields": sorted(entry["field"] for entry, _ in going_up),
-            # Stated in the payload rather than inferred downstream, because it is the fact that
-            # decides whether anything can publish and it must survive into the execution history.
-            "reports_confidence": target in SCORING_TIERS,
+            # The tier the document *ended* at, which is what a reader of the history wants
+            # first. `rounds` is the whole climb and the honest record of what was billed: a
+            # document that went 0 → 1 → 2 → 3 paid for three reads, not one.
+            "tier": highest,
+            "rounds": rounds,
+            "fields": sorted({field for round_ in rounds for field in round_["fields"]}),
+            "reports_confidence": highest in SCORING_TIERS,
         },
     }
 
@@ -311,6 +352,90 @@ def _proposal_for(escalated: Any, field: str) -> dict[str, Any]:
     return {}
 
 
+def _document_automation(records: str, document_id: str, raster: bytes) -> dict[str, Any]:
+    """One page through document automation, from a raster to the standard output it produced.
+
+    **Three things the first version of this got wrong, all of them because it had never run.**
+
+    *It is asynchronous.* `invoke_data_automation_async` returns an invocation ARN, not a
+    reading. The old call handed that response straight to the adapter, which would have refused
+    it for having no `pages` — an accurate complaint about the wrong object.
+
+    *It reads from storage, and storage has a size limit the renders exceed.* A full-page PNG
+    here is five megabytes and the service refuses it: *"File cannot be processed because it is
+    too large."* The same re-encoding the model tier does is applied first, for the same reason
+    and in the same order — quality before pixels, because resolution is what a reader needs and
+    PNG's exactness on black text is not.
+
+    *The output is two files, not one.* The status names a `job_metadata.json`, which names the
+    `standard_output` the adapter actually reads. Reading the first and calling it the reading is
+    a mistake that produces a valid-looking payload with no words in it.
+    """
+    profile = _env("BDA_PROFILE_ARN")
+    project = _env("BDA_PROJECT_ARN")
+
+    # Written where the tier reads from, under this document's own prefix, so a failed run
+    # leaves the page that was submitted beside the output that was not produced.
+    encoding, body = _within_the_model_limit(raster)
+    key = f"escalated/{document_id}/input/page-0001.{encoding}"
+    _s3().put_object(
+        Bucket=records,
+        Key=key,
+        Body=body,
+        ContentType=f"image/{'jpeg' if encoding == 'jpg' else encoding}",
+    )
+
+    runtime = _client("bedrock-data-automation-runtime")
+    started = runtime.invoke_data_automation_async(
+        inputConfiguration={"s3Uri": f"s3://{records}/{key}"},
+        outputConfiguration={"s3Uri": f"s3://{records}/escalated/{document_id}/output/"},
+        dataAutomationConfiguration={"dataAutomationProjectArn": project, "stage": "LIVE"},
+        dataAutomationProfileArn=profile,
+    )
+    invocation = started["invocationArn"]
+
+    deadline = time.monotonic() + DOCUMENT_AUTOMATION_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        status = runtime.get_data_automation_status(invocationArn=invocation)
+        state = status.get("status")
+        if state in {"Created", "InProgress"}:
+            time.sleep(DOCUMENT_AUTOMATION_POLL_SECONDS)
+            continue
+        if state != "Success":
+            raise HandlerError(
+                f"document automation ended {state}: "
+                f"{status.get('errorMessage', 'no message given')}. The fields that abstained "
+                f"are still abstaining and go to a human; what is lost is a rescue, not a value"
+            )
+        metadata = _json_from(status["outputConfiguration"]["s3Uri"])
+        break
+    else:
+        raise HandlerError(
+            f"document automation did not finish within "
+            f"{DOCUMENT_AUTOMATION_TIMEOUT_SECONDS}s (invocation {invocation})"
+        )
+
+    segments = [
+        segment["standard_output_path"]
+        for asset in metadata.get("output_metadata", [])
+        for segment in asset.get("segment_metadata", [])
+        if segment.get("standard_output_path")
+    ]
+    if not segments:
+        raise HandlerError(
+            "the job metadata names no standard output. The service reported success and "
+            "produced nothing this adapter can read, which is a shape change rather than a "
+            "reading — refused rather than treated as an empty page"
+        )
+    return _json_from(segments[0])
+
+
+def _json_from(s3_uri: str) -> dict[str, Any]:
+    """One `s3://bucket/key` object, parsed."""
+    bucket, _, key = s3_uri.removeprefix("s3://").partition("/")
+    return json.loads(_s3().get_object(Bucket=bucket, Key=key)["Body"].read())
+
+
 def _read_at(
     *, tier: int, document_id: str, language: str, pages: list[int], grounding: ReadDocument
 ) -> Any:
@@ -327,8 +452,6 @@ def _read_at(
     # a field that already published.
     keys = [f"renders/{document_id}/page-{number:04d}.png" for number in pages]
     rasters = [_s3().get_object(Bucket=records, Key=key)["Body"].read() for key in keys]
-    # Document automation takes a storage location rather than bytes, and submits one page.
-    page_key = keys[0]
 
     if tier == TIER_MANAGED_OCR:
         from manifest.extraction.aws import textract  # noqa: PLC0415
@@ -353,15 +476,10 @@ def _read_at(
     if tier == TIER_DOCUMENT_AUTOMATION:
         from manifest.extraction.aws import bda  # noqa: PLC0415
 
-        response = _client("bedrock-data-automation-runtime").invoke_data_automation_async(
-            inputConfiguration={"s3Uri": f"s3://{records}/{page_key}"},
-            outputConfiguration={"s3Uri": f"s3://{records}/escalated/{document_id}/"},
-            dataAutomationProfileArn=_env("BDA_PROFILE_ARN"),
-        )
         return bda.to_document(
             source_id=document_id,
             source_digest=grounding.source_digest,
-            response=response,
+            response=_document_automation(records, document_id, rasters[0]),
             language=language,
             service_version=_env("BDA_VERSION", "standard-output"),
         )
