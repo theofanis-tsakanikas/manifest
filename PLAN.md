@@ -340,6 +340,34 @@ is meant to run:
   score it produces publishes anything — and any accuracy figure it yields is labelled a
   statement about a distribution this repository generated, appears on no scoreboard, and never
   becomes the sentence "the classifier is N% accurate".
+
+  **And on 2026-08-13 it got something to serve.** The endpoint had been declared for three days
+  with an empty `classifier_model_data_url` and a validation refusing the flag by name, which was
+  accurate and is now the wrong kind of accurate: a service in the estate that no request could
+  be answered by. What it serves is fitted from `contracts/classification/training.yaml` — 73
+  goods descriptions over the same twelve headings, **written by hand for this purpose and not
+  taken from the corpus**, because the corpus maps eight goods strings one-to-one onto eight
+  codes and a model fitted on that is a lookup table scoring 100%.
+
+  Three things are worth reading in what came out of it, and none of them is the accuracy figure:
+
+  - **The gate is abstention, not accuracy**, and it fired. The first fit separated all six
+    contested descriptions by 0.11 to 0.42 against a declared band of 0.08, and no artefact was
+    written. It was right to refuse: a word vectoriser fixed most of it, and the rest was a leak
+    in the training set — *wall* and *5L tins* had been typed into only one side of a pair, so
+    the model had learned the vocabulary of the person who wrote the file. The band never moved.
+  - **The artefact is JSON, not a pickle.** The container serves scikit-learn 1.2.1 and this
+    repository runs Python 3.12, where that version does not build — but the version mismatch is
+    only how it came up. A pickle is the one artefact in the estate whose behaviour cannot be
+    read, and loading one is executing it. `classification/artefact.py` scores it in pure Python,
+    and `train_classifier.py` refuses to ship unless both paths agree to 1e-9.
+  - **The floor is derived.** `headings.yaml` declares `minimum_score: 0.35`, correct for the
+    similarity ranker it was written for and meaningless against a softmax over twelve classes,
+    where uniform is 0.083. Applying it would have refused every proposal the endpoint can make;
+    choosing a smaller number would have been doctrine rule 3's default with a decimal point. It
+    is computed instead, from what the model scores on a description it cannot read at all, and
+    the caller refuses a floor below the uniform prior — a model that lowers its own floor is a
+    model raising its own proposals.
 - **The search surface** (`infra/lakehouse/search.tf`). Off by default, because the service bills
   an always-on floor whether anybody searches or not. It indexes **published records only, never
   raw document text** — an index of counterparty-authored page text is that text retained,

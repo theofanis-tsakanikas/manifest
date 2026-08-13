@@ -154,9 +154,11 @@ variable "enable_classifier" {
   # `deploy.yml` now passes this — before, no dispatch could set it, so the endpoint was not
   # "off by default", it was unbuildable-by-omission. Making it reachable immediately showed the
   # second problem: with it on, the layer does not plan, because a SageMaker model needs an
-  # artefact and `classifier_model_data_url` is empty. There is no trained artefact in this
-  # repository and none is claimed — `classification` is a similarity ranker over declared
-  # headings, and the README says so.
+  # artefact and `classifier_model_data_url` is empty. **That was true when it was written and
+  # is not any more**: `scripts/train_classifier.py` fits one from
+  # `contracts/classification/training.yaml` and `deploy.yml` uploads it before this layer
+  # applies. The validation stays, because the flag can still be set by a dispatch that did not
+  # produce an artefact, and an endpoint over nothing is the failure it was written for.
   #
   # Refused here, by name, rather than four minutes later as a SageMaker API error about a model
   # data URL. An operator who sets this flag is asking for something that does not exist yet, and
@@ -164,17 +166,23 @@ variable "enable_classifier" {
   validation {
     condition     = !var.enable_classifier || var.classifier_model_data_url != ""
     error_message = <<-EOT
-      enable_classifier is on and classifier_model_data_url is empty. The endpoint needs a
-      trained artefact in S3 and this repository has never produced one: the classification path
-      is a similarity ranker over declared headings, not a model that was fitted. Supply the URI
-      of a real artefact, or leave the flag off — standing up an endpoint over nothing would be
-      a service in the estate that no request can be answered by.
+      enable_classifier is on and classifier_model_data_url is empty. `deploy.yml` fits the
+      artefact and uploads it before this layer applies, so an empty value here means that step
+      did not run or did not produce one — most likely because the abstention gate refused the
+      model. Standing up an endpoint over nothing would be a service in the estate that no
+      request can be answered by.
     EOT
   }
 }
 
 variable "classifier_image_uri" {
-  description = "Inference container for the classifier. Required only when `enable_classifier` is true."
+  description = <<-EOT
+    Override the serving container. Empty means the standard scikit-learn image for this region,
+    assembled in `classification.tf` from a registry map with its source and its date on it.
+
+    Left as an override rather than removed because the day this project serves a model that is
+    not a linear one, the image changes and nothing else does.
+  EOT
   type        = string
   default     = ""
 }

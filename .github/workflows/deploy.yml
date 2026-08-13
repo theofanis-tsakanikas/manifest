@@ -220,7 +220,8 @@ jobs:
           terraform -chdir=infra/foundation plan -out=tfplan \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "budget_notification_email=$BUDGET_EMAIL" \
-            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}"
+            -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
+            -var "enable_classifier=${{ inputs.enable_classifier }}"
       - name: apply
         run: terraform -chdir=infra/foundation apply -auto-approve tfplan
 
@@ -552,6 +553,31 @@ jobs:
             --server-side-encryption aws:kms \
             --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
           echo "uploaded $key"
+      - name: fit and upload the classification artefact
+        # **The gate is the point of this step, not the upload.** `train_classifier.py` refuses to
+        # write anything if the fitted model separates a contested pair by more than the band
+        # `contracts/classification/headings.yaml` declares — so a deploy carrying a model that
+        # is confident where the trade is not fails here, before the endpoint exists, rather than
+        # answering confidently in production.
+        #
+        # It also refuses if the exported artefact disagrees with scikit-learn by more than 1e-9.
+        # The artefact is JSON rather than a pickle for three reasons written in
+        # `classification/artefact.py`; that check is the price, and it is paid here.
+        if: ${{ inputs.enable_classifier }}
+        id: classifier
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet ".[classifier]"
+          key="models/hs-classifier-${{ github.sha }}/model.tar.gz"
+          python scripts/train_classifier.py --out build
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "$key" \
+            --body build/model.tar.gz \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          echo "model_data_url=s3://$TF_VAR_records_bucket/$key" >> "$GITHUB_OUTPUT"
+          echo "uploaded $key"
       - name: apply
         run: |
           terraform -chdir=infra/extraction init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
@@ -570,6 +596,7 @@ jobs:
             -var "escalation_model_arns=$ESCALATION_MODEL_ARNS" \
             -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
             -var "enable_classifier=${{ inputs.enable_classifier }}" \
+            -var "classifier_model_data_url=${{ steps.classifier.outputs.model_data_url }}" \
             -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
 
   batch:

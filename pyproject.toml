@@ -44,6 +44,12 @@ dependencies = [
 handlers = [
     "pillow>=10.4",
 ]
+# Fitting the tariff classifier. Not a runtime dependency of anything: the endpoint serves the
+# artefact from SageMaker's own scikit-learn container, and `manifest` itself never imports it.
+classifier = [
+    "scikit-learn>=1.5",
+    "joblib>=1.4",
+]
 corpus = [
     "pillow>=10.4",
     "numpy>=2.0",

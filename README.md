@@ -88,9 +88,9 @@ command in this repository, not a summary of one.
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
 | `make gate-proof` | **49 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **654 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
+| `checkov` | **676 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **348 passing**, offline, credential-free |
+| test suite | **402 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks 49 controls on purpose and requires the **named** gate to refuse
@@ -238,6 +238,13 @@ Two smaller honesty notes that are not gaps but are easy to over-read:
 twelve headings chosen because this repository's own corpus falls under them. A tariff has five
 thousand headings and a real classifier meets goods nobody described in advance. What is proved
 is the *gate*: a contested heading abstains, and no score publishes anything.
+
+That now covers a fitted model as well as the similarity ranker. The endpoint serves one, fitted
+from 73 hand-written goods descriptions, and its held-out figure is a statement about that file —
+it appears on no scoreboard here and the sentence "the classifier is N% accurate" is one this
+project does not have. What the fit is worth reading for is that **the abstention gate refused
+the first three attempts**: two because the model separated contested pairs the trade does not,
+and the fix each time was the training set rather than the band.
 
 **The batch job has not been run yet.** `pipelines/reprocess.py` is written, tested and defaults to a
 dry run; claim 7 is proved against the pure planner it calls. The part that needs a cluster is

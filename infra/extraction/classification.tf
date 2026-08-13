@@ -24,15 +24,38 @@
 # anything is classified or not. Serverless bills per request and scales to nothing, which fits
 # a workload that is bursty by nature — a customs broker's documents arrive when ships do.
 
-# Enabling the endpoint without naming its artefacts would produce a model resource pointing at
-# an empty image URI — which fails at apply, four minutes in, with the approval already spent.
-# Checked here so that it fails at *plan*, by name, before anything is created.
+locals {
+  # **The serving image, and why an account number is written down here.**
+  #
+  # AWS publishes the scikit-learn serving containers from a different account in each region,
+  # and there is no API that returns the mapping — the SageMaker Python SDK ships it as a static
+  # file, `image_uri_config/sklearn.json`, which is the authority. This value was read from that
+  # file at SDK version 3.13.1 on 2026-08-13. Resolving it at deploy time would mean installing
+  # the whole SDK in the workflow for one lookup in a JSON file that changes when a region is
+  # added, so it is transcribed with its source and its date, exactly like every other external
+  # constant in this repository.
+  #
+  # A region this map does not name fails at plan with a key error rather than at apply with an
+  # image pull failure, which is the direction worth failing in.
+  sklearn_registry = {
+    "eu-central-1" = "492215442770"
+  }
+
+  # 1.2-1 is the container's scikit-learn version, and it is *not* the version anything here is
+  # fitted with. `classification/artefact.py` explains at length why the artefact is JSON rather
+  # than a pickle; the short form is that this number and the trainer's no longer have to agree,
+  # and the container is a Python host rather than a model loader.
+  classifier_image = "${local.sklearn_registry[var.aws_region]}.dkr.ecr.${var.aws_region}.amazonaws.com/sagemaker-scikit-learn:1.2-1-cpu-py3"
+}
+
+# Enabling the endpoint without an artefact would produce a model resource pointing at nothing —
+# which fails at apply, four minutes in, with the approval already spent. Checked here so that it
+# fails at *plan*, by name, before anything is created. The image is no longer part of this
+# check: it has a derived default, and a deploy that overrides it is saying something deliberate.
 check "classifier_artefacts_are_named" {
   assert {
-    condition = !var.enable_classifier || (
-      var.classifier_image_uri != "" && var.classifier_model_data_url != ""
-    )
-    error_message = "enable_classifier is true and classifier_image_uri or classifier_model_data_url is empty."
+    condition     = !var.enable_classifier || var.classifier_model_data_url != ""
+    error_message = "enable_classifier is true and classifier_model_data_url is empty."
   }
 }
 
@@ -43,10 +66,19 @@ resource "aws_sagemaker_model" "classifier" {
   execution_role_arn = aws_iam_role.classifier[0].arn
 
   primary_container {
-    image          = var.classifier_image_uri
+    image          = var.classifier_image_uri != "" ? var.classifier_image_uri : local.classifier_image
     model_data_url = var.classifier_model_data_url
 
     environment = {
+      # Where the container looks for the entry point. Both are required and neither has a
+      # useful default: without them the scikit-learn container serves its own handler, which
+      # returns a bare prediction — a heading and nothing else. That is the endpoint deciding,
+      # in the one place no test in this repository can reach, and it would look like success.
+      SAGEMAKER_PROGRAM             = "inference.py"
+      SAGEMAKER_SUBMIT_DIRECTORY    = "/opt/ml/model/code"
+      SAGEMAKER_CONTAINER_LOG_LEVEL = "20"
+      SAGEMAKER_REGION              = var.aws_region
+
       # The endpoint returns a ranked list, never a decision. The abstention band is applied in
       # `manifest.classification.hs`, on a laptop and in the estate alike, from one
       # implementation — a threshold applied inside the container would be a second copy of the
@@ -199,4 +231,135 @@ resource "aws_iam_role_policy" "classifier" {
   name   = "classifier"
   role   = aws_iam_role.classifier[0].id
   policy = data.aws_iam_policy_document.classifier.json
+}
+
+# ── The caller ────────────────────────────────────────────────────────────────
+#
+# **An endpoint nothing calls is a service in the estate, not a capability.** The model, its role
+# and its capture have been declared here since this file was written; what was missing is the
+# half that turns a ranking into a disposition. `src/manifest/handlers/classify.py` applies the
+# derived floor, the declared band and the contested pairs from `contracts/classification/` — so
+# this function is where the project's central sentence is enforced rather than described.
+
+resource "aws_cloudwatch_log_group" "classify" {
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate.
+  count = var.enable_classifier ? 1 : 0
+
+  name              = "/aws/lambda/${var.project}-classify"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+  tags              = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "classify_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "classify" {
+  count = var.enable_classifier ? 1 : 0
+
+  name               = "${var.project}-classify"
+  description        = "Asks the classification endpoint for a ranking. Decides nothing itself."
+  assume_role_policy = data.aws_iam_policy_document.classify_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "classify" {
+  statement {
+    sid    = "AskTheEndpoint"
+    effect = "Allow"
+    # `InvokeEndpoint` and nothing else. This role cannot create a model, cannot change an
+    # endpoint's configuration and cannot read the artefact — so the one thing it could do to
+    # alter a proposal is the one thing it is not granted.
+    actions   = ["sagemaker:InvokeEndpoint"]
+    resources = ["arn:aws:sagemaker:${var.aws_region}:${data.aws_caller_identity.current.account_id}:endpoint/${var.project}-hs-classifier"]
+  }
+
+  statement {
+    sid       = "UseTheDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt"]
+    resources = [var.data_key_arn]
+  }
+
+  #checkov:skip=CKV_AWS_111:The network-interface actions Lambda needs for VPC attachment are documented as not resource-scoped.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpcAndLog"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.classify[0].arn}:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "classify" {
+  count = var.enable_classifier ? 1 : 0
+
+  name   = "classify"
+  role   = aws_iam_role.classify[0].id
+  policy = data.aws_iam_policy_document.classify.json
+}
+
+resource "aws_lambda_function" "classify" {
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Synchronous invocations; a dead-letter queue receives only from asynchronous ones.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  count = var.enable_classifier ? 1 : 0
+
+  function_name = "${var.project}-classify"
+  description   = "Ranks tariff headings at the endpoint, decides against contracts/classification/"
+  role          = aws_iam_role.classify[0].arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.classify.handler"
+  s3_bucket     = var.records_bucket
+  s3_key        = var.publish_package_key
+
+  source_code_hash = var.publish_package_hash
+
+  # A serverless endpoint's first request after an idle period waits for a container. The
+  # handler's own client gives up at 30s and says so; this is the outer bound.
+  timeout     = 60
+  memory_size = 512
+
+  # The endpoint's own ceiling is five concurrent requests, and every proposal it produces lands
+  # in a review queue with a declared capacity. A caller that could outrun both would be building
+  # a backlog, which doctrine rule 1 calls a failure of the system rather than of the reviewers.
+  reserved_concurrent_executions = 5
+
+  kms_key_arn = var.data_key_arn
+
+  environment {
+    variables = {
+      CLASSIFIER_ENDPOINT = aws_sagemaker_endpoint.classifier[0].name
+      CONTRACTS_DIR       = "/var/task/contracts"
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  tracing_config { mode = "Active" }
+
+  depends_on = [aws_cloudwatch_log_group.classify]
+  tags       = { "${var.project}:expires-at" = var.expires_at }
 }

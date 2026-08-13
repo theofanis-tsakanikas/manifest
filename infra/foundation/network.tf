@@ -225,6 +225,14 @@ locals {
   # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road
   # before there is a vehicle; leaving them out is not a limitation, because the day the cascade
   # escalates for real is a day somebody deploys deliberately.
+  # The classification endpoint, reachable only when it exists. `sagemaker.runtime` is the
+  # data-plane service — `sagemaker.api` is the control plane and nothing in the VPC calls it,
+  # because models and endpoints are created by the deploy role from a runner rather than from
+  # inside the network.
+  endpoints_classifier = [
+    "sagemaker.runtime",
+  ]
+
   endpoints_escalation = [
     "textract",
     "bedrock-runtime",
@@ -234,11 +242,11 @@ locals {
 }
 
 resource "aws_vpc_endpoint" "interface" {
-  for_each = toset(
-    var.enable_escalation_tiers
-    ? concat(local.endpoints_always, local.endpoints_escalation)
-    : local.endpoints_always
-  )
+  for_each = toset(concat(
+    local.endpoints_always,
+    var.enable_escalation_tiers ? local.endpoints_escalation : [],
+    var.enable_classifier ? local.endpoints_classifier : [],
+  ))
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${data.aws_region.current.region}.${each.key}"

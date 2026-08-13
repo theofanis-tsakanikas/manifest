@@ -22,6 +22,7 @@ Its mutations are in `scripts/gate_proof.py`.
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from fnmatch import fnmatch
@@ -1064,12 +1065,43 @@ def _check_the_machine_may_invoke_what_it_references() -> list[str]:
 _ENDPOINT_FOR = {
     "stepfunctions": "states",
     "bedrock-data-automation-runtime": "bedrock-data-automation-runtime",
+    # A hyphen in the client name and a dot in the service name. Nothing warns about the
+    # difference: `com.amazonaws.eu-central-1.sagemaker-runtime` is simply not a service, and the
+    # endpoint fails to create rather than being created and unreachable — which is the good
+    # direction, and still worth a line here rather than a rediscovery.
+    "sagemaker-runtime": "sagemaker.runtime",
 }
 
 #: Services reachable without an interface endpoint: the two gateway endpoints, and the two that
 #: are never called from inside the VPC. `sts` and `logs` are in the always-on list already; these
 #: are the ones that would otherwise be reported as missing and are not.
 _NO_INTERFACE_ENDPOINT_NEEDED = frozenset({"s3", "dynamodb"})
+
+
+def _services_called(handler: Path) -> set[str]:
+    """The services a handler actually calls, parsed rather than grepped.
+
+    **The regex this replaces matched its own documentation.** A docstring in `classify.py`
+    explaining that this check looks for `_client` with a service name contained the shape it
+    was describing, so the check reported that the handler called a service named `service` and
+    went red on prose. Amusing once, and the same defect as every other one this session: a
+    check whose input is not what it believes it is reading.
+
+    `ast` sees calls. A string inside a docstring is a constant expression, never a call, so the
+    question stops being answerable by accident.
+    """
+    called: set[str] = set()
+    for node in ast.walk(ast.parse(handler.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        function = node.func
+        name = function.id if isinstance(function, ast.Name) else getattr(function, "attr", "")
+        if name not in {"_client", "client"}:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            called.add(first.value)
+    return called
 
 
 def _check_every_service_a_handler_calls_is_reachable() -> list[str]:
@@ -1094,7 +1126,7 @@ def _check_every_service_a_handler_calls_is_reachable() -> list[str]:
 
     problems: list[str] = []
     for handler in sorted((ROOT / "src/manifest/handlers").glob("*.py")):
-        called = set(re.findall(r'_client\(\s*"([a-z0-9.\-]+)"\s*\)', handler.read_text("utf-8")))
+        called = _services_called(handler)
         for service in sorted(called - _NO_INTERFACE_ENDPOINT_NEEDED):
             if _ENDPOINT_FOR.get(service, service) not in declared:
                 problems.append(

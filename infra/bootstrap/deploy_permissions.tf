@@ -959,6 +959,29 @@ data "aws_iam_policy_document" "deploy_compute" {
       "aoss:TagResource",
       "aoss:UntagResource",
       "aoss:ListTagsForResource",
+
+      # **Route 53, for an OpenSearch collection.** Not an oversight in the grouping: an
+      # `aoss` VPC endpoint is a private DNS name, so the service creates a private hosted zone
+      # in *this* account and associates it with the VPC — using the caller's credentials, not
+      # its own. The endpoint therefore reaches `FAILED` rather than `ACTIVE` with a Route 53
+      # 403, roughly seven minutes into an apply, which is where this list came from.
+      #
+      # The delete half is here for the same reason it is everywhere else in this file: a
+      # repository with a create path and no delete path is how an estate gets left standing,
+      # and a hosted zone nobody can delete outlives the collection that caused it.
+      "route53:CreateHostedZone",
+      "route53:DeleteHostedZone",
+      "route53:GetHostedZone",
+      "route53:ListHostedZones",
+      "route53:ListHostedZonesByName",
+      "route53:ListHostedZonesByVPC",
+      "route53:AssociateVPCWithHostedZone",
+      "route53:DisassociateVPCFromHostedZone",
+      "route53:ChangeResourceRecordSets",
+      "route53:ListResourceRecordSets",
+      "route53:ChangeTagsForResource",
+      "route53:ListTagsForResource",
+      "route53:GetChange",
     ]
     resources = ["*"]
   }

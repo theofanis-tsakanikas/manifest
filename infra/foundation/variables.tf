@@ -68,3 +68,17 @@ variable "enable_escalation_tiers" {
   type        = bool
   default     = false
 }
+
+variable "enable_classifier" {
+  description = <<-EOT
+    Whether the classification endpoint will be stood up, so that this layer opens the route to it.
+
+    **This layer does not create the endpoint** — `infra/extraction` does, from the same flag. It
+    is here because a function in a private subnet with no interface endpoint does not fail when
+    it calls SageMaker; it hangs until Lambda kills it, with no log line naming a cause. The two
+    flags are one decision and `deploy.yml` passes one input to both, which is the only shape
+    that cannot drift into a classifier that exists and cannot be reached.
+  EOT
+  type        = bool
+  default     = false
+}

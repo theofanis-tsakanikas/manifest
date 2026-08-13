@@ -25,6 +25,7 @@ than as a winner.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from difflib import SequenceMatcher
@@ -108,30 +109,51 @@ def propose(
     the accuracy figure look like a claim about production rather than about a synthetic
     distribution this repository generated.
     """
-    scored = sorted(
-        (
-            Candidate(
-                code=heading.code,
-                description=heading.description,
-                score=Decimal(
-                    str(
-                        round(
-                            SequenceMatcher(
-                                None,
-                                normalise(goods, _RULES),
-                                normalise(heading.description, _RULES),
-                            ).ratio(),
-                            4,
-                        )
+    scored = tuple(
+        Candidate(
+            code=heading.code,
+            description=heading.description,
+            score=Decimal(
+                str(
+                    round(
+                        SequenceMatcher(
+                            None,
+                            normalise(goods, _RULES),
+                            normalise(heading.description, _RULES),
+                        ).ratio(),
+                        4,
                     )
-                ),
-            )
-            for heading in headings
-        ),
-        key=lambda candidate: candidate.score,
-        reverse=True,
+                )
+            ),
+        )
+        for heading in headings
     )
-    top = scored[:limit]
+    return decide(goods, scored, headings, minimum_score=minimum_score, margin=margin, limit=limit)
+
+
+def decide(
+    goods: str,
+    scored: Sequence[Candidate],
+    headings: tuple[Heading, ...],
+    *,
+    minimum_score: Decimal,
+    margin: Decimal,
+    limit: int = 3,
+) -> Proposal:
+    """Turn a ranking — from anywhere — into a disposition.
+
+    **This is the half that decides, and it is separate so that it stays the only half.** The
+    ranking above is one scorer; `handlers/classify.py` calls a fitted model on a SageMaker
+    endpoint and gets another. Neither may decide. Both come back here, where the minimum score,
+    the abstention band and the declared contested pairs are applied against
+    `contracts/classification/` by code a test can reach and `gate-proof` can break.
+
+    A version of this system where the endpoint returned a heading would have moved the decision
+    into a serialised model in an S3 object — past every check, and changed by a redeploy rather
+    than by a diff. That is the failure this signature exists to prevent, and it is why the
+    endpoint's own `inference.py` reports `"decided": false` in its payload.
+    """
+    top = sorted(scored, key=lambda candidate: candidate.score, reverse=True)[:limit]
 
     if not top or top[0].score < minimum_score:
         return Proposal(
