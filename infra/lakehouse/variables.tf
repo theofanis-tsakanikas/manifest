@@ -48,7 +48,7 @@ variable "search_principals" {
     every principal in the account. Empty by default so that enabling search without naming
     anybody produces a collection nobody can reach — which is the safe direction to get wrong.
   EOT
-  type = list(string)
+  type        = list(string)
   # **Constructed, not transcribed, and not a remote state read.**
   #
   # The indexer's role is created in `infra/extraction`, which applies *after* this layer — so a
