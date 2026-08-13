@@ -148,11 +148,7 @@ def _resolver_covers_what_layers_publish() -> list[str]:
         published = ROOT / "infra" / layer / "published.tf"
         if not published.exists():
             continue
-        text = published.read_text(encoding="utf-8")
-        block = re.search(r"published = \{(.*?)\n  \}", text, re.DOTALL)
-        if not block:
-            continue
-        declared = set(re.findall(r"^\s*(\w+)\s*=", block.group(1), re.MULTILINE))
+        declared = _published_names(published.read_text(encoding="utf-8"))
         missing = declared - set(names)
         if missing:
             problems.append(
@@ -389,16 +385,36 @@ def _check_every_layer_can_evaluate() -> list[str]:
     return problems
 
 
+def _published_names(body: str) -> set[str]:
+    """The keys a layer's `published` local declares, however the local is written.
+
+    **The first version matched a shape and the shape changed.** It looked for
+    `published = {` followed by a brace at a fixed indent, which is exactly what a plain map
+    looks like and not what `merge({...}, condition ? {...} : {})` looks like — the form the
+    lakehouse needed when a reference had to be *absent* rather than empty. Every key vanished
+    from this check's view, and it reported that three layers required a variable nothing
+    supplied: a check reading a formatting convention rather than the data underneath it, which
+    is the defect this repository keeps finding in its own tooling.
+
+    The local runs from `published = ` to the line that closes the `locals` block, and the keys
+    are the assignments inside it. `merge`, a ternary and a nested map all read the same way.
+    """
+    start = body.find("published = ")
+    if start < 0:
+        return set()
+    local = body[start : body.find("\n}", start)]
+    # Assignments only. A `for_each` or a resource attribute below the local would otherwise be
+    # counted, so the search stops at the end of the `locals` block above.
+    return set(re.findall(r"^\s+(\w+)\s*=(?!=)", local, re.M))
+
+
 def _parameters_published_by_layers() -> set[str]:
     """Names published under `/<project>/<layer>/*` by any layer other than bootstrap."""
     names: set[str] = set()
     for published in ROOT.glob("infra/*/published.tf"):
         if published.parent.name == "bootstrap":
             continue
-        body = published.read_text(encoding="utf-8")
-        block = re.search(r"published = \{(.*?)\n  \}", body, re.S)
-        if block:
-            names |= set(re.findall(r"^\s*(\w+)\s*=", block.group(1), re.M))
+        names |= _published_names(published.read_text(encoding="utf-8"))
     return names
 
 
