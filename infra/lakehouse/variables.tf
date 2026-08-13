@@ -60,8 +60,12 @@ variable "search_principals" {
   # would put an index of published customs records in front of every principal in the account.
   default = null
 
+  # `coalesce([])` on a null is the guard, not a convenience: the default is now `null` — meaning
+  # "use the role this project names" — and a validation that iterates the variable directly
+  # fails with `Iteration over null value` before it ever sees a wildcard. The check is about
+  # what was *supplied*, and nothing supplied is nothing to check.
   validation {
-    condition     = alltrue([for arn in var.search_principals : !strcontains(arn, "*")])
+    condition     = alltrue([for arn in coalesce(var.search_principals, []) : !strcontains(arn, "*")])
     error_message = "Name principals explicitly; a wildcard here grants the whole account."
   }
 }
