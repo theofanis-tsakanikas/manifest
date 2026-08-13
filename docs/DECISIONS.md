@@ -391,6 +391,16 @@ found by something else failing:
   as a `merge` made every key invisible and three layers appeared to require a variable nothing
   supplied.
 
+- A new model artefact was uploaded, the model resource was replaced, and the endpoint was never
+  updated — SageMaker points at a configuration *by name* and the name had not changed. The fix
+  for a 500 was written, committed, deployed and applied green, and the endpoint answered with
+  the identical traceback from the identical old code.
+- `_await_execution` looks back sixty seconds so a run started just before an upload is not
+  missed, which means it can return the *previous* execution. Check 10 found that and fixed it
+  with an `exclude` parameter; check 12, written afterwards, repeated it exactly — because the
+  parameter is opt-in. It reported "9 rows before, 9 after, and the step wrote 9": three facts
+  that cannot all be true, assembled from two different runs.
+
 The shape is always the same: **the check's input stopped being what the check believed it was,
 and nothing about that is visible from the check's own result.** A failing check names its
 problem. A check whose input vanished names nothing, and reads exactly like success.
@@ -404,6 +414,11 @@ have nothing to do with the property.
 **An exemption carries an expiry or a reason that can be re-read.** Every one above that was an
 exemption had a reason that was true when written. None of them had anything that would notice
 when it stopped being true — which is doctrine rule 6 applied to tooling instead of findings.
+
+**And a fix to a shared helper belongs in the helper.** `exclude` was added as an optional
+parameter, so the next caller got the old behaviour by default and reproduced the defect the
+parameter exists to prevent. A safe default that has to be asked for is a safe default nobody
+gets.
 
 ---
 
