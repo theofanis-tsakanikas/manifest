@@ -56,13 +56,20 @@ def _client():
 
 
 def _statements(sql: str) -> list[str]:
-    """The file split into statements, comments stripped.
+    """The file split into statements, with comments removed first.
 
-    Split on `;` at the end of a line rather than on every `;`, because a comment or a string
-    literal may contain one. Crude and sufficient for a file this repository writes; a mart that
-    needed more would be a mart worth simplifying.
+    **The docstring here used to describe a different function.** It said the split was on a `;`
+    at the *end of a line* "because a comment or a string literal may contain one" — a correct
+    argument for an implementation that split on every `;` anyway. And the comment stripping only
+    matched whole-line comments, so a trailing `-- no source; see the header` survived, took its
+    semicolon with it, and cut a `CREATE TABLE` in half: *"syntax error at end of input"*, on
+    statement two, four minutes into an analytics apply.
+
+    Comments are removed from `--` to the end of the line wherever they start, and then the split
+    is on every `;`. A `--` inside a string literal would break this and there is none in the
+    files it reads; a mart that needed one would be a mart worth simplifying.
     """
-    without_comments = re.sub(r"^\s*--.*$", "", sql, flags=re.MULTILINE)
+    without_comments = re.sub(r"--[^\n]*", "", sql)
     return [part.strip() for part in without_comments.split(";") if part.strip()]
 
 
