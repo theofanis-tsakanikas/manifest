@@ -41,6 +41,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 
 GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
@@ -922,6 +924,49 @@ def _records_under(estate: Estate, document_id: str) -> list[str]:
     return [entry["Key"] for entry in listing.get("Contents", [])]
 
 
+def _the_model_tier_reads_what_no_managed_ocr_can(estate: Estate, page: Path) -> None:
+    """A genuinely Greek page escalates, and it escalates to the model tier.
+
+    **The one line of the cascade contract nothing had demonstrated.** `routing.yaml` declares
+    `el: [0, 3]` — Textract and Bedrock Data Automation document no Greek, so the model tier is
+    the only escalation a Greek page has. Every other check in this file uses English pages, and
+    the edge-case block uploads an English page under a Greek key: that tests the routing
+    contract and reaches tier 1 or nothing, because escalation routes by what abstained rather
+    than by what the key claims.
+
+    Two assertions, and the second is the one that matters. It escalated — and it escalated to
+    **3**, not to 1. A run that reported tier 1 here would mean the router had sent a Greek page
+    to a service that cannot read it, which is a billed call guaranteed to return nothing useful.
+    """
+    document_id = "E2E-GREEK-REAL"
+    key = f"incoming/el/packing_list/{document_id}.pdf"
+    started = time.time()
+    _upload(estate, key, page.read_bytes())
+    execution = _await_execution(estate, started, document_id)
+    if execution is None or execution["status"] != "SUCCEEDED":
+        estate.check(
+            "13 · a Greek page reaches the model tier",
+            False,
+            f"the execution did not succeed "
+            f"({execution['status'] if execution else 'no execution'})",
+        )
+        return
+
+    escalation = _from_history(execution["executionArn"]).get("escalation") or {}
+    tier = escalation.get("tier")
+    estate.check(
+        "13 · a Greek page reaches the model tier",
+        escalation.get("attempted") is True and tier == GREEK_ONLY_TIER,
+        f"escalated to tier {tier} for {len(escalation.get('fields', []))} field(s), and it "
+        f"reports no confidence — a tier that scores nothing may rescue a reading for a human "
+        f"and may never publish on it"
+        if tier == GREEK_ONLY_TIER
+        else f"escalation={escalation.get('attempted')}, tier={tier}. Greek is declared "
+        f"`[0, 3]`: no managed OCR documents it, so tier 1 here is a billed call that cannot "
+        f"read the page",
+    )
+
+
 def _landing_is_idempotent(
     estate: Estate, document: Path, document_id: str, rows: int, first: str
 ) -> None:
@@ -1090,6 +1135,29 @@ def _rows_for_version(estate: Estate, document_id: str) -> list[tuple[str, str]]
 CORPUS_FIRST = ROOT / "corpus/rendered/SHP00001_bill_of_lading_p1.jpg"
 CORPUS_CORRECTED = ROOT / "corpus/rendered/SHP00002_bill_of_lading_p1.jpg"
 
+#: **A genuinely Greek page**, and the reason it is a separate constant is a gap this verifier
+#: had. The edge-case block uploads the *English* bill of lading under `incoming/el/...` — which
+#: tests the routing contract, correctly, and never once reaches the model tier: the reader finds
+#: English words, the fields resolve or abstain on their own merits, and the escalation routes by
+#: what abstained rather than by the key. So "a Greek page reaches tier 3" was a sentence in a
+#: contract that nothing on the estate had ever demonstrated.
+#:
+#: `contracts/cascade/routing.yaml` declares `el: [0, 3]` — no managed OCR reads Greek, so the
+#: model tier is the only escalation there is. This page is what makes that line true or false.
+CORPUS_GREEK = ROOT / "corpus/rendered/SHP00004_packing_list_p1.jpg"
+
+#: The only tier Greek may escalate to, read from `contracts/cascade/routing.yaml` rather than
+#: written here — two places holding one number is one number that drifts, and this is the one
+#: where drifting means a billed call to a service that cannot read the page.
+GREEK_ONLY_TIER = max(
+    tier
+    for entry in yaml.safe_load(
+        (ROOT / "contracts/cascade/routing.yaml").read_text(encoding="utf-8")
+    )["languages"]
+    if entry["language"] == "el"
+    for tier in entry["eligible_tiers"]
+)
+
 
 def _rendered(page: Path, name: str) -> Path:
     """A committed corpus page as a one-page PDF, written beside the run.
@@ -1149,12 +1217,14 @@ def main() -> int:
     sys.path.insert(0, str(ROOT / "src"))
     document = arguments.document or _rendered(CORPUS_FIRST, "e2e-first")
     corrected = arguments.corrected or _rendered(CORPUS_CORRECTED, "e2e-corrected")
+    greek = _rendered(CORPUS_GREEK, "e2e-greek")
     estate = _resolve(arguments.project)
     print(f"the deployed estate — {estate.state_machine}\n")
 
     landed = _happy_path(estate, document, arguments.document_id)
     if landed is not None:
         _landing_is_idempotent(estate, document, arguments.document_id, *landed)
+    _the_model_tier_reads_what_no_managed_ocr_can(estate, greek)
     _re_extraction(estate, document, corrected)
     _optional_surfaces(estate, arguments.project, arguments.document_id)
     if not arguments.skip_edge_cases:
