@@ -81,30 +81,56 @@ resource "aws_opensearchserverless_access_policy" "records" {
   name = "${var.project}-records-access"
   type = "data"
 
-  policy = jsonencode([{
-    Rules = [
-      {
-        ResourceType = "index"
-        Resource     = ["index/${var.project}-records/*"]
-        Permission = [
-          "aoss:CreateIndex",
-          "aoss:DescribeIndex",
-          "aoss:ReadDocument",
-          "aoss:WriteDocument",
-          "aoss:UpdateIndex",
-        ]
-      },
-      {
-        ResourceType = "collection"
-        Resource     = ["collection/${var.project}-records"]
-        Permission   = ["aoss:CreateCollectionItems", "aoss:DescribeCollectionItems"]
-      },
-    ]
-    Principal = coalesce(
-      var.search_principals,
-      ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-index"],
-    )
-  }])
+  # **Two principals with different verbs, not one with both.**
+  #
+  # The writer is the pipeline's indexing step; the reader is the function that answers a
+  # question. Giving both to one policy block would mean the search path holds `WriteDocument`
+  # for the life of the estate — and a search surface that can write to itself is a store where
+  # a query bug becomes a mutation. Split here, in the collection's own policy, so the refusal
+  # comes from the service and not only from the code that means to behave.
+  policy = jsonencode([
+    {
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${var.project}-records/*"]
+          Permission = [
+            "aoss:CreateIndex",
+            "aoss:DescribeIndex",
+            "aoss:WriteDocument",
+            "aoss:UpdateIndex",
+          ]
+        },
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${var.project}-records"]
+          Permission   = ["aoss:CreateCollectionItems", "aoss:DescribeCollectionItems"]
+        },
+      ]
+      Principal = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-index"]
+    },
+    {
+      Rules = [
+        {
+          ResourceType = "index"
+          Resource     = ["index/${var.project}-records/*"]
+          Permission   = ["aoss:DescribeIndex", "aoss:ReadDocument"]
+        },
+        {
+          ResourceType = "collection"
+          Resource     = ["collection/${var.project}-records"]
+          Permission   = ["aoss:DescribeCollectionItems"]
+        },
+      ]
+      # The search function, plus anybody a deploy names explicitly. Read-only in both cases:
+      # `search_principals` is how an operator's own role is let in, and an operator who can
+      # rewrite the index is an operator who can rewrite a customs record.
+      Principal = concat(
+        ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-search"],
+        coalesce(var.search_principals, []),
+      )
+    },
+  ])
 }
 
 resource "aws_opensearchserverless_collection" "records" {

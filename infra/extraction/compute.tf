@@ -891,3 +891,110 @@ resource "aws_lambda_function" "index" {
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
+
+# ── The search function ───────────────────────────────────────────────────────
+#
+# **The half that made the index worth building.** The indexer has written published records into
+# OpenSearch since it was built and nothing ever read one back — and the network policy makes
+# that permanent rather than temporary: `AllowFromPublic = false`, so the collection answers
+# inside the VPC and nowhere else. The only way to ask it anything is a function that lives
+# there, and until this one existed "search over published records" was a sentence in a README
+# with a bill behind it.
+#
+# It holds `aoss:APIAccessAll` like the indexer does — that action is the only one IAM has for
+# this service — and the *verb* separation is in the collection's own data-access policy, where
+# this role gets `ReadDocument` and the indexer gets `WriteDocument`. Two places, because IAM
+# cannot express the distinction and the service can.
+
+resource "aws_cloudwatch_log_group" "search" {
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate.
+  count             = var.search_endpoint == "" ? 0 : 1
+  name              = "/aws/lambda/${var.project}-search"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+  tags              = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_iam_role" "search" {
+  count              = var.search_endpoint == "" ? 0 : 1
+  name               = "${var.project}-search"
+  description        = "Answers questions against the published-record index. Read-only at the collection."
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "search" {
+  count = var.search_endpoint == "" ? 0 : 1
+
+  statement {
+    sid       = "AskTheIndex"
+    effect    = "Allow"
+    actions   = ["aoss:APIAccessAll"]
+    resources = ["arn:aws:aoss:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:collection/*"]
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${one(aws_cloudwatch_log_group.search[*].arn)}:*"]
+  }
+
+  #checkov:skip=CKV_AWS_111:As on every other function here — Lambda's VPC attachment actions take no resource ARN.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpc"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "search" {
+  count  = var.search_endpoint == "" ? 0 : 1
+  name   = "search"
+  role   = aws_iam_role.search[0].id
+  policy = data.aws_iam_policy_document.search[0].json
+}
+
+resource "aws_lambda_function" "search" {
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Invoked synchronously; a dead-letter queue receives only from asynchronous invocations.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  count         = var.search_endpoint == "" ? 0 : 1
+  function_name = "${var.project}-search"
+  description   = "Answers a question against the published-record index. Reads; never writes."
+  role          = aws_iam_role.search[0].arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.search_records.handler"
+  s3_bucket     = var.records_bucket
+  s3_key        = var.publish_package_key
+
+  source_code_hash = var.publish_package_hash
+
+  timeout     = 30
+  memory_size = 256
+
+  reserved_concurrent_executions = 5
+
+  kms_key_arn = var.data_key_arn
+
+  environment {
+    variables = {
+      SEARCH_ENDPOINT = var.search_endpoint
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  tracing_config { mode = "Active" }
+
+  tags = { "${var.project}:expires-at" = var.expires_at }
+}

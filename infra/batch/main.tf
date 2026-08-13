@@ -112,6 +112,54 @@ data "aws_iam_policy_document" "job" {
     #checkov:skip=CKV_AWS_356:As above.
   }
 
+  # **The executors start the per-document pipeline; they do not read pages themselves.**
+  #
+  # `pipelines/reprocess.py` explains why at length: every threshold here is keyed to one reader
+  # identity, asserted at build time in `Dockerfile`, and Amazon Linux 2023 — which every EMR
+  # Serverless custom image is built on — carries no tesseract at all. Compiling it onto the
+  # cluster would be a second build of the binary whose exact build is the unit of evidence. So
+  # the estate has one reader, and this role's power over it is to start the machine that calls
+  # it and to watch the result.
+  #
+  # `StartExecution` and the two reads, and nothing that stops or redrives one. A bulk job that
+  # could cancel a running execution could abandon a document halfway between read and publish.
+  statement {
+    sid       = "StartThePerDocumentPipeline"
+    effect    = "Allow"
+    actions   = ["states:StartExecution"]
+    resources = [var.state_machine_arn]
+  }
+
+  statement {
+    sid       = "WatchWhatItStarted"
+    effect    = "Allow"
+    actions   = ["states:DescribeExecution"]
+    resources = ["${replace(var.state_machine_arn, ":stateMachine:", ":execution:")}:*"]
+  }
+
+  # Listing the landing bucket, because a document id is not a key. The key carries the language
+  # and the document type, both decided by whoever uploaded the object, and a job that rebuilt
+  # the key from a convention would silently read the wrong page for anything that did not
+  # follow it. Read-only: this role may find the source objects and may not change them.
+  statement {
+    sid     = "FindTheSourceDocuments"
+    effect  = "Allow"
+    actions = ["s3:ListBucket", "s3:GetObject"]
+    resources = [
+      "arn:aws:s3:::${var.landing_bucket}",
+      "arn:aws:s3:::${var.landing_bucket}/*",
+    ]
+  }
+
+  # `Scan` reads the ledger whole, which is what planning needs: the plan is a function of every
+  # entry, and a query per document would be four million round trips to answer one question.
+  statement {
+    sid       = "ReadTheWholeLedgerToPlan"
+    effect    = "Allow"
+    actions   = ["dynamodb:Scan"]
+    resources = [var.ledger_table_arn]
+  }
+
   statement {
     sid       = "Log"
     effect    = "Allow"

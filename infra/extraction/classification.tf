@@ -251,23 +251,12 @@ resource "aws_cloudwatch_log_group" "classify" {
   tags              = { "${var.project}:expires-at" = var.expires_at }
 }
 
-data "aws_iam_policy_document" "classify_assume" {
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-  }
-}
-
 resource "aws_iam_role" "classify" {
   count = var.enable_classifier ? 1 : 0
 
   name               = "${var.project}-classify"
   description        = "Asks the classification endpoint for a ranking. Decides nothing itself."
-  assume_role_policy = data.aws_iam_policy_document.classify_assume.json
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
   tags               = { "${var.project}:expires-at" = var.expires_at }
 }
 

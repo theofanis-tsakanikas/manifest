@@ -42,7 +42,7 @@ variable "enable_search" {
 
 variable "search_principals" {
   description = <<-EOT
-    IAM principal ARNs allowed to read and write the index. Never `*`.
+    Extra IAM principal ARNs allowed to **read** the index. Never `*`, and never write.
 
     A data-access policy is the only thing between an index of published customs records and
     every principal in the account. Empty by default so that enabling search without naming
@@ -51,13 +51,15 @@ variable "search_principals" {
   type        = list(string)
   # **Constructed, not transcribed, and not a remote state read.**
   #
-  # The indexer's role is created in `infra/extraction`, which applies *after* this layer — so a
-  # reference would be circular and a state read would make one layer's internals another's
-  # contract. The role's name is a constant this project owns, exactly like the deploy role ARN
-  # the workflow builds, so the ARN is assembled from the account id and that name.
+  # The two roles that use this collection — the indexer and the search function — are created in
+  # `infra/extraction`, which applies *after* this layer, so a reference would be circular and a
+  # state read would make one layer's internals another's contract. Their names are constants
+  # this project owns, exactly like the deploy role ARN the workflow builds, so the ARNs are
+  # assembled from the account id and those names in `search.tf` and this variable adds to them.
   #
-  # Still never `*`: an empty list would produce a collection nobody can reach, and a wildcard
-  # would put an index of published customs records in front of every principal in the account.
+  # Null rather than empty, meaning "the two this project owns and nobody else". Never `*`: a
+  # wildcard would put an index of published customs records in front of every principal in the
+  # account.
   default = null
 
   # `coalesce([])` on a null is the guard, not a convenience: the default is now `null` — meaning

@@ -142,6 +142,37 @@ data "aws_iam_policy_document" "deploy_network" {
       values   = [var.project]
     }
   }
+
+  # **The endpoint OpenSearch made, which carries no tag because we did not make it.**
+  #
+  # Same family as the Lambda ENIs above and found the same way. An `aoss` VPC endpoint is
+  # created by the OpenSearch service using *this* role's credentials, and OpenSearch Serverless
+  # VPC endpoints take no tags at all — so `aws:ResourceTag/manifest:project` is a condition that
+  # can never be true for it, and the statement above excludes it permanently rather than
+  # temporarily.
+  #
+  # What that costs is not a failed delete; it is an estate that cannot be torn down. The
+  # endpoint holds the subnets, the subnets hold the VPC, and the most expensive thing here would
+  # be left standing behind an object nothing in this repository declared and nobody could
+  # remove. It also broke *apply*: a previous run left one in `FAILED`, and replacing it needs
+  # the delete first.
+  #
+  # Region rather than tag, because the API offers no better boundary here and a boundary that
+  # can never match is not a boundary. Written as its own statement so that what was given up is
+  # one paragraph rather than a widened condition on ten actions.
+  #checkov:skip=CKV_AWS_111:Scoped by region because a tag condition cannot match a resource the service creates untagged; see the comment above.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid       = "DeleteEndpointsCreatedOnOurBehalf"
+    effect    = "Allow"
+    actions   = ["ec2:DeleteVpcEndpoints"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestedRegion"
+      values   = [var.aws_region]
+    }
+  }
 }
 
 resource "aws_iam_policy" "deploy_network" {

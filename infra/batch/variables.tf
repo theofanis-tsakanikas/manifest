@@ -50,3 +50,19 @@ variable "private_subnet_ids" { type = list(string) }
 variable "endpoint_security_group_id" { type = string }
 variable "lake_bucket" { type = string }
 variable "ledger_table_arn" { type = string }
+
+variable "landing_bucket" {
+  description = "Where source documents arrive. Listed to map a document id onto the key it came in under."
+  type        = string
+}
+
+variable "state_machine_arn" {
+  description = <<-EOT
+    The per-document pipeline each executor starts.
+
+    The job distributes and records; the machine reads, thresholds, gates, publishes and lands.
+    A bulk path that re-implemented that sequence would be a second copy of it in the one place
+    no offline test reaches.
+  EOT
+  type        = string
+}

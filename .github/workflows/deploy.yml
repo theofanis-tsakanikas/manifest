@@ -63,15 +63,17 @@ on:
         default: false
       enable_search:
         description: >-
-          Stand up the OpenSearch Serverless collection over published records. Off by default —
-          it bills per OCU-hour with a floor, whether or not anything is indexed, and nothing in
-          this pipeline writes to it yet.
+          Stand up the OpenSearch Serverless collection over published records, the pipeline
+          step that writes to it and the function that reads it back. Off by default — it bills
+          per OCU-hour against an always-on floor, whether or not anybody searches.
         type: boolean
         default: false
       enable_classifier:
         description: >-
-          Stand up the SageMaker endpoint behind the tariff-classification path. Off by default:
-          an endpoint bills per instance-hour from the moment it is InService.
+          Stand up the tariff-classification endpoint, fit its artefact and deploy the function
+          that calls it. Off by default: serverless inference bills per request rather than per
+          hour, but every proposal it produces lands in a review queue with a declared capacity,
+          so switching it on is a decision about the queue as much as about the bill.
         type: boolean
         default: false
       confirm:
@@ -685,6 +687,30 @@ jobs:
             exit 1
           fi
           echo "resolved $resolved reference(s) from /${{ env.PROJECT }}/lakehouse/*"
+      - name: package the reprocessing job
+        # **The driver and the code it imports, from this commit, in one place.**
+        #
+        # EMR Serverless takes an entry point and a `--py-files` archive from object storage;
+        # neither is built by Terraform, and a layer that applied without them would create an
+        # application whose first submission fails on a missing script. Uploaded here so the two
+        # travel with the layer that points at them, exactly like the extraction handler's zip.
+        #
+        # `contracts/` is not in the archive and does not need to be: the job decides nothing, so
+        # it reads no contract. The per-document pipeline it starts carries its own.
+        run: |
+          set -euo pipefail
+          staging="$(mktemp -d)"
+          cp -r src/manifest "$staging/manifest"
+          (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/manifest.zip" manifest)
+          for file in "pipelines/reprocess.py:reprocess.py" "$GITHUB_WORKSPACE/manifest.zip:manifest.zip"; do
+            aws s3api put-object \
+              --bucket "$TF_VAR_records_bucket" \
+              --key "jobs/reprocess/${file##*:}" \
+              --body "${file%%:*}" \
+              --server-side-encryption aws:kms \
+              --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          done
+          echo "uploaded the driver and manifest.zip to jobs/reprocess/"
       - name: apply
         run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"

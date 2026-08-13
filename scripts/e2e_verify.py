@@ -709,6 +709,145 @@ def _edge_cases(estate: Estate, document: Path) -> None:
         )
 
 
+def _optional_surfaces(estate: Estate, project: str, document_id: str) -> None:
+    """The two surfaces that are off by default, checked only where a deploy turned them on.
+
+    **Absent is reported, never passed.** A check that quietly skips when a feature is off is a
+    check that reports green for the estate where the feature was on and broken — which is the
+    same defect as every other one this script has found, wearing an `if`. So a missing function
+    is printed as a skip with its reason, and the count of checks that ran says so.
+    """
+    print(f"\n{DIM}the optional surfaces — search, and the classification endpoint{RESET}\n")
+    functions = _client("lambda")
+
+    def _present(name: str) -> bool:
+        try:
+            functions.get_function(FunctionName=name)
+        except functions.exceptions.ResourceNotFoundException:
+            print(f"  {DIM}skip  {name} is not deployed — dispatch with its flag on{RESET}")
+            return False
+        return True
+
+    if _present(f"{project}-search"):
+        _search_surface(estate, project, document_id)
+    if _present(f"{project}-classify"):
+        _classification(estate, project)
+
+
+def _invoke(name: str, payload: dict) -> tuple[dict, str]:
+    """`(answer, error)`. A handler that raised comes back as a payload, not an exception."""
+    answer = _client("lambda").invoke(
+        FunctionName=name, InvocationType="RequestResponse", Payload=json.dumps(payload).encode()
+    )
+    body = json.loads(answer["Payload"].read().decode("utf-8"))
+    if answer.get("FunctionError"):
+        return {}, f"{body.get('errorType', '?')}: {body.get('errorMessage', body)}"
+    return body, ""
+
+
+def _search_surface(estate: Estate, project: str, document_id: str) -> None:
+    """The record that was published a few minutes ago can be found by asking for it.
+
+    **This is the check the collection was missing.** The pipeline's indexing step returning 201
+    proves a document was accepted; it does not prove the index answers questions, and until the
+    search function existed nothing in this estate could ask one — the network policy is
+    `AllowFromPublic = false`, so a laptop cannot reach the collection at all.
+
+    OpenSearch Serverless is near-real-time rather than real-time: a document is searchable a
+    few seconds after it is indexed. Polled rather than slept through, so a slow collection is a
+    slow check instead of a failed one.
+    """
+    found: dict = {}
+    for _ in range(12):
+        answer, error = _invoke(f"{project}-search", {"term": document_id})
+        if error:
+            estate.check("18 · a published record is searchable", False, error)
+            return
+        if answer.get("matched"):
+            found = answer
+            break
+        time.sleep(10)
+
+    estate.check(
+        "18 · a published record is searchable",
+        bool(found.get("matched")),
+        f"asked the index for {document_id} and got {found.get('matched', 0)} record(s), "
+        f"version {found.get('records', [{}])[0].get('version', '—')}"
+        if found
+        else f"the index returned nothing for {document_id} after two minutes",
+    )
+    if not found:
+        return
+
+    # **What must NOT be there.** The index is one query away from a person about to make a
+    # customs decision, and the values that did not clear their thresholds are exactly the ones
+    # nobody approved. A count of them is useful; the values are not offered.
+    record = found["records"][0]
+    leaked = sorted(set(record) - _INDEXABLE)
+    estate.check(
+        "19 · the index carries published values and nothing else",
+        not leaked and record.get("queued_field_count", 0) >= 0,
+        f"{record.get('published_field_count')} published value(s) are searchable and "
+        f"{record.get('queued_field_count')} abstention(s) are counted but not offered"
+        if not leaked
+        else f"the index answered with {leaked}, which core.search does not declare",
+    )
+
+
+def _classification(estate: Estate, project: str) -> None:
+    """The endpoint ranks; this repository decides. Both halves, on the real estate.
+
+    Two descriptions, chosen because they are the two answers the system is allowed to give: one
+    that names its heading, and one that omits the single word deciding between a declared
+    contested pair. A run where both came back `proposed` would be a model confident where the
+    trade is not — which the training gate refuses offline and which this proves did not happen
+    to the artefact that actually shipped.
+    """
+    clear, error = _invoke(f"{project}-classify", {"goods": "Aluminium window frames, anodised"})
+    if error:
+        estate.check("20 · the endpoint ranks and this repository decides", False, error)
+        return
+    estate.check(
+        "20 · the endpoint ranks and this repository decides",
+        clear.get("disposition") == "proposed" and clear.get("publishes") is False,
+        f"{clear.get('candidates', [{}])[0].get('code', '—')} proposed at "
+        f"{clear.get('candidates', [{}])[0].get('score', '—')}, gap {clear.get('margin')} — and "
+        f"publishes={clear.get('publishes')}, because hs_code is always-review on any score",
+    )
+
+    contested, error = _invoke(f"{project}-classify", {"goods": "Ceramic floor tiles, 40x40cm"})
+    if error:
+        estate.check("21 · a contested pair gets no winner", False, error)
+        return
+    codes = [candidate["code"] for candidate in contested.get("candidates", [])[:2]]
+    estate.check(
+        "21 · a contested pair gets no winner",
+        contested.get("disposition") == "contested",
+        f"{' and '.join(codes)} offered with no winner — {contested.get('explanation', '')[:120]}"
+        if contested.get("disposition") == "contested"
+        else f"the estate answered {contested.get('disposition')} for a description that omits "
+        f"the word deciding between {codes}",
+    )
+
+
+#: What a search result may carry. Read from `core.search` rather than transcribed, so a value
+#: added there is a value this check knows about — and a value added anywhere else is not.
+_INDEXABLE = frozenset(
+    {
+        "version",
+        "score",
+        "document_id",
+        "document_type",
+        "language",
+        "reader",
+        "indexed_on",
+        "fields",
+        "published_field_count",
+        "queued_field_count",
+    }
+)
+
+
 def _records_under(estate: Estate, document_id: str) -> list[str]:
     """Every published record for a document id.
 
@@ -895,6 +1034,7 @@ def main() -> int:
 
     _happy_path(estate, document, arguments.document_id)
     _re_extraction(estate, document, corrected)
+    _optional_surfaces(estate, arguments.project, arguments.document_id)
     if not arguments.skip_edge_cases:
         _edge_cases(estate, document)
 
@@ -927,6 +1067,20 @@ def main() -> int:
         )
     else:
         print("  No managed extraction engine was called; every page was read by the image.")
+    searched = next((result for result in estate.results if result.name.startswith("18")), None)
+    classified = next((result for result in estate.results if result.name.startswith("21")), None)
+    if searched:
+        print(
+            "  The published record was then found by asking the index for it, and the index\n"
+            "  carries the values that cleared their thresholds and a count of the ones that did\n"
+            "  not — never the abstained values themselves."
+        )
+    if classified:
+        print(
+            "  A goods description was ranked by the endpoint and decided here: the contested\n"
+            "  pair came back as two candidates with no winner, and nothing published on any\n"
+            "  score, because hs_code is always-review."
+        )
     print(
         "  No distributed job ran; this is one run, on one day, on documents this repository\n"
         "  generated."
