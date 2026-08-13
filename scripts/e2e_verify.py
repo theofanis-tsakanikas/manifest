@@ -416,6 +416,15 @@ def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome
     """
     athena = _client("athena")
     expected = len(outcome.get("fields", []))
+    version = str(outcome.get("fingerprint", ""))
+    if not version:
+        estate.check(
+            "9 · the published record reached the lake",
+            False,
+            "the published record carries no fingerprint, so there is no version to ask the "
+            "lake about — and asking by document id alone counts every version at once",
+        )
+        return
     # **Nothing is interpolated, and the first version of this was.** It built the `WHERE` with
     # an f-string, in the same commit that argues a field value must be encoded rather than
     # concatenated — and `ruff`'s S608 refused it. The document id here is one this script chose,
@@ -425,11 +434,22 @@ def _check_the_record_reached_the_lake(estate: Estate, document_id: str, outcome
     # The database goes in the execution *context* rather than into the statement, so the table
     # can be named bare and there is no identifier to quote either.
     started = athena.start_query_execution(
+        # **By version, not by document, and the difference is doctrine rule 4.**
+        #
+        # This asked for every row under the document id and compared the count against one
+        # publication's field count. That is correct exactly once. The second time the same
+        # document goes through — which is the whole of the re-extraction check, running a few
+        # lines below — the lake holds both versions, and the count is a multiple: *18 rows
+        # against 9 fields published*, reported as a record that did not reach the lake, of a
+        # lake that had it twice and correctly.
+        #
+        # The check that a correction does not overwrite is the check that made this one wrong,
+        # which is a fair description of what the property costs.
         QueryString=(
             "SELECT count(*) AS landed, count(value) AS with_a_value "
-            "FROM document_version WHERE document_id = ?"
+            "FROM document_version WHERE document_id = ? AND version = ?"
         ),
-        ExecutionParameters=[document_id],
+        ExecutionParameters=[document_id, version],
         WorkGroup=estate.athena_workgroup,
         QueryExecutionContext={"Database": estate.glue_database},
     )["QueryExecutionId"]
