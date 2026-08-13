@@ -183,6 +183,23 @@ def main(argv: list[str] | None = None) -> int:
         database,
         athena_workgroup,
     )
+    # **Rows written before a column existed do not have it, and that is the table's history
+    # rather than a defect.** `document_type`, `language`, `reader_tier` and `published` were
+    # added to the lake on 2026-08-13; every row landed before that carries NULL for them, which
+    # is exactly what Iceberg's schema evolution means. The warehouse declares `document_type`
+    # NOT NULL because a fact table grouped by a column that can be absent is a fact table with
+    # an "unknown" bucket nobody can act on.
+    #
+    # So they are excluded and **counted out loud**. Dropping rows quietly is how a load reports
+    # success over half the data; the number below is what makes the difference visible, and it
+    # goes to zero on its own as documents are landed again.
+    pre_evolution = [row for row in lake if not row[2]]
+    lake = [row for row in lake if row[2]]
+    if pre_evolution:
+        print(
+            f"{DIM}{len(pre_evolution)} row(s) predate the document_type column and are not "
+            f"loaded — they are still in the lake, which is the record{RESET}"
+        )
     print(f"{DIM}{len(lake)} field row(s) at the current version of each document{RESET}")
     if not lake:
         print(

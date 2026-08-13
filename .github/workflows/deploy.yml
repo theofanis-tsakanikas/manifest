@@ -540,7 +540,17 @@ jobs:
           # writes `VAR=` and defines it as empty for every later step, which is the shape that
           # once sent `[""]` to a policy.
           BDA_PROFILE_ARN="arn:aws:bedrock:${AWS_REGION}:${ACCOUNT}:data-automation-profile/${PREFIX}.data-automation-v1"
-          BDA_ARNS="[\"$BDA_PROJECT_ARN\",\"$BDA_PROFILE_ARN\"]"
+          # **The profile is cross-region, so the grant has to be too.** `eu.data-automation-v1`
+          # routes a page to whichever EU region has capacity, and IAM authorises against the
+          # profile ARN *in the region it lands in* — the first real tier-2 call was refused on
+          # `eu-north-1` while the policy named `eu-central-1`. Identical to what the escalation
+          # models already needed, and found the same way.
+          #
+          # The regions come from the inference profile this account resolved a moment ago rather
+          # than from a list typed here: one source, and `docs/REGULATORY.md`'s statement that
+          # document text is processed in the EU stays true by construction instead of by a
+          # comment. A wildcard would be shorter and would give up exactly that sentence.
+          BDA_ARNS=$(python3 scripts/bda_project.py --print-grant-arns "$ESCALATION_MODEL_ARNS")
           {
             echo "BDA_PROJECT_ARN=$BDA_PROJECT_ARN"
             echo "BDA_PROFILE_ARN=$BDA_PROFILE_ARN"

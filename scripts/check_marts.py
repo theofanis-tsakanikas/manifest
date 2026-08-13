@@ -52,7 +52,13 @@ def _declared() -> dict[str, set[str]]:
     text = SCHEMA.read_text(encoding="utf-8")
     tables: dict[str, set[str]] = {}
     for match in re.finditer(
-        r"CREATE TABLE IF NOT EXISTS\s+(\w+\.\w+)\s*\((.*?)\n\);", text, re.DOTALL
+        # `IF NOT EXISTS` is optional, because the schema stopped using it: that form is
+        # idempotent and not evolutionary, so a column change was silently ignored on a warehouse
+        # that already existed. This check reported `0/4 across 0 tables` the moment the phrase
+        # went — a pass, printed as a count of nothing, which is the shape decision 24 is about.
+        r"CREATE TABLE (?:IF NOT EXISTS\s+)?(\w+\.\w+)\s*\((.*?)\n\);",
+        text,
+        re.DOTALL,
     ):
         name, body = match.group(1), match.group(2)
         columns = set()

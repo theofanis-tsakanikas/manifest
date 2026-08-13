@@ -29,6 +29,7 @@ make a reader unable to tell which is which.
 from __future__ import annotations
 
 import argparse
+import json
 
 #: The name the estate looks for. Stable, so a second deploy finds the first deploy's project
 #: rather than making another — this script is idempotent by *name*, because BDA gives the ARN
@@ -122,9 +123,49 @@ def delete(client) -> int:
     return 0
 
 
+def grant_arns(project_arn: str, model_arns: str) -> list[str]:
+    """Every ARN `bedrock:InvokeDataAutomationAsync` must be authorised against.
+
+    **The profile is cross-region and the grant has to be too.** `eu.data-automation-v1` routes a
+    page to whichever EU region has capacity, and IAM authorises against the profile ARN *in the
+    region it lands in*. The first real tier-2 call was refused on `eu-north-1` while the policy
+    named `eu-central-1` — identical to what the escalation models needed, found the same way,
+    two months apart.
+
+    The regions come from the inference profile this account already resolved rather than from a
+    list typed anywhere: one source, so `docs/REGULATORY.md`'s statement that document text is
+    processed in the EU stays true by construction. A wildcard would be shorter and would give up
+    exactly that sentence.
+    """
+    import boto3  # noqa: PLC0415
+
+    session = boto3.Session()
+    account = session.client("sts").get_caller_identity()["Account"]
+    prefix = (session.region_name or "").split("-")[0]
+
+    regions = sorted({arn.split(":")[3] for arn in json.loads(model_arns) if arn})
+    if not regions:
+        raise SystemExit(
+            "the inference profile resolved to no regions, so the tier-2 grant would name only "
+            "the project and every call would be refused by the region it happened to land in"
+        )
+    return [project_arn] + [
+        f"arn:aws:bedrock:{region}:{account}:data-automation-profile/{prefix}.data-automation-v1"
+        for region in regions
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--delete", action="store_true", help="Remove it. Used by the teardown.")
+    parser.add_argument(
+        "--print-grant-arns",
+        metavar="MODEL_ARNS",
+        help=(
+            "Given the inference profile's model ARNs as JSON, print every ARN the tier-2 grant "
+            "must name — the project plus the profile in each region the profile spans."
+        ),
+    )
     parser.add_argument(
         "--print-arn",
         action="store_true",
@@ -135,6 +176,12 @@ def main(argv: list[str] | None = None) -> int:
     client = _client()
     if arguments.delete:
         return delete(client)
+
+    if arguments.print_grant_arns:
+        print(
+            json.dumps(grant_arns(_existing(client) or create(client), arguments.print_grant_arns))
+        )
+        return 0
 
     arn = create(client)
     if arguments.print_arn:

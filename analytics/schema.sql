@@ -6,6 +6,22 @@
 -- available offline, and it catches the whole class of failure that a warehouse would otherwise
 -- catch for the first time in production.
 --
+-- **Dropped and recreated, not `CREATE TABLE IF NOT EXISTS`.** That form is idempotent and is
+-- not evolutionary: a column that changes type or loses `NOT NULL` is silently ignored, the
+-- statement succeeds, and the table keeps the shape it was first created with. Making four
+-- columns nullable here changed nothing on a warehouse that already existed, and the loader
+-- failed on `Cannot insert a NULL value into column shipment_id` — a rejection by a constraint
+-- this file no longer declares.
+--
+-- It is the same defect as the Iceberg one a layer below, where editing the catalogue's column
+-- list left the table's real schema alone. Both look exactly like a schema change and both are
+-- no-ops.
+--
+-- Dropping is safe here and would not be in most warehouses: **nothing in `gold` is a record.**
+-- The lake is the record and this is a projection of it, rebuilt from scratch by
+-- `scripts/load_warehouse.py` on every run — which is also why that script truncates rather than
+-- appends. A warehouse holding anything of its own would need a migration instead.
+--
 -- **Four columns are nullable and nothing in this system fills them**, which is stated here
 -- rather than papered over. `shipment_id`, `source_channel`, `carrier` and `client_id` are
 -- business metadata a broker's own systems hold: which desk scanned the paper, which carrier
@@ -23,7 +39,8 @@ CREATE SCHEMA IF NOT EXISTS gold;
 -- One row per published field. The grain of everything below: a fact about *one value on one
 -- document*, which is the only grain at which "error rate by carrier" and "cost per client"
 -- are the same question asked twice.
-CREATE TABLE IF NOT EXISTS gold.published_field (
+DROP TABLE IF EXISTS gold.published_field;
+CREATE TABLE gold.published_field (
     document_version   VARCHAR(64)   NOT NULL,
     shipment_id        VARCHAR(32),          -- no source; see the header
     document_type      VARCHAR(64)   NOT NULL,
@@ -48,7 +65,8 @@ CREATE TABLE IF NOT EXISTS gold.published_field (
 
 -- One row per review item. Separate from the field table because an item may be re-queued, and
 -- collapsing the two would make "decisions per day" count a field twice or an item once.
-CREATE TABLE IF NOT EXISTS gold.review_item (
+DROP TABLE IF EXISTS gold.review_item;
+CREATE TABLE gold.review_item (
     item_id            VARCHAR(64)   NOT NULL,
     document_version   VARCHAR(64)   NOT NULL,
     field_name         VARCHAR(64)   NOT NULL,
@@ -65,7 +83,8 @@ CREATE TABLE IF NOT EXISTS gold.review_item (
 -- One row per declaration line, for duty exposure. The HS code is here and not on the field
 -- table because a declaration carries several, and putting them on the field grain would make
 -- every duty figure a sum over duplicates.
-CREATE TABLE IF NOT EXISTS gold.declaration_line (
+DROP TABLE IF EXISTS gold.declaration_line;
+CREATE TABLE gold.declaration_line (
     document_version   VARCHAR(64)   NOT NULL,
     shipment_id        VARCHAR(32),          -- no source; see the header
     hs_code            VARCHAR(10)   NOT NULL,
@@ -83,7 +102,8 @@ CREATE TABLE IF NOT EXISTS gold.declaration_line (
 -- One row per page read, per tier. The **modelled** cost lives here, and the column name says
 -- so: no page in this repository has been sent to a billed API, and a column called `cost_eur`
 -- would be read as a measurement by the first person to open the warehouse.
-CREATE TABLE IF NOT EXISTS gold.page_read (
+DROP TABLE IF EXISTS gold.page_read;
+CREATE TABLE gold.page_read (
     document_version   VARCHAR(64)   NOT NULL,
     page               SMALLINT      NOT NULL,
     reader_tier        SMALLINT      NOT NULL,
@@ -95,7 +115,8 @@ CREATE TABLE IF NOT EXISTS gold.page_read (
 );
 
 -- One row per reconciliation finding.
-CREATE TABLE IF NOT EXISTS gold.reconciliation_finding (
+DROP TABLE IF EXISTS gold.reconciliation_finding;
+CREATE TABLE gold.reconciliation_finding (
     shipment_id        VARCHAR(32),          -- no source; see the header
     rule_id            VARCHAR(64)   NOT NULL,
     outcome            VARCHAR(20)   NOT NULL,
