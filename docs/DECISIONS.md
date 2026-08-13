@@ -334,6 +334,42 @@ does not deploy into. Two different refusals, both reading as "AccessDenied on B
 different causes and different fixes. And neither was reachable from any offline check: an
 account's model agreements are not in the configuration.
 
+**23 · The bulk job starts the pipeline; it does not carry the reader.**
+*(Added 2026-08-13, when the executor-side read was written.)*
+
+`pipelines/reprocess.py` had one unimplemented function — the thing an executor does with a
+document — and the obvious implementation was to call the reader on the cluster. It is the wrong
+one, for a reason that is the whole of claim 1's foundation.
+
+Every threshold in this repository is derived from a recording made by **one build of one
+binary**: `tesseract 5.5.0`, from Debian, asserted at image build time and checked against the
+recording's own `reader_version` in CI. EMR Serverless custom images are built on Amazon Linux
+2023, which carries no tesseract in its repositories at all — the same constraint that sent the
+reader image to Debian in the first place (`docs/AWS-CONSTRAINTS.md`). Reaching one on the
+cluster means compiling it there: a second build, with a different leptonica and different
+flags, producing confidences that are *close* to the recording's and not the recording's. The
+extraction handler looks its thresholds up by the reader's exact identity, so the failure would
+not be wrong numbers — it would be a job that could not find an artefact, three layers from the
+cause. Decision 19 is the same defect at a smaller scale and it cost a deploy to find.
+
+So the executors start the per-document state machine and wait for the version it publishes. The
+estate has one reader, in one image, and everything that reads goes through it.
+
+**What that costs, stated rather than buried.** An executor slot spends its life polling Step
+Functions instead of computing, which is a poor use of Spark by the usual measure. It is the
+right use here: the unit of work is a page of OCR behind a Lambda, so what is being distributed
+is the coordination and the ledger, not the arithmetic. If the reader ever becomes a library
+that runs anywhere — a pure-Python engine, or a container the cluster can host without rebuilding
+the binary — this decision is the one to revisit, and the thing to check first is whether the
+recording still reproduces.
+
+**And two defects found on the way, both of the same shape.** `--dry-run` was `store_true` with
+`default=True`, so no spelling of the argument executed anything: a control that reads as a
+deliberate safety and is not one. `ec2:DeleteVpcEndpoints` was scoped by a tag the OpenSearch
+service cannot set on the endpoint it creates for us, so the condition excluded it permanently —
+an estate that could not be torn down, behind an object nothing in this repository declared.
+Neither was visible offline, and both were found by the estate refusing something.
+
 ---
 
 ## Deliberately deferred, or out of scope

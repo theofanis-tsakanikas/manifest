@@ -1139,6 +1139,33 @@ def _check_every_service_a_handler_calls_is_reachable() -> list[str]:
     return problems
 
 
+def _check_the_bulk_job_finds_the_code_it_is_pointed_at() -> list[str]:
+    """Every object the submitter names is an object the deploy uploads.
+
+    **Two files, one string, and nothing shared between them.**
+    `scripts/reprocess_submit.py` builds an `entryPoint` and a `--py-files` archive from
+    `JOB_PREFIX`; `deploy.yml` uploads two objects under a prefix typed by hand. They agree
+    today. The failure when they stop agreeing is an EMR Serverless job that starts, allocates a
+    driver and fails on a missing script — after the application is running and billing.
+
+    Read from the submitter's own constant rather than transcribed here, so this check tracks the
+    thing it is about instead of becoming a third copy of it.
+    """
+    import reprocess_submit  # noqa: PLC0415 - scripts/ is on the path already
+
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    problems: list[str] = []
+    for name in ("reprocess.py", "manifest.zip"):
+        wanted = f"{reprocess_submit.JOB_PREFIX}/{name}"
+        if wanted not in workflow:
+            problems.append(
+                f"scripts/reprocess_submit.py points a job run at {wanted} and deploy.yml never "
+                f"uploads it. The job starts, allocates a driver and fails on a missing file — "
+                f"after the application is running and billing"
+            )
+    return problems
+
+
 def _check_a_skipped_gate_job_is_accepted() -> list[str]:
     """The deploy may run less than the whole suite. It may not do so silently or for ever.
 
@@ -1224,6 +1251,7 @@ def main() -> int:
         _check_the_gate_cannot_be_cancelled_by_a_push,
         _check_a_skipped_gate_job_is_accepted,
         _check_the_machine_may_invoke_what_it_references,
+        _check_the_bulk_job_finds_the_code_it_is_pointed_at,
         _check_every_service_a_handler_calls_is_reachable,
         _check_every_layer_can_evaluate,
         _check_resolves_fail_loudly,

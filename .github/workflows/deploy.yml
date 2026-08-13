@@ -702,15 +702,24 @@ jobs:
           staging="$(mktemp -d)"
           cp -r src/manifest "$staging/manifest"
           (cd "$staging" && zip -qr "$GITHUB_WORKSPACE/manifest.zip" manifest)
-          for file in "pipelines/reprocess.py:reprocess.py" "$GITHUB_WORKSPACE/manifest.zip:manifest.zip"; do
-            aws s3api put-object \
-              --bucket "$TF_VAR_records_bucket" \
-              --key "jobs/reprocess/${file##*:}" \
-              --body "${file%%:*}" \
-              --server-side-encryption aws:kms \
-              --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
-          done
-          echo "uploaded the driver and manifest.zip to jobs/reprocess/"
+          # **Both keys written out, not built by expansion.** `scripts/check_deploy_path.py`
+          # reads this file to prove that every object the submitter points a job run at is an
+          # object this step uploads — and a key assembled from `${file##*:}` is a key no check
+          # and no reader can see. It was written that way first and the check caught it, which
+          # is the check working rather than a style note.
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "jobs/reprocess/reprocess.py" \
+            --body pipelines/reprocess.py \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          aws s3api put-object \
+            --bucket "$TF_VAR_records_bucket" \
+            --key "jobs/reprocess/manifest.zip" \
+            --body "$GITHUB_WORKSPACE/manifest.zip" \
+            --server-side-encryption aws:kms \
+            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+          echo "uploaded jobs/reprocess/reprocess.py and jobs/reprocess/manifest.zip"
       - name: apply
         run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
