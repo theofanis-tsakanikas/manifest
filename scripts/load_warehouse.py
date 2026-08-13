@@ -202,11 +202,19 @@ def main(argv: list[str] | None = None) -> int:
         )
     print(f"{DIM}{len(lake)} field row(s) at the current version of each document{RESET}")
     if not lake:
+        # **A fact, not a failure, and the difference decides whether a deploy goes red.** An
+        # empty lake is the normal state of a freshly applied estate: no document has arrived
+        # yet. Exiting non-zero here made the analytics layer fail every first deploy, which
+        # trains a reader to ignore the one signal this step has.
+        #
+        # What proves rows actually flow is `scripts/e2e_verify.py`, which sends a document and
+        # asserts it reaches the lake. This step's job is to project whatever is there.
         print(
-            f"{RED}nothing in the lake{RESET} — the warehouse would be loaded with an empty set, "
-            f"which is the state it is already in. Send a document through first."
+            f"{RED}nothing to load{RESET} — the lake holds no row at the current schema, so the "
+            f"warehouse stays empty. That is the state of a fresh estate rather than a failure; "
+            f"scripts/e2e_verify.py is what proves a document reaches the lake at all."
         )
-        return 1
+        return 0
 
     statements = [
         "TRUNCATE gold.published_field",

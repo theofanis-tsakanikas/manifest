@@ -462,13 +462,35 @@ data "aws_iam_policy_document" "escalate" {
     }
   }
 
+  # **Two statements, because the two calls are authorised against different resource types.**
+  #
+  # `InvokeDataAutomationAsync` is judged against the project and the profile — and the profile
+  # in *every region the profile spans*, which is why the list arrives with six entries.
+  # `GetDataAutomationStatus` is judged against the **invocation**, a resource that does not
+  # exist until the first call creates it and whose identifier nobody chooses. One statement
+  # naming both actions and the project's ARNs authorised the start and refused the poll, which
+  # is the shape that gets discovered one call further in than the grant was tested.
   dynamic "statement" {
     for_each = length(var.document_automation_arns) > 0 ? [1] : []
     content {
       sid       = "ReadAPageAtTierTwo"
       effect    = "Allow"
-      actions   = ["bedrock:InvokeDataAutomationAsync", "bedrock:GetDataAutomationStatus"]
+      actions   = ["bedrock:InvokeDataAutomationAsync"]
       resources = var.document_automation_arns
+    }
+  }
+
+  dynamic "statement" {
+    for_each = length(var.document_automation_arns) > 0 ? [1] : []
+    content {
+      sid     = "WatchTheReadItStarted"
+      effect  = "Allow"
+      actions = ["bedrock:GetDataAutomationStatus"]
+      # A wildcard on the *id* and nothing else: the account, the region and the resource type
+      # are all fixed, and the identifier is one AWS mints per call.
+      resources = [
+        "arn:aws:bedrock:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:data-automation-invocation/*"
+      ]
     }
   }
 
