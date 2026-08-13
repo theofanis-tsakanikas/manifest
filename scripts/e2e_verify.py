@@ -205,6 +205,11 @@ def _from_history(execution_arn: str) -> dict:
                 assembled["extraction"] = {"outcome": payload}
             elif "verified" in payload:
                 assembled["provenance"] = {"checked": payload}
+            elif "landed" in payload:
+                # `{"landed": n, "document_id": ..., "version": ...}`, and `{"skipped": ...}` when
+                # the version was already in the table. Matched on its own key like every other
+                # payload here rather than on the state's name or its `ResultPath`.
+                assembled["lake"] = payload
     return assembled
 
 
