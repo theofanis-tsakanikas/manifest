@@ -370,6 +370,41 @@ service cannot set on the endpoint it creates for us, so the condition excluded 
 an estate that could not be torn down, behind an object nothing in this repository declared.
 Neither was visible offline, and both were found by the estate refusing something.
 
+**24 · The failure this project produces most is a check reading the wrong thing.**
+*(Added 2026-08-13, after the third one in a day.)*
+
+Not a decision so much as a finding, recorded because it has now happened often enough to be a
+category rather than a run of bad luck. Every one of these reported green, and every one was
+found by something else failing:
+
+- `preflight` passed a second `-q` to pytest, which suppressed the summary line the README's
+  test-count check parsed. The check had never once run.
+- The edge-case assertions accepted any terminal state, so a document that sailed through and
+  published a record read as *refused* — the exact failure they existed to detect, passing under
+  the name of the check written to detect it.
+- `enable_classifier` was exempted from the both-ways plan check because no trained artefact
+  existed. True when written; untrue for a day before a policy document with no `count` reached
+  a deploy — a defect that check would have caught the moment the exemption came off.
+- The service-reachability check greps the handlers for a client call, and a docstring
+  *describing that pattern* matched it. It reported a handler calling a service named `service`.
+- The publication check matched `published = {` at a fixed indent, so rewriting one layer's local
+  as a `merge` made every key invisible and three layers appeared to require a variable nothing
+  supplied.
+
+The shape is always the same: **the check's input stopped being what the check believed it was,
+and nothing about that is visible from the check's own result.** A failing check names its
+problem. A check whose input vanished names nothing, and reads exactly like success.
+
+Two habits come out of it, and they are cheap:
+
+**Parse the thing, do not match its shape.** `ast` for Python, the whole block for HCL. A regex
+over source is a check that also tests the formatting, and formatting changes for reasons that
+have nothing to do with the property.
+
+**An exemption carries an expiry or a reason that can be re-read.** Every one above that was an
+exemption had a reason that was true when written. None of them had anything that would notice
+when it stopped being true — which is doctrine rule 6 applied to tooling instead of findings.
+
 ---
 
 ## Deliberately deferred, or out of scope
