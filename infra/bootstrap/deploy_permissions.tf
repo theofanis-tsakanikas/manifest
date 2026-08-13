@@ -948,6 +948,32 @@ data "aws_iam_policy_document" "deploy_compute" {
     resources = ["*"]
   }
 
+  # **The data-automation project's whole lifecycle, on the role rather than in a state file.**
+  #
+  # The AWS provider declares no resource for one, so `scripts/bda_project.py` creates it from
+  # the deploy and `destroy.yml` deletes it. That is an exception to "IaC only" with its reason
+  # written in `infra/extraction/variables.tf`, and this is what it costs: the lifecycle lives in
+  # an IAM policy instead of in Terraform state.
+  #
+  # `List` is here because the script is idempotent **by name** — BDA chooses the identifier, so
+  # finding the project that already exists means listing them. Creating a project starts no
+  # meter, which is why these are not in the budget brake; `InvokeDataAutomationAsync` is the
+  # metered call and that one is already there.
+  #checkov:skip=CKV_AWS_111:The project does not exist until this role creates it, so there is no ARN to scope to.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "OwnTheDocumentAutomationProjectTerraformCannot"
+    effect = "Allow"
+    actions = [
+      "bedrock:ListDataAutomationProjects",
+      "bedrock:GetDataAutomationProject",
+      "bedrock:CreateDataAutomationProject",
+      "bedrock:UpdateDataAutomationProject",
+      "bedrock:DeleteDataAutomationProject",
+    ]
+    resources = ["*"]
+  }
+
   # SageMaker and OpenSearch Serverless, for the two opt-in surfaces.
   #
   # Granted whether or not those surfaces are enabled: the grant is on the deploy *role*, and a
@@ -1298,17 +1324,6 @@ data "aws_iam_policy_document" "budget_brake" {
       "bedrock:Converse",
       "bedrock:ConverseStream",
       "bedrock:InvokeDataAutomationAsync",
-
-      # **Managing the data-automation project, because Terraform cannot.** The AWS provider
-      # declares no resource for one, so `scripts/bda_project.py` creates it from the deploy and
-      # `destroy.yml` deletes it — which means the deploy role holds its lifecycle rather than a
-      # state file. `List` is here because the script is idempotent *by name*: BDA chooses the
-      # identifier, so finding the existing project means listing them.
-      "bedrock:ListDataAutomationProjects",
-      "bedrock:GetDataAutomationProject",
-      "bedrock:CreateDataAutomationProject",
-      "bedrock:UpdateDataAutomationProject",
-      "bedrock:DeleteDataAutomationProject",
       # The two layers that bill by the hour whether or not anything is asked of them.
       "emr-serverless:CreateApplication",
       "emr-serverless:StartApplication",
