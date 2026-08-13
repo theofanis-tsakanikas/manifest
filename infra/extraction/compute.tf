@@ -787,3 +787,107 @@ resource "aws_lakeformation_permissions" "land_sees_the_database" {
     name = var.glue_database
   }
 }
+
+# ── The indexer ──────────────────────────────────────────────────────────────
+#
+# **Created only when there is a collection to write to.** `enable_search` is the lakehouse's
+# flag and this layer cannot read it; what it can read is whether an endpoint was published. A
+# function pointed at an empty string would be a function whose first invocation fails on an
+# environment variable, which is the "present and disabled" shape the escalation states were
+# deliberately built to avoid.
+
+resource "aws_iam_role" "index" {
+  count              = var.search_endpoint == "" ? 0 : 1
+  name               = "${var.project}-index"
+  description        = "Indexes published records. Reads nothing and writes only to the collection."
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "index" {
+  count = var.search_endpoint == "" ? 0 : 1
+
+  # **The document is handed to it; nothing is read.** The record arrives in the payload, so this
+  # role needs no S3 at all — which is worth having, because it is the one function whose output
+  # is reachable by a human through a search box.
+  statement {
+    sid       = "WriteTheIndex"
+    effect    = "Allow"
+    actions   = ["aoss:APIAccessAll"]
+    resources = ["arn:aws:aoss:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:collection/*"]
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${one(aws_cloudwatch_log_group.index[*].arn)}:*"]
+  }
+
+  #checkov:skip=CKV_AWS_111:As on every other function here — Lambda's VPC attachment actions take no resource ARN.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpc"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "index" {
+  count  = var.search_endpoint == "" ? 0 : 1
+  name   = "index"
+  role   = aws_iam_role.index[0].id
+  policy = data.aws_iam_policy_document.index[0].json
+}
+
+resource "aws_cloudwatch_log_group" "index" {
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate.
+  count             = var.search_endpoint == "" ? 0 : 1
+  name              = "/aws/lambda/${var.project}-index"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+  tags              = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_lambda_function" "index" {
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Synchronous invocations from the state machine; a dead-letter queue receives only from asynchronous ones.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  count         = var.search_endpoint == "" ? 0 : 1
+  function_name = "${var.project}-index"
+  description   = "Puts a published record into the search surface. Published values only."
+  role          = aws_iam_role.index[0].arn
+  runtime       = "python3.12"
+  handler       = "manifest.handlers.index_record.handler"
+  s3_bucket     = var.records_bucket
+  s3_key        = var.publish_package_key
+
+  source_code_hash = var.publish_package_hash
+
+  timeout     = 60
+  memory_size = 256
+
+  reserved_concurrent_executions = 5
+
+  kms_key_arn = var.data_key_arn
+
+  environment {
+    variables = {
+      SEARCH_ENDPOINT = var.search_endpoint
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  tracing_config { mode = "Active" }
+
+  tags = { "${var.project}:expires-at" = var.expires_at }
+}

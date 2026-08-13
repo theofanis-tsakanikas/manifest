@@ -100,7 +100,10 @@ resource "aws_opensearchserverless_access_policy" "records" {
         Permission   = ["aoss:CreateCollectionItems", "aoss:DescribeCollectionItems"]
       },
     ]
-    Principal = var.search_principals
+    Principal = coalesce(
+      var.search_principals,
+      ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project}-index"],
+    )
   }])
 }
 

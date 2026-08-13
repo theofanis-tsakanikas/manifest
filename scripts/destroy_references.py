@@ -62,6 +62,11 @@ PLACEHOLDERS: dict[str, dict[str, str]] = {
         "lake_bucket": "{project}-lake-{account}",
         "glue_database": "{project}_records",
         "athena_workgroup": "{project}-analysis",
+        # Empty rather than a plausible URL: the endpoint only exists when search is on, and the
+        # extraction layer's `count` reads exactly this emptiness to decide whether the indexer
+        # exists at all. A stand-in that looked like a collection would build a function pointed
+        # at a host that is not there.
+        "search_endpoint": "",
     },
 }
 

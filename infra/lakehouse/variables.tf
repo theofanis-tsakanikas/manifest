@@ -48,8 +48,17 @@ variable "search_principals" {
     every principal in the account. Empty by default so that enabling search without naming
     anybody produces a collection nobody can reach — which is the safe direction to get wrong.
   EOT
-  type        = list(string)
-  default     = []
+  type = list(string)
+  # **Constructed, not transcribed, and not a remote state read.**
+  #
+  # The indexer's role is created in `infra/extraction`, which applies *after* this layer — so a
+  # reference would be circular and a state read would make one layer's internals another's
+  # contract. The role's name is a constant this project owns, exactly like the deploy role ARN
+  # the workflow builds, so the ARN is assembled from the account id and that name.
+  #
+  # Still never `*`: an empty list would produce a collection nobody can reach, and a wildcard
+  # would put an index of published customs records in front of every principal in the account.
+  default = null
 
   validation {
     condition     = alltrue([for arn in var.search_principals : !strcontains(arn, "*")])

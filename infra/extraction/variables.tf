@@ -263,3 +263,16 @@ variable "lake_bucket" {
   description = "Where the Iceberg table's data and the Athena results live."
   type        = string
 }
+
+variable "search_endpoint" {
+  description = <<-EOT
+    The OpenSearch Serverless collection endpoint, or empty when search is off.
+
+    Empty is a value rather than an absence: `enable_search` lives in the lakehouse layer and
+    this one cannot see it, so the endpoint being empty *is* how this layer learns the surface
+    was not stood up. The indexer's `count` reads it, and a function that would have nowhere to
+    write is not created.
+  EOT
+  type        = string
+  default     = ""
+}

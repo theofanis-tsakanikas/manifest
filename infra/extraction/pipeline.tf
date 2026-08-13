@@ -161,6 +161,7 @@ data "aws_iam_policy_document" "pipeline" {
         # invoke it are two facts, and only one of them was being checked.
         aws_lambda_function.land.arn,
       ],
+      aws_lambda_function.index[*].arn,
       aws_lambda_function.escalate[*].arn,
     )
   }
@@ -562,7 +563,45 @@ resource "aws_sfn_state_machine" "extraction" {
             BackoffRate     = 2
           }]
           Catch = [{ ErrorEquals = ["States.ALL"], Next = "LandingFailed", ResultPath = "$.error" }]
+          Next  = var.search_endpoint == "" ? "Done" : "IndexTheRecord"
+        }
+
+        # A terminal state that exists so the machine has one when search is off. `End = true` on
+        # `LandInTheLake` would make the shape of the machine depend on a flag in a way that
+        # reads as two different pipelines; this way the tail is always the same and the only
+        # difference is whether one state sits in it.
+        Done = { Type = "Succeed" }
+
+        # **Search is the least urgent thing in this pipeline and its failure says so.**
+        #
+        # Same `Catch` reasoning as the landing state, one step weaker: a record that is not
+        # searchable is published, in the bucket, in the lake and in the queue. Every consumer
+        # that decides anything already has it. Failing the execution here would turn "the search
+        # box is stale" into "this document looks unprocessed", which is the more expensive
+        # sentence by a wide margin.
+        IndexTheRecord = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::lambda:invoke"
+          Parameters = {
+            "FunctionName" : one(aws_lambda_function.index[*].arn),
+            "Payload" : { "record.$" : "$.provenance.checked" }
+          }
+          ResultSelector = { "indexed.$" : "$.Payload" }
+          ResultPath     = "$.search"
+          Retry = [{
+            ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+            IntervalSeconds = 2
+            MaxAttempts     = 3
+            BackoffRate     = 2
+          }]
+          Catch = [{ ErrorEquals = ["States.ALL"], Next = "IndexingFailed", ResultPath = "$.error" }]
           End   = true
+        }
+
+        IndexingFailed = {
+          Type  = "Fail"
+          Error = "IndexingFailed"
+          Cause = "The record is published, landed and queued; it is not searchable. The index is a view and can be rebuilt from the records bucket."
         }
 
         # A terminal state of its own rather than a shared failure, so that "the warehouse is

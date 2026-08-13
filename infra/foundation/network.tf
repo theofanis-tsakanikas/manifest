@@ -217,6 +217,9 @@ locals {
     # a smaller blast radius.
     "athena",
     "glue",
+    # The search surface answers on its own interface endpoint. Absent, the indexer does not
+    # fail — it hangs, which is the failure the landing function already paid for once.
+    "aoss",
   ]
 
   # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road

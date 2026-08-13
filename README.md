@@ -88,9 +88,9 @@ command in this repository, not a summary of one.
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
 | `make gate-proof` | **49 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **630 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
+| `checkov` | **654 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **339 passing**, offline, credential-free |
+| test suite | **348 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks 49 controls on purpose and requires the **named** gate to refuse
@@ -249,7 +249,7 @@ one function, and keeping it that size is what stops the untested region growing
 
 ```bash
 make install       # venv + editable install
-make test          # 339 tests, offline, under a minute
+make test          # 348 tests, offline, under a minute
 make claims        # every claim gate that exists
 make gate-proof    # break 49 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability

@@ -9,6 +9,9 @@ locals {
     lake_bucket      = aws_s3_bucket.lake.id
     glue_database    = aws_glue_catalog_database.records.name
     athena_workgroup = aws_athena_workgroup.analysis.name
+    # Empty when search is off, which is a value rather than an absence: the extraction layer
+    # takes it as a variable and its own `count` decides whether anything uses it.
+    search_endpoint = try(one(aws_opensearchserverless_collection.records[*].collection_endpoint), "")
   }
 }
 
