@@ -260,7 +260,15 @@ resource "aws_iam_role" "classify" {
   tags               = { "${var.project}:expires-at" = var.expires_at }
 }
 
+# **`count` here too, and its absence is the defect the both-ways plan check exists for.**
+#
+# A policy document with no count is evaluated whether or not the feature is on, and this one
+# indexes `aws_cloudwatch_log_group.classify[0]` — which does not exist when the classifier is
+# off. Every deploy with the flag off would have failed at plan, which is to say every ordinary
+# deploy, and `terraform validate` cannot see it because both shapes are type-correct.
 data "aws_iam_policy_document" "classify" {
+  count = var.enable_classifier ? 1 : 0
+
   statement {
     sid    = "AskTheEndpoint"
     effect = "Allow"
@@ -295,7 +303,7 @@ data "aws_iam_policy_document" "classify" {
     sid       = "Log"
     effect    = "Allow"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["${aws_cloudwatch_log_group.classify[0].arn}:*"]
+    resources = ["${one(aws_cloudwatch_log_group.classify[*].arn)}:*"]
   }
 }
 
@@ -304,7 +312,7 @@ resource "aws_iam_role_policy" "classify" {
 
   name   = "classify"
   role   = aws_iam_role.classify[0].id
-  policy = data.aws_iam_policy_document.classify.json
+  policy = data.aws_iam_policy_document.classify[0].json
 }
 
 resource "aws_lambda_function" "classify" {

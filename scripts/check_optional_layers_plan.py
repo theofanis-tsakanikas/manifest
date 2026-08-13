@@ -60,7 +60,7 @@ ROOT = Path(__file__).resolve().parents[1]
 #: matching rule from the other end — every `enable_*` a layer declares must be reachable from
 #: `deploy.yml` — so a flag added and forgotten fails there whether or not it is listed here.
 OPTIONAL: dict[str, list[str]] = {
-    "extraction": ["enable_escalation_tiers"],
+    "extraction": ["enable_escalation_tiers", "enable_classifier"],
     "foundation": ["enable_escalation_tiers"],
     "lakehouse": ["enable_search"],
 }
@@ -69,13 +69,29 @@ OPTIONAL: dict[str, list[str]] = {
 #: is a statement that the feature is undeployable as the repository stands, and it has to name
 #: what is missing.
 #:
-#: `enable_classifier` needs a trained artefact in S3 and this project has never produced one —
-#: the classification path is a similarity ranker over declared headings. The variable's own
-#: `validation` refuses the combination by name, which is the check; planning it here would need
-#: a placeholder S3 URI, and a plan that succeeds against an artefact that does not exist proves
-#: nothing except that Terraform accepts a string.
-UNPLANNABLE: dict[str, str] = {
-    "enable_classifier": "needs a trained artefact; refused by the variable's own validation",
+#: **Empty, and `enable_classifier` was the entry that used to be in it.** The reason given was
+#: that no trained artefact existed and planning against a placeholder URI would prove only that
+#: Terraform accepts a string. The first half stopped being true on 2026-08-13 —
+#: `scripts/train_classifier.py` fits one and `deploy.yml` uploads it before this layer applies —
+#: and the second half was the wrong test to want: what this check proves is that *both shapes of
+#: the configuration are coherent*, which is a question about `count` and references rather than
+#: about the artefact. Its absence hid a policy document with no `count` that would have broken
+#: every deploy with the flag off.
+UNPLANNABLE: dict[str, str] = {}
+
+#: Variables a flag's *on* shape needs, which its layer declares **with a default**. The
+#: placeholder generator only fills in variables that have none, and that is the right rule for
+#: it: a variable with a default has a working value. It is the wrong rule for an optional
+#: feature, whose off-shape default is deliberately the empty string that its own `validation`
+#: refuses when the flag is on — which is the validation doing its job, and it means this check
+#: cannot plan the on shape without saying what the deploy supplies.
+#:
+#: Obvious placeholders, like every other value here: if one reached an API it would fail loudly
+#: rather than point at something real.
+ON_SHAPE_NEEDS: dict[str, dict[str, str]] = {
+    "enable_classifier": {
+        "classifier_model_data_url": '"s3://manifest-placeholder/models/placeholder.tar.gz"',
+    },
 }
 
 
@@ -180,7 +196,9 @@ def _init(copy: Path) -> tuple[bool, str]:
     return result.returncode == 0, (result.stderr or result.stdout)[-800:]
 
 
-def _plan(copy: Path, flag: str, enabled: bool, varfile: Path) -> tuple[bool, str]:
+def _plan(
+    copy: Path, flag: str, enabled: bool, varfile: Path, on_shape: Path | None = None
+) -> tuple[bool, str]:
     result = subprocess.run(  # noqa: S603 - fixed argv, no shell
         [  # noqa: S607
             "terraform",
@@ -190,6 +208,7 @@ def _plan(copy: Path, flag: str, enabled: bool, varfile: Path) -> tuple[bool, st
             "-no-color",
             "-refresh=false",
             f"-var-file={varfile}",
+            *([f"-var-file={on_shape}"] if on_shape else []),
             f"-var={flag}={'true' if enabled else 'false'}",
         ],
         cwd=ROOT,
@@ -233,9 +252,18 @@ def _plan_both_ways(layer: str, flag: str, copy: Path) -> list[str]:
     with tempfile.NamedTemporaryFile("w", suffix=".tfvars", delete=False) as handle:
         handle.write("".join(f"{name} = {value}\n" for name, value in values.items()))
         varfile = Path(handle.name)
+
+    # The on shape's extra values go in a second file rather than the first, so the off shape is
+    # planned without them — a feature that only plans when its companion variables are set is a
+    # feature whose off shape nobody checked.
+    with tempfile.NamedTemporaryFile("w", suffix=".tfvars", delete=False) as handle:
+        handle.write(
+            "".join(f"{name} = {value}\n" for name, value in ON_SHAPE_NEEDS.get(flag, {}).items())
+        )
+        on_shape = Path(handle.name)
     try:
         for enabled in (False, True):
-            ok, output = _plan(copy, flag, enabled, varfile)
+            ok, output = _plan(copy, flag, enabled, varfile, on_shape if enabled else None)
             state = "on" if enabled else "off"
             if ok:
                 print(f"  {layer:12} {flag} {state:3} — plans")

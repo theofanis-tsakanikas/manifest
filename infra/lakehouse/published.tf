@@ -5,14 +5,23 @@
 # and a value two layers can compute is a value that will be computed differently in one of them.
 
 locals {
-  published = {
-    lake_bucket      = aws_s3_bucket.lake.id
-    glue_database    = aws_glue_catalog_database.records.name
-    athena_workgroup = aws_athena_workgroup.analysis.name
-    # Empty when search is off, which is a value rather than an absence: the extraction layer
-    # takes it as a variable and its own `count` decides whether anything uses it.
-    search_endpoint = try(one(aws_opensearchserverless_collection.records[*].collection_endpoint), "")
-  }
+  # **Absent when search is off, not empty.** This published `search_endpoint = ""` on the
+  # argument that the extraction layer's own `count` decides whether anything uses it. Two things
+  # were wrong with that: `one([])` is `null` rather than `""`, and an SSM parameter takes neither
+  # — *"one of insecure_value, value, value_wo must be specified"*, at apply, on every deploy
+  # with the flag off. The resolver in `deploy.yml` reads a path and sets what it finds, so a
+  # parameter that is not there is a variable that keeps its default, which is exactly the
+  # meaning wanted.
+  published = merge(
+    {
+      lake_bucket      = aws_s3_bucket.lake.id
+      glue_database    = aws_glue_catalog_database.records.name
+      athena_workgroup = aws_athena_workgroup.analysis.name
+    },
+    var.enable_search ? {
+      search_endpoint = one(aws_opensearchserverless_collection.records[*].collection_endpoint)
+    } : {},
+  )
 }
 
 resource "aws_ssm_parameter" "published" {
