@@ -28,6 +28,7 @@ from evals.harness import contracts, ground_truth, score_all
 from manifest.contracts.loader import to_tolerance
 from manifest.core.calibration import Outcome as ReadOutcome
 from manifest.core.reconciliation import (
+    NUMERIC_TYPES,
     Comparison,
     Severity,
     Side,
@@ -36,7 +37,6 @@ from manifest.core.reconciliation import (
 )
 
 #: Field types compared as numbers rather than as strings.
-_NUMERIC = {"quantity", "money"}
 
 
 def _comparison(rule) -> Comparison:
@@ -46,7 +46,7 @@ def _comparison(rule) -> Comparison:
         severity=Severity(rule.severity),
         tolerance=to_tolerance(rule.tolerance),
         comparison=tuple(contract.comparison),
-        numeric=contract.type.value in _NUMERIC,
+        numeric=contract.type.value in NUMERIC_TYPES,
     )
 
 

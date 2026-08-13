@@ -1027,3 +1027,188 @@ resource "aws_lambda_function" "search" {
 
   tags = { "${var.project}:expires-at" = var.expires_at }
 }
+
+# ── The three functions claims 4, 5 and 6 needed and never had ────────────────
+#
+# **Each of these proved its claim offline and had no path in the estate at all.** `evals/`
+# scored reconciliation against a corpus with planted mismatches, entity resolution against
+# transliterated party names, and the review loop against a generated queue — and no document on
+# this estate was ever compared with another, no two names were ever merged, and the decisions
+# table had never held a row. The claims were properties of pure functions and untested
+# properties of the running system.
+#
+# They are invoked, not triggered. A reconciliation is about a *shipment*, which is a set of
+# documents nothing in this pipeline groups; an un-merge is a human undoing a judgement; a
+# decision is a human making one. None of the three is a thing that should happen because a file
+# landed in a bucket, and a state machine step that guessed which documents belong together would
+# be inventing the one fact `analytics/schema.sql` already lists as having no source.
+
+locals {
+  # One role's worth of shared access, written once. All three read published records; two write
+  # something; none of them may delete anything at all.
+  human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities"]) : toset([])
+}
+
+resource "aws_cloudwatch_log_group" "human_loop" {
+  #checkov:skip=CKV_AWS_338:Execution telemetry on a short-lived estate.
+  for_each = local.human_loop_functions
+
+  name              = "/aws/lambda/${var.project}-${each.key}"
+  retention_in_days = 30
+  kms_key_id        = var.logs_key_arn
+  tags              = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_iam_role" "human_loop" {
+  for_each = local.human_loop_functions
+
+  name               = "${var.project}-${each.key}"
+  description        = "Claims 4, 5 and 6 on the estate. Reads records; decides nothing."
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = { "${var.project}:expires-at" = var.expires_at }
+}
+
+data "aws_iam_policy_document" "human_loop" {
+  for_each = local.human_loop_functions
+
+  statement {
+    sid     = "ReadPublishedRecords"
+    effect  = "Allow"
+    actions = ["s3:GetObject", "s3:ListBucket"]
+    resources = [
+      "arn:aws:s3:::${var.records_bucket}",
+      "arn:aws:s3:::${var.records_bucket}/records/*",
+      "arn:aws:s3:::${var.records_bucket}/entities/*",
+    ]
+  }
+
+  # **Writes, narrowly.** `decide` publishes a superseding record; `entities` writes the resolved
+  # state that makes a merge reversible. `reconcile` writes nothing at all — its output is a
+  # review item and a return value, and a reconciler that could write a record could resolve a
+  # disagreement by editing one of the documents.
+  dynamic "statement" {
+    for_each = each.key == "decide" ? [1] : []
+    content {
+      sid       = "PublishASupersedingVersion"
+      effect    = "Allow"
+      actions   = ["s3:PutObject"]
+      resources = ["arn:aws:s3:::${var.records_bucket}/records/*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = each.key == "entities" ? [1] : []
+    content {
+      sid       = "WriteTheResolvedState"
+      effect    = "Allow"
+      actions   = ["s3:PutObject"]
+      resources = ["arn:aws:s3:::${var.records_bucket}/entities/*"]
+    }
+  }
+
+  # The decisions table. `PutItem` and nothing else: a role that could delete a decision could
+  # remove the evidence claim 5 is computed from, and one that could update one could change a
+  # rejection into an approval after the fact.
+  dynamic "statement" {
+    for_each = each.key == "decide" ? [1] : []
+    content {
+      sid       = "RecordTheDecision"
+      effect    = "Allow"
+      actions   = ["dynamodb:PutItem"]
+      resources = [aws_dynamodb_table.decisions.arn]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = each.key == "reconcile" ? [1] : []
+    content {
+      sid       = "QueueADisagreement"
+      effect    = "Allow"
+      actions   = ["sqs:SendMessage"]
+      resources = [aws_sqs_queue.review.arn]
+    }
+  }
+
+  statement {
+    sid       = "UseTheDataKey"
+    effect    = "Allow"
+    actions   = ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
+    resources = [var.data_key_arn]
+  }
+
+  statement {
+    sid       = "Log"
+    effect    = "Allow"
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.human_loop[each.key].arn}:*"]
+  }
+
+  #checkov:skip=CKV_AWS_111:Lambda's VPC attachment actions take no resource ARN.
+  #checkov:skip=CKV_AWS_356:As above.
+  statement {
+    sid    = "AttachToTheVpc"
+    effect = "Allow"
+    actions = [
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "human_loop" {
+  for_each = local.human_loop_functions
+
+  name   = each.key
+  role   = aws_iam_role.human_loop[each.key].id
+  policy = data.aws_iam_policy_document.human_loop[each.key].json
+}
+
+resource "aws_lambda_function" "human_loop" {
+  #checkov:skip=CKV_AWS_115:Reserved concurrency is set below.
+  #checkov:skip=CKV_AWS_116:Invoked synchronously; a dead-letter queue receives only from asynchronous invocations.
+  #checkov:skip=CKV_AWS_272:Code signing needs a profile owned by bootstrap; the zip's integrity here is the deploy role's write scope plus the source hash.
+  for_each = local.human_loop_functions
+
+  function_name = "${var.project}-${each.key}"
+  description = lookup({
+    decide    = "Records a reviewer's decision. core.review.publishable decides."
+    reconcile = "Compares what several documents say about one shipment."
+    entities  = "Resolves party names, and un-merges with lineage intact."
+  }, each.key, each.key)
+  role             = aws_iam_role.human_loop[each.key].arn
+  runtime          = "python3.12"
+  handler          = "manifest.handlers.${each.key}.handler"
+  s3_bucket        = var.records_bucket
+  s3_key           = var.publish_package_key
+  source_code_hash = var.publish_package_hash
+
+  timeout     = 60
+  memory_size = 512
+
+  # Low. Each of these is a human's action or an operator's, not a document arriving.
+  reserved_concurrent_executions = 5
+
+  kms_key_arn = var.data_key_arn
+
+  environment {
+    variables = {
+      RECORDS_BUCKET   = var.records_bucket
+      DATA_KEY_ARN     = var.data_key_arn
+      DECISIONS_TABLE  = aws_dynamodb_table.decisions.name
+      REVIEW_QUEUE_URL = aws_sqs_queue.review.url
+      CONTRACTS_DIR    = "/var/task/contracts"
+    }
+  }
+
+  vpc_config {
+    subnet_ids         = var.private_subnet_ids
+    security_group_ids = [var.endpoint_security_group_id]
+  }
+
+  tracing_config { mode = "Active" }
+
+  depends_on = [aws_cloudwatch_log_group.human_loop]
+  tags       = { "${var.project}:expires-at" = var.expires_at }
+}

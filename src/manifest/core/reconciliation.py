@@ -56,6 +56,16 @@ class Severity(StrEnum):
     ADVISORY = "advisory"
 
 
+#: The declared field types compared as quantities rather than as text.
+#:
+#: In `core` because two places held it — `evals/reconciliation` and, once the estate grew a
+#: reconciliation step, `handlers/reconcile` — and a field that became numeric in one of them
+#: would be compared as a string in the other. A string comparison of "1,000 KGS" against
+#: "1000 kg" disagrees, which is a finding about formatting sent to somebody paid to catch
+#: findings about shipments.
+NUMERIC_TYPES: frozenset[str] = frozenset({"quantity", "money"})
+
+
 @dataclass(frozen=True, slots=True)
 class Side:
     """One end of a comparison: what a document says, or the fact that it says nothing."""
