@@ -215,18 +215,35 @@ def _declaration_lines(
     line is keyed on; a missing one is a NULL rather than a zero, because a zero is a duty figure
     somebody would read.
     """
+    # **Keyed by document, not by version, and the grain is the whole point.**
+    #
+    # A decision is recorded against the version the reviewer *looked at*; approving it publishes
+    # the **next** version, which is where the value lives. Joining on the version therefore never
+    # matched, and this mart stayed at zero rows through four deploys while the classification had
+    # in fact been decided — a check that could not pass, reporting the same honest-sounding
+    # sentence every time.
+    #
+    # `gold.review_item` is right to join on the version: it is about the queued item at that
+    # moment. A declaration line asks a different question — *did a human decide this document's
+    # classification* — and that is a fact about the document.
+    decided_documents = {
+        (str(entry.get("document") or ""), field) for (_version, field), entry in decisions.items()
+    }
+
     by_version: dict[str, dict[str, str]] = {}
     for row in lake:
-        version, document_type, field, value = row[0], row[2], row[3], row[4]
+        version, document_id, document_type = row[0], row[1], row[2]
+        field, value = row[3], row[4]
         if document_type != "customs_declaration" or _boolean(row[12]) != "TRUE":
             continue
-        by_version.setdefault(version, {})[field] = value
+        current = by_version.setdefault(version, {"document_id": document_id})
+        current[field] = value
 
     lines = []
     for version, fields in sorted(by_version.items()):
         if any(fields.get(name) in (None, "") for name in DECLARATION_FIELDS):
             continue
-        if (version, "hs_code") not in decisions:
+        if (fields["document_id"], "hs_code") not in decided_documents:
             # Published, and nobody decided it. That is either a contract that stopped saying
             # always-review or a decision that was never recorded, and both are questions rather
             # than rows.
@@ -300,6 +317,9 @@ def _decisions(table: str) -> dict[tuple[str, str], dict[str, str]]:
                 str(item.get("field", {}).get("S", "")),
             )
             rows[key] = {
+                # Kept because a declaration line joins by *document* rather than by version;
+                # see `_declaration_lines`.
+                "document": item.get("document", {}).get("S"),
                 "reviewer": item.get("reviewer", {}).get("S"),
                 "decision": item.get("decision", {}).get("S"),
                 "seconds_on_task": item.get("seconds_on_task", {}).get("N"),
