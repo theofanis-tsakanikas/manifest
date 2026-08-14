@@ -91,6 +91,28 @@ so it still holds honestly. **The next clean cycle is when it goes.**
 a data-bearing resource, and a replaced collection loses its contents. The control for that is
 `prevent_destroy` on the resources that hold data, and nothing has it.
 
+## 8 · The teardown left SageMaker's lineage behind, and the sweep was right to fail
+
+All five layers destroyed cleanly. `scripts/estate_sweep.py` then failed, and it should have:
+SageMaker writes **lineage entities** — 50 actions, 50 contexts, artifacts — automatically when
+an endpoint is deployed, and deletes none of them when the endpoint goes. One log group,
+`/aws/sagemaker/Endpoints/manifest-hs-classifier`, survives with them.
+
+They are free, and that is not the point. *A create path with no delete path is how an estate
+gets left standing* is this repository's own sentence, and it applies to a resource created
+indirectly exactly as it applies to the Bedrock Data Automation project `destroy.yml` already
+deletes by hand.
+
+**To close it:** the same shape as the BDA step — list by prefix, delete, and exit zero when
+there is nothing named to remove.
+
+**Verified by CLI after the run:** 0 Lambda functions, 0 state machines, 0 DynamoDB tables, 0
+queues, 0 OpenSearch collections, 0 Redshift workgroups, 0 EMR applications, 0 SageMaker
+endpoints, 0 VPCs, 0 ECR repositories, 0 NAT gateways. The one surviving VPC endpoint belongs to
+**Attestor**, not to this project, and is a free S3 gateway endpoint. The only Manifest buckets
+left are `manifest-tfstate` and its access log — bootstrap, which is deliberately never
+destroyed.
+
 ---
 
 ## What today changed, and what it cost
