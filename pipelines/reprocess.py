@@ -80,7 +80,14 @@ def read_ledger(rows: list[dict[str, Any]]) -> list[LedgerEntry]:
     account, and it is three lines at the bottom.
     """
     return [
-        LedgerEntry(document=row["document"], reader=row["reader"], version=row["version"])
+        LedgerEntry(
+            document=row["document"],
+            reader=row["reader"],
+            version=row["version"],
+            # Absent on rows written before refusals were recorded, and `False` is the right
+            # reading of those: every one of them carries a version, which a refusal never does.
+            refused=bool(row.get("refused")),
+        )
         for row in rows
     ]
 
@@ -243,24 +250,37 @@ def _execute(
         machine = estate["state_machine"]
 
         completed: dict[str, str] = {}
+        refused: set[str] = set()
         for batch in batches:
             rows = session.sparkContext.parallelize(batch, numSlices=len(batch))
-            for document, version in rows.map(
+            for document, version, was_refused in rows.map(
                 lambda item, sources=sources, machine=machine: _read_one(
                     item, sources.value, machine
                 )
             ).collect():
                 if version:
                     completed[document] = version
+                elif was_refused:
+                    refused.add(document)
 
         # **Written after the run and only for what finished.** `record` is pure and returns the
         # appended ledger; this is the write. A document that failed carries no version and is
         # absent, so the next run plans it again — which is the whole of the resumability
         # argument in the module docstring.
-        appended = record([], the_plan, completed)
+        appended = record([], the_plan, completed, frozenset(refused))
         _write_ledger(estate["ledger_table"], appended)
-        print(f"{len(completed)}/{sum(len(batch) for batch in batches)} documents completed")
-        return 0 if len(completed) == sum(len(batch) for batch in batches) else 1
+        planned = sum(len(batch) for batch in batches)
+        unanswered = planned - len(completed) - len(refused)
+        print(
+            f"{len(completed)} published, {len(refused)} refused, {unanswered} unanswered, "
+            f"of {planned} planned"
+        )
+        # **Refusals are not failures, and the exit code used to say they were.** A document the
+        # pipeline turned away by name is this system working; a bulk job over four million
+        # documents will always have some, and one that exits non-zero whenever any document is
+        # refused is a job that always exits non-zero. What is a failure is a document nobody
+        # got an answer about — it is still owed, and the run did not finish its plan.
+        return 0 if unanswered == 0 else 1
     finally:
         session.stop()
 
@@ -270,9 +290,15 @@ def _read_one(
 ) -> tuple[str, str]:  # pragma: no cover
     """One document, on an executor: start the pipeline for it and wait for its version.
 
-    Returns `(document, "")` when it did not publish. A failure is not raised, because raising
-    would lose the whole partition — and the documents that *did* finish are exactly what the
-    ledger needs in order for a resumed run to plan the remainder rather than everything.
+    Returns `(document, version, refused)`. A failure is not raised, because raising would lose
+    the whole partition — and the documents that *did* finish are exactly what the ledger needs
+    in order for a resumed run to plan the remainder rather than everything.
+
+    **The third element is the fix to claim 7's one real hole.** This returned an empty version
+    for two different facts: a document the pipeline *refused* — an undeclared language, a type
+    no contract governs — and one the job never got an answer about. Neither was recorded, so
+    the refused ones were re-planned on every run for ever, which is exactly the double work
+    "idempotent" is supposed to exclude. The refusal is an answer; only the silence is owed.
     """
     import json as _json  # noqa: PLC0415 - executors import their own
     import time as _time  # noqa: PLC0415
@@ -282,7 +308,9 @@ def _read_one(
     key = sources.get(item.document)
     if not key:
         print(f"{item.document}: no source object; the landing bucket has nothing under that id")
-        return item.document, ""
+        # Not a refusal: nothing read the document, so nothing decided anything about it. If the
+        # object appears later, the next run must plan it.
+        return item.document, "", False
 
     states = boto3.client("stepfunctions")
     started = states.start_execution(
@@ -297,14 +325,19 @@ def _read_one(
             _time.sleep(POLL_SECONDS)
             continue
         if described["status"] != "SUCCEEDED":
-            print(f"{item.document}: execution {described['status']}")
-            return item.document, ""
+            print(f"{item.document}: execution {described['status']} — refused")
+            # **The pipeline answered.** A terminal non-success is a refusal by name — the
+            # handlers fail loudly on an undeclared language, a type with no contract, a key
+            # outside the convention — and it will be the same answer at this reader version.
+            return item.document, "", True
         output = _json.loads(described.get("output") or "{}")
         version = ((output.get("extraction") or {}).get("outcome") or {}).get("fingerprint", "")
-        return item.document, version
+        return item.document, version, False
 
     print(f"{item.document}: still running after {EXECUTION_TIMEOUT_SECONDS}s; not recorded")
-    return item.document, ""
+    # Owed, not refused. It may yet succeed, and a ledger entry here would retire a document
+    # this job never learned the answer to.
+    return item.document, "", False
 
 
 def _sources(bucket: str) -> dict[str, str]:  # pragma: no cover
@@ -340,6 +373,7 @@ def _read_ledger_table(table: str) -> list[dict[str, Any]]:  # pragma: no cover
                 "document": entry["document"]["S"],
                 "reader": entry["reader"]["S"],
                 "version": entry["version"]["S"],
+                "refused": entry.get("refused", {}).get("BOOL", False),
             }
             for entry in page.get("Items", ())
         )
@@ -363,6 +397,7 @@ def _write_ledger(table: str, entries: list[LedgerEntry]) -> None:  # pragma: no
                 "document": {"S": entry.document},
                 "reader": {"S": entry.reader},
                 "version": {"S": entry.version},
+                "refused": {"BOOL": entry.refused},
             },
         )
 

@@ -51,6 +51,35 @@ class LedgerEntry:
     document: str
     reader: str
     version: str
+    #: The pipeline reached a terminal state and refused this document — a language the routing
+    #: contract does not declare, a type no contract governs, a key outside the convention.
+    #:
+    #: **A refusal is a completed unit of work, and recording it is what makes claim 7 true.**
+    #: It was not recorded at all: `_read_one` returned the same empty version for a document
+    #: the pipeline refused *by name* and for one the job never got an answer about, so a
+    #: refused document was re-planned on every subsequent run, for ever. Three of them survived
+    #: two full runs that way. "No duplicates and no double work" is the claim, and that is
+    #: double work with no end to it.
+    #:
+    #: The distinction is the whole point: a document the job could not reach must be retried,
+    #: because nothing decided anything about it. A document the pipeline *answered* will get
+    #: the same answer next time, at this reader version, and asking again is spending money to
+    #: be told the same thing.
+    refused: bool = False
+
+    def __post_init__(self) -> None:
+        if self.refused and self.version:
+            raise ValueError(
+                f"{self.document} is recorded as refused and carries version "
+                f"{self.version!r}. A refusal published nothing; a version here would be a "
+                f"record id pointing at an object that does not exist"
+            )
+        if not self.refused and not self.version:
+            raise ValueError(
+                f"{self.document} is recorded as processed and carries no version. Missing is "
+                f"missing and it is stated: a refusal says so with `refused`, and an empty "
+                f"string standing in for one is the sentinel doctrine rule 3 forbids"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,21 +159,44 @@ def plan(
 
 
 def record(
-    ledger: list[LedgerEntry], executed: Plan, versions: dict[str, str]
+    ledger: list[LedgerEntry],
+    executed: Plan,
+    versions: dict[str, str],
+    refused: frozenset[str] = frozenset(),
 ) -> list[LedgerEntry]:
-    """Append what a run completed. Only what it completed.
+    """Append what a run finished — which includes what it was refused.
 
     `versions` carries the outcome per document, so a run that died halfway appends the half it
     finished. That is what makes the resumed plan the *remainder* — recording the whole plan
     optimistically would make a crashed job look complete, which is the silent failure, and
     recording nothing would make it repeat everything, which is the expensive one.
+
+    **`refused` is the third answer, and leaving it out was a defect.** A document the pipeline
+    turned away has been decided: it will be turned away again, at this reader, for the same
+    declared reason. Recording it as a refusal retires it from the plan; recording nothing about
+    it makes every future run pay to be told the same thing. Both are "no version", and treating
+    them as one is the error — which is why they arrive here as different arguments rather than
+    as an empty string somebody has to interpret.
     """
-    done = [
-        LedgerEntry(document=item.document, reader=executed.reader, version=versions[item.document])
-        for item in executed.items
-        if item.disposition is not Disposition.SKIP and item.document in versions
-    ]
-    return [*ledger, *done]
+    finished = []
+    for item in executed.items:
+        if item.disposition is Disposition.SKIP:
+            continue
+        if item.document in refused:
+            finished.append(
+                LedgerEntry(
+                    document=item.document, reader=executed.reader, version="", refused=True
+                )
+            )
+        elif item.document in versions:
+            finished.append(
+                LedgerEntry(
+                    document=item.document,
+                    reader=executed.reader,
+                    version=versions[item.document],
+                )
+            )
+    return [*ledger, *finished]
 
 
 # ── The cost model ───────────────────────────────────────────────────────────

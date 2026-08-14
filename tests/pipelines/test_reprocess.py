@@ -7,7 +7,7 @@ import json
 import pytest
 from pipelines.reprocess import describe, main, partitions, read_ledger
 
-from manifest.core.scale import Disposition, LedgerEntry, plan
+from manifest.core.scale import Disposition, LedgerEntry, plan, record
 
 
 def test_the_ledger_reads_into_the_core_type() -> None:
@@ -94,3 +94,65 @@ def test_neither_source_of_documents_is_a_refusal_with_both_named(capsys) -> Non
         main(["--reader", "tesseract 5.5.0"])
 
     assert "--landing-bucket" in capsys.readouterr().err
+
+
+# ── The ledger's third answer ────────────────────────────────────────────────
+
+
+def test_a_refused_document_is_recorded_so_it_is_never_planned_again() -> None:
+    """**Claim 7's one real hole, and it survived two full runs.**
+
+    Three documents — an undeclared language, a type no contract governs, a key outside the
+    convention — were refused by the pipeline, recorded nowhere, and re-planned on every
+    subsequent run. "No duplicates and no double work" is the claim; that is double work with no
+    end to it.
+    """
+    the_plan = plan(["good", "malformed"], [], "tesseract 5.5.0")
+
+    ledger = record([], the_plan, {"good": "v1"}, frozenset({"malformed"}))
+
+    assert [(e.document, e.version, e.refused) for e in ledger] == [
+        ("good", "v1", False),
+        ("malformed", "", True),
+    ]
+    again = plan(["good", "malformed"], ledger, "tesseract 5.5.0")
+    assert [item.disposition.value for item in again.items] == ["skip", "skip"]
+
+
+def test_a_document_nobody_got_an_answer_about_is_still_owed() -> None:
+    """The distinction the fix turns on: silence is not a refusal, and must be retried."""
+    the_plan = plan(["good", "unanswered"], [], "tesseract 5.5.0")
+
+    ledger = record([], the_plan, {"good": "v1"}, frozenset())
+
+    assert [entry.document for entry in ledger] == ["good"]
+    again = plan(["good", "unanswered"], ledger, "tesseract 5.5.0")
+    assert dict((i.document, i.disposition) for i in again.items)["unanswered"] is (
+        Disposition.PROCESS
+    )
+
+
+def test_a_reader_upgrade_asks_the_refused_document_again() -> None:
+    """A refusal is an answer *at this reader*, not for ever.
+
+    An undeclared language is a contract fact and will refuse again; a document the reader
+    could not open might not. The ledger is keyed by `(document, reader)` for exactly this, and
+    a refusal that outlived its reader would be a permanent exclusion nobody decided.
+    """
+    ledger = record([], plan(["malformed"], [], "tesseract 5.5.0"), {}, frozenset({"malformed"}))
+
+    later = plan(["malformed"], ledger, "tesseract 5.6.0")
+
+    assert later.items[0].disposition is Disposition.REPROCESS
+
+
+def test_a_refusal_carrying_a_version_is_refused() -> None:
+    """It published nothing, so a version here points at an object that does not exist."""
+    with pytest.raises(ValueError, match=r"published nothing|does not exist"):
+        LedgerEntry(document="d", reader="r", version="v1", refused=True)
+
+
+def test_a_processed_entry_with_no_version_is_refused() -> None:
+    """An empty string standing in for a refusal is the sentinel doctrine rule 3 forbids."""
+    with pytest.raises(ValueError, match="Missing is missing"):
+        LedgerEntry(document="d", reader="r", version="")
