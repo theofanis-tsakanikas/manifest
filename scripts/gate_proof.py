@@ -208,6 +208,24 @@ def _call_a_column_the_loader_fills_unsourced(root: Path) -> bool:
     )
 
 
+def _let_a_deploy_delete_quietly(root: Path) -> bool:
+    """Count a deletion as a replacement, so the teardown guard waves it through.
+
+    One word — `==` becomes `in` — and every pure delete looks like an ordinary edit. That is the
+    exact state the guard was written to end: a deploy sent to change one line removed the search
+    collection, its policies and its VPC endpoint, and reported success, because omitting a
+    feature flag and asking for its absence are the same request.
+
+    The mutation is subtle on purpose. A gate whose only attack is deleting it proves nothing
+    about the gate; this one keeps the check running, keeps its output, and changes what it means.
+    """
+    return _replace(
+        root / "scripts/check_plan_destroys.py",
+        "        if actions == GOING:",
+        "        if DELETE in actions:",
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -1083,6 +1101,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _call_a_column_the_loader_fills_unsourced,
         "The same drift pointed the other way, and the one that actually happened. A mart "
         "reporting that nobody reviewed anything, and a contract that agrees with it.",
+    ),
+    Mutation(
+        "let a deploy delete quietly",
+        "the deploy destroys nothing unasked",
+        ["pytest", "-q", "tests/scripts/test_check_plan_destroys.py", "-x"],
+        "test_a_replacement_is_not_a_teardown",
+        _let_a_deploy_delete_quietly,
+        "Five feature flags default to off, so a dispatch that forgets one asks to tear that "
+        "feature down. This is the only thing between that and a green run.",
     ),
     Mutation(
         "read the clock inside the core",
