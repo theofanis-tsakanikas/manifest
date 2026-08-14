@@ -1046,7 +1046,7 @@ resource "aws_lambda_function" "search" {
 locals {
   # One role's worth of shared access, written once. All three read published records; two write
   # something; none of them may delete anything at all.
-  human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities"]) : toset([])
+  human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities", "harvest"]) : toset([])
 }
 
 resource "aws_cloudwatch_log_group" "human_loop" {
@@ -1093,6 +1093,33 @@ data "aws_iam_policy_document" "human_loop" {
       effect    = "Allow"
       actions   = ["s3:PutObject"]
       resources = ["arn:aws:s3:::${var.records_bucket}/records/*"]
+    }
+  }
+
+  # `harvest` turns recorded decisions into labelled observations — claim 1's loop. It writes
+  # only under `feedback/`, and it derives nothing: a threshold derived inside the runtime would
+  # be decision 20 undone, so the movement is computed by the ceremony in
+  # `scripts/feedback_movement.py` against the committed recording, where a reader can see it.
+  dynamic "statement" {
+    for_each = each.key == "harvest" ? [1] : []
+    content {
+      sid       = "WritesTheHarvestedEvidence"
+      effect    = "Allow"
+      actions   = ["s3:PutObject"]
+      resources = ["arn:aws:s3:::${var.records_bucket}/feedback/*"]
+    }
+  }
+
+  # **A read and only a read.** Nothing that harvests may write a decision: a decision written by
+  # a pipeline is doctrine rule 5 with a service principal holding the pen, and it would be
+  # evidence this system generated about itself.
+  dynamic "statement" {
+    for_each = each.key == "harvest" ? [1] : []
+    content {
+      sid       = "ReadsTheDecisions"
+      effect    = "Allow"
+      actions   = ["dynamodb:Scan"]
+      resources = [aws_dynamodb_table.decisions.arn]
     }
   }
 
@@ -1175,6 +1202,7 @@ resource "aws_lambda_function" "human_loop" {
   description = lookup({
     decide    = "Records a reviewer's decision. core.review.publishable decides."
     reconcile = "Compares what several documents say about one shipment."
+    harvest   = "Turns recorded decisions into observations. Derives no threshold."
     entities  = "Resolves party names, and un-merges with lineage intact."
   }, each.key, each.key)
   role             = aws_iam_role.human_loop[each.key].arn

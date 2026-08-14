@@ -142,7 +142,19 @@ def handler(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
     # **Written before the outcome is acted on, and written whatever it is.** The decision is
     # evidence about a person; whether it published anything is a consequence. Recording only
     # the ones that published would make claim 5's agreement rate a statement about approvals.
-    _write_decision(made, version=version, published=allowed, reason=why)
+    _write_decision(
+        made,
+        version=version,
+        published=allowed,
+        reason=why,
+        # **The confidence the model had when this item was queued**, recorded here rather than
+        # looked up later. `core.feedback.harvest` needs it as the x-axis of the calibration: an
+        # observation without it is a label with nothing to calibrate against, and reconstructing
+        # it afterwards from the record would mean trusting that nothing re-read the page in
+        # between. The record at this version is the page the reviewer saw; the number travels
+        # with the decision.
+        confidence=item.confidence,
+    )
 
     if not allowed:
         return {
@@ -232,7 +244,9 @@ def _publish_with(record: dict[str, Any], entry: dict[str, Any], made: Record) -
     }
 
 
-def _write_decision(made: Record, *, version: str, published: bool, reason: str) -> None:
+def _write_decision(
+    made: Record, *, version: str, published: bool, reason: str, confidence: float
+) -> None:
     """One row per decision, in the table that has never held one.
 
     **Keyed by `(document_version, field)`, which is the table's own schema and is the better
@@ -254,6 +268,8 @@ def _write_decision(made: Record, *, version: str, published: bool, reason: str)
             "decision": {"S": str(made.decision)},
             "value": ({"S": made.value} if made.value is not None else {"NULL": True}),
             "seconds_on_task": {"N": str(made.seconds_on_task)},
+            # The x-axis of claim 1's loop. See the call site.
+            "confidence": {"N": str(confidence)},
             "agreed_with_model": {"BOOL": made.agreed_with_model},
             "published": {"BOOL": published},
             "reason": {"S": reason[:900]},
