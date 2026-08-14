@@ -543,8 +543,27 @@ jobs:
             | docker login --username AWS --password-stdin "$registry"
           # Tagged by commit, never `latest`. The repository is IMMUTABLE, so a tag cannot be
           # moved onto a different build after the fact.
-          docker build -t "$repository:${{ github.sha }}" .
-          docker push "$repository:${{ github.sha }}"
+          #
+          # **And a second deploy of the same commit must not fail on that.** It did: the tag is
+          # the git SHA, the repository refuses to overwrite one, and re-running a deploy on an
+          # unchanged tree — to pick up data the estate produced since, which is exactly what a
+          # warehouse load does — died at the push with `tag invalid`. Immutability is right and
+          # the workflow was wrong to treat it as an error.
+          #
+          # So the tag is asked for first. If it is there, the image for this commit already
+          # exists and its digest is what the estate is pinned to; building again would at best
+          # produce the same bytes and at worst produce different ones for the same source, and
+          # the recorded digest is the one that matters either way.
+          existing=$(aws ecr describe-images \
+            --repository-name "${{ env.PROJECT }}-reader" \
+            --image-ids imageTag=${{ github.sha }} \
+            --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "None" ]; then
+            echo "the image for ${{ github.sha }} is already in the registry at $existing; not rebuilding"
+          else
+            docker build -t "$repository:${{ github.sha }}" .
+            docker push "$repository:${{ github.sha }}"
+          fi
           digest=$(aws ecr describe-images \
             --repository-name "${{ env.PROJECT }}-reader" \
             --image-ids imageTag=${{ github.sha }} \
