@@ -1,91 +1,114 @@
-# What is left, as of 2026-08-14, with the estate standing
+# What is left, written 2026-08-14, with the estate torn down
 
-Not a backlog. A list of what this repository has **shown on a running estate**, and what it has
-not — kept because the second half is the part that goes missing when somebody is pleased with
-the first.
+Not a backlog. What this repository **showed on a running estate**, and what it did not — the
+second half being the part that goes missing when somebody is pleased with the first.
 
-The estate is up: five layers, all optional features on. Everything below is either verified
-against it and says so, or is named as unverified and says why.
+Every item here says what is true, not what is planned. Where a thing is unfinished it says
+which fact makes it unfinished, so tomorrow starts by reading rather than by remembering.
 
 ---
 
 ## Shown on the estate, so none of it is a guess
 
-- **32/32 end to end**, including the five checks that had no estate path at all until today:
-  six document types through the pipeline, a two-page document read on both pages, a
-  check-digit refusal, cross-document reconciliation, entity resolution with an un-merge, and a
-  recorded human decision publishing a superseding version.
-- **Claim 4, both halves.** `SHP00001` reconciles with **zero** disagreements; `SHP00002`
-  produces **exactly** the one the generator planted, found by rules that never read the
-  planting.
-- **Claim 5 is a loop, not a photograph.** 33 abstentions decided by a reviewer, each one
-  publishing a new version that supersedes rather than edits — and `gold.review_item` now holds
-  70 rows with 11 carrying a recorded decision, so `review_queue_economics` has a numerator.
-- **Claim 6 reversed.** Two spellings of one party merged; the merge undone with every
-  reference re-pointed and the removed entity kept as lineage.
+- **32/32 end to end**, four times over, on a corpus of six document types in three languages.
+- **Claim 4, both halves.** `SHP00001` reconciles with zero disagreements; `SHP00002` produces
+  exactly the one the generator planted, found by rules that never read the planting.
+- **Claim 5 as a loop.** 35 abstentions decided; each approval publishes a superseding version
+  that lands in the lake; `manifest-harvest` turned those decisions into **34 observations over
+  14 fields**; `scripts/feedback_movement.py` printed every field's N before and after with the
+  error budget unchanged beside it, and wrote nothing.
+- **Claim 6 reversed.** Two spellings of one party merged, the merge undone, every reference
+  re-pointed.
 - **Claim 7 idempotent, in three runs.** `process 23` → `20 published, 3 refused` →
-  `skip 20, process 3` → `0 published, 3 refused` → `skip 23, nothing to do`. A reader upgrade
-  plans all 23 again, which is the property a refusal must not outlive.
-- **All four cascade tiers**, with tier 3 called on a genuine Greek page for 7 fields, and
-  nothing published on a tier that reports no confidence.
-- **The warehouse loads and three marts return rows.** `gold.published_field` 89,
-  `gold.page_read` 14, `gold.review_item` 70. `gold.declaration_line` is 0 **deliberately**, and
-  the loader prints why.
+  `skip 20, process 3` → `skip 23, nothing to do`. A reader upgrade plans all 23 again.
+- **The drift watch found real drift.** `abstention_rate 0.638` against a declared band of
+  `[0.002, 0.20]`, delivered to the alerts topic. It is right, and it is the same fact claim 1
+  reports from the other side: 30 of 40 fields are quality-limited and 5 publish.
+- **The warehouse holds rows.** `gold.published_field` 196, `gold.page_read` 29,
+  `gold.review_item` 125 with 12 carrying a recorded decision.
 
 ---
 
-## 1. `gold.declaration_line` has no source, and that is a scope decision nobody has made
+## 1. `gold.declaration_line` is empty, and the reason is now one field
 
-`duty_exposure_by_chapter` reads a table the loader leaves empty: a declaration line needs an HS
-code with a **declared value**, and this system produces classification *proposals* that no human
-has decided. Loading a proposal as a declaration would put a number nobody approved into a duty
-figure.
+This was *"the classifier produces proposals nobody decided"* and it no longer is: `hs_code` is
+decided, published and in the lake. The line is refused because a declaration line needs five
+fields on one version and **`declaration_date` abstained and nobody decided it**.
 
-The document review loop now records decisions; the *classification* one does not.
-`handlers/classify.py` writes every proposal to the evidence bucket and nothing reads them.
+That is the loader working — a declaration without its date is not a declaration line, and
+defaulting a date is doctrine rule 3 — and it is a gap in the *harness*, which approves the
+fields the reconciliation rules compare, the party names and the classification, and not the
+ones a duty line needs.
 
-**The decision to make** is scope: either a classification decision path is built — the same
-shape as `handlers/decide.py`, against a proposal rather than a field — or the mart is declared
-as answering a question this system lacks the inputs for. `contracts/analytics/acceptance.yaml`
-is where it gets written down either way.
+**To close it:** add the declaration line's fields to what `_approve_what_the_shipment_checks_need`
+decides, exactly as `_classification_fields()` was added today. One deploy to verify, one to load.
 
-## 2. The reviewer's identity is in an analytics table and the retention question is unanswered
+## 2. Only 5 of 40 fields publish, and that is the ceiling on everything else
 
-`review_queue_economics` groups by `reviewer`, and it must: doctrine rule 2 is about *a*
-reviewer whose agreement rate is 100%, and an aggregate over everybody cannot see one. So the
-column is loaded.
+`make claims` says it plainly: 5 thresholds derived, 1 always-review by contract, 4
+evidence-limited, **30 quality-limited**. The drift watch reports the same thing as a 63.8%
+abstention rate against a 20% band.
 
-What is owed is a retention class for an operator identity in `docs/REGULATORY.md`. The
-acceptance names the question rather than answering it, which is honest and is not finished.
+Quality-limited means real errors survive at high confidence — over-confidence rather than thin
+evidence — and the answer is a better reader on those pages, which is what the cascade is for.
+Tier 1 cannot help yet because **no threshold is derived from Textract's confidences**.
 
-## 3. Tier 2 reports a confidence and no threshold is derived from it
+**To close it:** a recording of Textract over the same labelled set, in `recordings/textract/`,
+and thresholds derived from it by the apparatus that already exists for tier 0. Cost it first —
+it is a few thousand billed pages — and it is the first place this repository could honestly
+write *measured* about a billed engine, with an N and a date.
 
-`contracts/cascade/routing.yaml` is corrected — document automation returns a confidence on
-every word, 0.729 to 1.0 — and tier 2 still may not publish, *not because there is no number but
-because no threshold here is derived from that number*.
+## 3. The reviewer's identity is in an analytics table and the retention question is open
 
-Deriving one needs a recording of tier 2 over the labelled set, the way `recordings/ocr/` holds
-tier 0's. That is claim 1's whole apparatus pointed at a billed engine: worth doing, worth
-costing first. Note its **line**-level confidence is ~0.01 on lines whose words score above
-0.99, so whatever that field measures, it is not the probability that the line is right.
+`review_queue_economics` groups by `reviewer` and must: doctrine rule 2 is about *a* reviewer at
+100%, which an aggregate cannot see. What is owed is a retention class for an operator identity
+in `docs/REGULATORY.md`. `contracts/analytics/acceptance.yaml` names the question and does not
+answer it.
 
-## 4. Lake rows that predate the schema are excluded from every load
+## 4. Tier 2 reports a confidence and nothing is derived from it
 
-They were written before `document_type`, `language`, `reader_tier` and `published` were
-columns. The loader excludes them and says how many. Still in the lake, which is the record. A
-backfill, or a deliberate decision to leave them, is small work that should not be silent.
+Document automation returns a confidence on every word, 0.729 to 1.0, and may not publish — not
+because there is no number but because no threshold here comes from that number. Same shape as
+item 2, and the same apparatus would close it. Note its **line**-level confidence is ~0.01 on
+lines whose words score above 0.99, so whatever that field measures, it is not the probability
+that the line is right.
 
-## 5. The corpus-skip acceptance is still in force, by its own terms
+## 5. Lake rows that predate the schema are excluded from every load
 
-`contracts/ci/acceptance.yaml` lets the deploy gate skip the corpus job. Its `ends_when` is *the
-estate has been brought up, verified end to end and torn down without a defect being found in
-the process* — and defects were found in this one, so it still holds honestly. **The next clean
-cycle is when it goes**: delete the `with: run_corpus` block from `deploy.yml` and delete the
-file. It is the one temporary thing in the repository.
+Written before `document_type`, `language`, `reader_tier` and `published` were columns. The
+loader excludes them and says how many. Still in the lake, which is the record. A backfill, or a
+deliberate decision to leave them, is small work that should not be silent.
 
-## 6. What the deploy still cannot tell you
+## 6. The corpus-skip acceptance is still in force, by its own terms
 
-The `accept_destroys` guard refuses a plan that **deletes**. It does not refuse a plan that
-**replaces** a data-bearing resource, and a replaced collection loses its contents. The scope is
-stated in `scripts/check_plan_destroys.py`; the control for the rest is `prevent_destroy` on the
-resources that hold data, and nothing has it yet.
+`contracts/ci/acceptance.yaml` lets the deploy gate skip the corpus job. Its `ends_when` is *a
+cycle brought up, verified and torn down without a defect being found* — and today found eleven,
+so it still holds honestly. **The next clean cycle is when it goes.**
+
+## 7. What the deploy still cannot tell you
+
+`check_plan_destroys.py` refuses a plan that **deletes**; it does not refuse one that **replaces**
+a data-bearing resource, and a replaced collection loses its contents. The control for that is
+`prevent_destroy` on the resources that hold data, and nothing has it.
+
+---
+
+## What today changed, and what it cost
+
+Three promises the repository made and did not keep are now kept: `core/feedback.py`,
+`core/drift.py` and `core/lineitems.py` had no caller in the running system — proved offline,
+never asked — and `scripts/check_the_map_matches_the_ground.py` now fails CI when a fourth
+appears. `CLAUDE.md`'s own tree named four packages that do not exist.
+
+**Eleven defects were found and fixed**, and the ratio is worth keeping: five were caught by this
+repository's own offline checks before anything was deployed — a function calling SNS with no VPC
+endpoint, a layer that stopped being self-contained, a variable passed invisibly, a shell
+variable nobody assigned, a warehouse table the column check could not read — and six needed the
+estate to say no: an enum member written from memory, a property passed to `replace`, an
+immutable image tag on a re-deploy of the same commit, the same tag rule in a second image the
+first fix did not touch, a review marker accumulating in the identity thresholds are keyed by,
+and a join on a version that can never carry the decision.
+
+Two of those are the same mistake made twice — **a name written from memory instead of read** —
+and one is `docs/DECISIONS.md` 24 in its purest form: a fix applied where the symptom appeared
+rather than to every place with that shape, when there were exactly two.
