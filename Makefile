@@ -101,7 +101,7 @@ optional-layers: ## Every optional feature plans with its flag on and off (needs
 	$(PY) scripts/check_optional_layers_plan.py
 
 .PHONY: claims
-claims: core-pure planting-blind contracts-validate corpus-check envelope reader-version \
+claims: core-pure map-matches planting-blind contracts-validate corpus-check envelope reader-version \
 	pipeline-routing \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
 	injection line-items classification marts warehouse-fed ## Every claim gate that exists today
@@ -109,6 +109,10 @@ claims: core-pure planting-blind contracts-validate corpus-check envelope reader
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
 	$(PY) scripts/check_core_is_pure.py
+
+.PHONY: map-matches
+map-matches: ## The documented tree exists, and every core module has a caller that runs
+	$(PY) scripts/check_the_map_matches_the_ground.py
 
 .PHONY: planting-blind
 planting-blind: ## The corpus plants mismatches blind to the rules that will find them

@@ -64,6 +64,15 @@ class Reason(StrEnum):
     NO_PROVENANCE = "no_provenance"
     PROVENANCE_REFUSED = "provenance_refused"
     DISAGREEMENT = "disagreement"
+    #: The printed total does not equal the sum of the rows *on this document*.
+    #:
+    #: Separate from `DISAGREEMENT` for the reason this enum exists at all: the fixes differ.
+    #: A cross-document disagreement is a question about which document is right, and it goes to
+    #: an operator with two sources. This one is almost always a row that was not read — the
+    #: table continued past a page break with no repeated header — and the fix is the extractor
+    #: rather than the paperwork. Merging them would bury `docs/SCENARIO.md`'s third pathology
+    #: inside a bucket about counterparties.
+    LINE_TOTAL_DISAGREES = "line_total_disagrees"
 
 
 @dataclass(frozen=True, slots=True)

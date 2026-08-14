@@ -220,6 +220,11 @@ locals {
     # The search surface answers on its own interface endpoint. Absent, the indexer does not
     # fail — it hangs, which is the failure the landing function already paid for once.
     "aoss",
+    # The drift watch reports its finding to a person, and a report that hangs is a control that
+    # is not there. Added because `scripts/check_deploy_path.py` refused the function before it
+    # was ever deployed — which is the third time that check has caught this exact shape, and the
+    # first time it caught it before an invocation had been billed for the silence.
+    "sns",
   ]
 
   # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road

@@ -226,6 +226,22 @@ def _let_a_deploy_delete_quietly(root: Path) -> bool:
     )
 
 
+def _orphan_a_decision_the_estate_makes(root: Path) -> bool:
+    """Cut the one import that puts a core decision on the running path.
+
+    `handlers/reconcile.py` is what makes `core/reconciliation.py` reachable. Remove the import
+    and the module is still tested, still gate-proofed, still described in every document — and
+    nothing in the estate can reach it. That is precisely the state claims 4, 5 and 6 were in on
+    the morning of 2026-08-14, and the state `feedback`, `drift` and `lineitems` were in that
+    afternoon, and in all six cases every check in this repository was green.
+    """
+    return _replace(
+        root / "src/manifest/handlers/reconcile.py",
+        "from manifest.core.reconciliation import",
+        "from manifest.core.review import Reason  # noqa: F401  # was:",
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -1110,6 +1126,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_a_deploy_delete_quietly,
         "Five feature flags default to off, so a dispatch that forgets one asks to tear that "
         "feature down. This is the only thing between that and a green run.",
+    ),
+    Mutation(
+        "orphan a decision the estate makes",
+        "the map matches the ground",
+        [sys.executable, "scripts/check_the_map_matches_the_ground.py"],
+        "nothing in handlers/, gates/ or pipelines/ can reach",
+        _orphan_a_decision_the_estate_makes,
+        "Six modules have been in exactly this state, and every check in this repository was "
+        "green for all six. Proved offline, and never asked.",
     ),
     Mutation(
         "read the clock inside the core",

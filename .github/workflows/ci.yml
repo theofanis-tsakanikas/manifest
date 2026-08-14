@@ -123,6 +123,14 @@ jobs:
         # stops being runnable by a stranger, and that was the whole of the evidence.
         run: python scripts/check_core_is_pure.py
 
+      - name: the documented tree exists, and every core module has a caller that runs
+        # `check_core_is_pure.py` says nothing cloud gets *into* the core. This says nothing pure
+        # is left *orphaned* in it — a decision this repository proved and does not make, which
+        # is what `feedback`, `drift` and `lineitems` were until they were given callers, and
+        # what `reconciliation`, `review` and `entities` were while claims 4, 5 and 6 were scored
+        # against a system that had no path to any of them.
+        run: python scripts/check_the_map_matches_the_ground.py
+
       - name: the contract set loads and cross-checks
         run: python scripts/check_contracts.py
 

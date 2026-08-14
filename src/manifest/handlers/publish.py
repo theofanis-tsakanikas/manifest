@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -129,6 +129,23 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
             _outcome(field.name, extract_from_pages(reading.pages, field.name, anchor), thresholds)
         )
 
+    # **The one check that can see a row that is not there**, and until now it ran only offline.
+    #
+    # `docs/SCENARIO.md`'s third pathology: a line-item table continues on the next page with no
+    # repeated header, the extractor stops at the break, and *nothing about the record looks
+    # wrong* — the invoice has a seller, a buyer, a currency and a total, and it is short by
+    # whatever the missing rows were worth. The total was printed, not summed, so it agrees with
+    # itself.
+    #
+    # Arithmetic over the rows against the printed total is the only thing that sees it, and
+    # `core/lineitems.py` has done it in `evals/lineitems/` since it was written while nothing in
+    # the running system ever called it. Now the document that declares a table gets checked.
+    #
+    # **It refuses; it does not repair.** A total that disagrees with its rows goes to a human
+    # with both numbers, because replacing either with the other is smoothing a disagreement —
+    # on one document instead of two, which is the same move claim 4 forbids across documents.
+    outcomes, line_total = _check_the_line_total(contract, reading, language, outcomes)
+
     published = sum(1 for outcome in outcomes if outcome.publishable)
     queued = sum(1 for outcome in outcomes if outcome.queued_because is not None)
 
@@ -188,7 +205,70 @@ def handler(event: dict[str, Any], context: object = None) -> dict[str, Any]:
         # pipeline quietly queueing 100% is the shape claim 5 exists to detect.
         "publishable_count": published,
         "queued_count": queued,
+        # `None` on every document whose contract declares no table, which is most of them —
+        # and a different fact from a table that was checked and agreed.
+        "line_total": line_total,
     }
+
+
+def _check_the_line_total(
+    contract: Any, reading: Any, language: str, outcomes: list[Outcome]
+) -> tuple[list[Outcome], dict[str, Any] | None]:
+    """Sum the rows, compare against the printed total, and refuse the total if they disagree.
+
+    Returns the outcomes unchanged for any document whose contract declares no table — most of
+    them. A table is declared on the document types that carry one, and inventing a check for the
+    others would be reading columns off a bill of lading.
+    """
+    from manifest.core.lineitems import TotalOutcome, check_total, read_table  # noqa: PLC0415
+    from manifest.core.review import Reason  # noqa: PLC0415
+
+    table_contract = getattr(contract, "table", None)
+    if table_contract is None:
+        return outcomes, None
+
+    value_column = next(column.name for column in table_contract.columns if column.is_line_value)
+    anchors = {column.name: column.anchors[language] for column in table_contract.columns}
+    table = read_table(tuple(reading.pages), anchors, value_column)
+
+    printed = next(
+        (o.value for o in outcomes if o.field == table_contract.total_field and o.value), None
+    )
+    check = check_total(table, printed, table_contract.tolerance)
+
+    reported = {
+        "outcome": str(check.outcome),
+        "printed_total": check.printed_total and str(check.printed_total),
+        "summed_rows": check.summed_rows and str(check.summed_rows),
+        "difference": check.difference and str(check.difference),
+        "rows": check.rows,
+        "unreadable_rows": check.unreadable_rows,
+        "pages_read": list(table.pages_read),
+    }
+    if check.outcome is not TotalOutcome.DISAGREES:
+        return outcomes, reported
+
+    # The total is refused whatever its confidence. A high-confidence reading of a number that
+    # does not equal its own rows is exactly the confident misread this system is built to catch:
+    # the reader read the printed total correctly, and the printed total is not the sum.
+    refused = [
+        (
+            o
+            if o.field != table_contract.total_field
+            else replace(
+                o,
+                publishable=False,
+                queued_because=Reason.LINE_TOTAL_DISAGREES,
+                reason=(
+                    f"{check.rows} row(s) across pages {list(table.pages_read)} sum to "
+                    f"{check.summed_rows}; the page prints {check.printed_total}. A human sees "
+                    f"both numbers — replacing either with the other would smooth a disagreement"
+                ),
+            )
+        )
+        for o in outcomes
+    ]
+    return refused, reported
 
 
 def _outcome(field: str, found: Extracted, thresholds: dict[str, float | None]) -> Outcome:

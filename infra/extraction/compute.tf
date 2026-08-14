@@ -1046,7 +1046,11 @@ resource "aws_lambda_function" "search" {
 locals {
   # One role's worth of shared access, written once. All three read published records; two write
   # something; none of them may delete anything at all.
-  human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities", "harvest"]) : toset([])
+  # Read rather than restated. A copy of these numbers in HCL would be a second declaration of
+  # the operating envelope, and the two would disagree the first time one of them was edited.
+  envelope = yamldecode(file("${path.module}/../../corpus/envelope.yaml"))
+
+  human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities", "harvest", "watch"]) : toset([])
 }
 
 resource "aws_cloudwatch_log_group" "human_loop" {
@@ -1100,6 +1104,19 @@ data "aws_iam_policy_document" "human_loop" {
   # only under `feedback/`, and it derives nothing: a threshold derived inside the runtime would
   # be decision 20 undone, so the movement is computed by the ceremony in
   # `scripts/feedback_movement.py` against the committed recording, where a reader can see it.
+  # `watch` reports a finding to a person and does nothing else. **No write anywhere**: an
+  # envelope that could widen to accommodate the traffic would be a control agreeing with
+  # whatever happened, and the only way to change a band is to edit the declaration and say why.
+  dynamic "statement" {
+    for_each = each.key == "watch" ? [1] : []
+    content {
+      sid       = "ReportsDriftToAPerson"
+      effect    = "Allow"
+      actions   = ["sns:Publish"]
+      resources = [var.alerts_topic_arn]
+    }
+  }
+
   dynamic "statement" {
     for_each = each.key == "harvest" ? [1] : []
     content {
@@ -1203,6 +1220,7 @@ resource "aws_lambda_function" "human_loop" {
     decide    = "Records a reviewer's decision. core.review.publishable decides."
     reconcile = "Compares what several documents say about one shipment."
     harvest   = "Turns recorded decisions into observations. Derives no threshold."
+    watch     = "Applies the declared envelope to arriving traffic. Reports, never adjusts."
     entities  = "Resolves party names, and un-merges with lineage intact."
   }, each.key, each.key)
   role             = aws_iam_role.human_loop[each.key].arn
@@ -1227,6 +1245,17 @@ resource "aws_lambda_function" "human_loop" {
       DECISIONS_TABLE  = aws_dynamodb_table.decisions.name
       REVIEW_QUEUE_URL = aws_sqs_queue.review.url
       CONTRACTS_DIR    = "/var/task/contracts"
+
+      # **The bands travel as declared data, from the declaration.** `handlers/watch.py` refuses
+      # to run without them rather than defaulting: a band chosen by whoever wrote the handler,
+      # in a place nobody reviews, is the move `corpus/envelope.yaml` exists to prevent.
+      ALERTS_TOPIC_ARN      = var.alerts_topic_arn
+      WINDOW_HOURS          = tostring(var.drift_window_hours)
+      MINIMUM_DOCUMENTS     = tostring(var.drift_minimum_documents)
+      MEDIAN_CONFIDENCE_MIN = tostring(local.envelope.overall.median_confidence.min)
+      MEDIAN_CONFIDENCE_MAX = tostring(local.envelope.overall.median_confidence.max)
+      ABSTENTION_RATE_MIN   = tostring(local.envelope.overall.abstention_rate.min)
+      ABSTENTION_RATE_MAX   = tostring(local.envelope.overall.abstention_rate.max)
     }
   }
 
@@ -1239,4 +1268,45 @@ resource "aws_lambda_function" "human_loop" {
 
   depends_on = [aws_cloudwatch_log_group.human_loop]
   tags       = { "${var.project}:expires-at" = var.expires_at }
+}
+
+# ── The drift watch runs on a schedule, because nobody remembers to ask ──────
+#
+# **A control that has to be invoked is a control that stops being invoked.** The failure
+# `handlers/watch.py` exists for is silent by construction — confidences drift down, abstention
+# doubles, every gate still passes — so a human who has to remember to run it is a human who will
+# find out about the drift from the review queue instead.
+#
+# Daily, and the interval is the one operational number here. A window shorter than a day on this
+# traffic is mostly UNDECIDED; longer, and a supplier change is a week old before it is reported.
+resource "aws_cloudwatch_event_rule" "drift_watch" {
+  count = var.enable_escalation_tiers ? 1 : 0
+
+  name                = "${var.project}-drift-watch"
+  description         = "Assess the arriving window against corpus/envelope.yaml. Reports, never adjusts."
+  schedule_expression = "rate(1 day)"
+  tags                = { "${var.project}:expires-at" = var.expires_at }
+}
+
+resource "aws_cloudwatch_event_target" "drift_watch" {
+  count = var.enable_escalation_tiers ? 1 : 0
+
+  rule      = aws_cloudwatch_event_rule.drift_watch[0].name
+  target_id = "watch"
+  arn       = aws_lambda_function.human_loop["watch"].arn
+
+  # The window comes from the environment, so the event carries nothing. An event that named the
+  # hours would let whoever creates a rule choose the operating envelope's window, which is the
+  # same defect as a default in the handler wearing a different hat.
+  input = jsonencode({})
+}
+
+resource "aws_lambda_permission" "drift_watch" {
+  count = var.enable_escalation_tiers ? 1 : 0
+
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.human_loop["watch"].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.drift_watch[0].arn
 }

@@ -315,3 +315,32 @@ variable "search_endpoint" {
   type        = string
   default     = ""
 }
+
+# **The envelope's other half.** `corpus/envelope.yaml` binds the generator and a test turns the
+# build red when it drifts. `handlers/watch.py` applies the same declared bands to the documents
+# that *arrive*, which is where a threshold quietly stops being supported — see decision 20.
+#
+# Published by the foundation layer and resolved from SSM like every other cross-layer reference.
+variable "alerts_topic_arn" {
+  description = "Where a drift finding is addressed to a person."
+  type        = string
+}
+
+variable "drift_window_hours" {
+  description = <<-EOT
+    How far back one drift assessment looks. No default in the handler and none that is silent
+    here: how many documents make a window is a property of the traffic, and a broker handling
+    four hundred a day and one handling four need different answers.
+  EOT
+  type        = number
+  default     = 24
+}
+
+variable "drift_minimum_documents" {
+  description = <<-EOT
+    Below this a window has no opinion and the verdict is UNDECIDED rather than "inside". A quiet
+    day reading as evidence that nothing changed is the failure this number exists to prevent.
+  EOT
+  type        = number
+  default     = 5
+}
