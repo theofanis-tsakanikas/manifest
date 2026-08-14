@@ -1,0 +1,30 @@
+# Core modules that reach the running estate by a route no import graph can see.
+#
+# `scripts/check_the_map_matches_the_ground.py` walks imports from `handlers/`, `gates/` and
+# `pipelines/` and reports any module in `core/` it cannot get to. That catches the real defect —
+# a decision this repository proved and never asked — and it has one blind spot: a module whose
+# output travels to the estate as *data* rather than as a call.
+#
+# So the route is declared, and the rule for an entry here is that somebody can **go and check
+# it**. "It is used" is not a route. A named producer, a named artefact and a named consumer is.
+#
+# Doctrine rule 6: exceptions expire. An entry that stops being true goes red on its date rather
+# than living for ever because nobody re-read it.
+version: 1
+
+reaches_the_estate:
+  calibration: >-
+    `scripts/thresholds_artefact.py` runs it over `recordings/ocr/` during the deploy and writes
+    `thresholds/<reader>.json` to the records bucket; `handlers/publish.py` reads that artefact
+    and looks each field's threshold up by the reader's exact identity. The estate never derives
+    a threshold at request time — that is the whole of decision 20 — so an import from a handler
+    would be the defect rather than the fix.
+
+accepted_by: "Theofanis Tsakanikas"
+accepted_on: "2026-08-14"
+expires_on: "2027-02-14"
+
+ends_when: >-
+  The artefact route is checked by something narrower than this file — a test that renders the
+  artefact and asserts the handler resolves a threshold from it, which is a stronger statement
+  than "there is a route" and would make this entry unnecessary.

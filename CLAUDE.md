@@ -249,20 +249,24 @@ manifest/
 ├── corpus/                     # the generator + labelled ground truth + committed fixtures
 │   └── envelope.yaml           #   the declared operating range; a generator that drifts out fails CI
 ├── src/manifest/
-│   ├── core/                   # PURE: normalisation, confidence, thresholds, reconciliation, ER, gates
+│   ├── core/                   # PURE. Every decision this system makes lives here, as functions
+│   │                           #   over plain data. cascade · reconciliation · entities · review ·
+│   │                           #   versioning · calibration · drift · feedback · scale · lake ·
+│   │                           #   checkdigit · lineitems · quantity · geometry · search · text ·
+│   │                           #   document · fields
+│   ├── contracts/              # the loader that turns contracts/*.yaml into those functions' arguments
 │   ├── extraction/             # engine adapters → the normalised representation
 │   │                           #   local/  the open-source OCR engine — the one that actually runs
 │   │                           #   aws/    Textract · BDA · Bedrock — schema-tested; called once deployed
-│   ├── cascade/                # engine routing: cheap first, escalate on low confidence
-│   ├── classification/         # HS code proposal + the human decision path
-│   ├── entities/               # entity resolution, merge/unmerge, lineage
-│   ├── review/                 # the queue, capacity model, reviewer-integrity metrics
-│   ├── versioning/             # document versions, re-extraction diffs, supersession
-│   ├── handlers/               # the three functions that run in the estate — read_tier0,
-│   │                           #   publish, provenance_gate. Adapters: they may import boto3,
-│   │                           #   they call core, and they decide nothing themselves
+│   ├── classification/         # HS code proposal: the artefact, the serving interpreter, grounding
+│   ├── security/               # untrusted document text, fenced structurally before any prompt
+│   ├── handlers/               # the functions that run in the estate. Adapters: they may import
+│   │                           #   boto3, they call core, and they decide nothing themselves —
+│   │                           #   read_tier0 · escalate · publish · provenance_gate · land ·
+│   │                           #   index_record · search_records · classify · decide · reconcile ·
+│   │                           #   entities · emit
 │   ├── gates/                  # one module per claim
-│   └── observability/          # OTEL spans, cost per document and per 1,000 pages
+│   └── observability/          # OTEL spans, modelled cost per document, per tier and per 1,000 pages
 ├── evals/                      # the seven claim harnesses — labelled, credential-free
 ├── recordings/                 # golden outputs; every published record reproduces exactly
 │   └── ocr/                    #   the tier-0 engine's normalised output over the corpus, with its
