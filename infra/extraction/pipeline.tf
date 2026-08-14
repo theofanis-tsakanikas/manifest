@@ -445,7 +445,39 @@ resource "aws_sfn_state_machine" "extraction" {
             NumericGreaterThan = 0
             Next               = "VerifyProvenance"
           }]
-          Default = "QueueForReview"
+          Default = "PublishTheAbstentions"
+        }
+
+        # **A document where everything abstained still gets a record, and until today it did
+        # not.**
+        #
+        # The default used to go straight to the queue. That is the right destination and it was
+        # missing a step: nothing was written, so a Greek or Dutch document — whose only
+        # escalation is a tier that reports no confidence, and which therefore abstains in full by
+        # design — produced *no object at all*. The queue held its fields and there was nothing
+        # for a reviewer's decision to be about, because `handlers/decide.py` supersedes a
+        # published version and there was none. Claim 5 was unreachable for exactly the documents
+        # that need it most.
+        #
+        # A record whose every field abstained is a true statement about the document — doctrine
+        # rule 3's "missing is missing, and it is stated", written down rather than implied by an
+        # absence. It goes through no gate, because the gate has nothing to check: a gate invoked
+        # on an empty set returns `verified: true`, and a run that verified nothing must not be
+        # recorded as a run that verified everything.
+        PublishTheAbstentions = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::aws-sdk:s3:putObject"
+          Parameters = {
+            "Bucket" : var.records_bucket,
+            "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
+            # The outcome itself, not `$.provenance.checked`: the gate did not run, and writing
+            # the key it would have produced would claim a verification that never happened.
+            "Body.$" : "$.extraction.outcome",
+            "ServerSideEncryption" : "aws:kms",
+            "SsekmsKeyId" : var.data_key_arn
+          }
+          ResultPath = "$.published"
+          Next       = "QueueForReview"
         }
 
         # Claim 2's gate, in the path rather than beside it. A field whose box does not verify
@@ -505,7 +537,39 @@ resource "aws_sfn_state_machine" "extraction" {
             BooleanEquals = true
             Next          = "AnythingAbstained"
           }]
-          Default = "QueueForReview"
+          Default = "PublishTheAbstentions"
+        }
+
+        # **A document where everything abstained still gets a record, and until today it did
+        # not.**
+        #
+        # The default used to go straight to the queue. That is the right destination and it was
+        # missing a step: nothing was written, so a Greek or Dutch document — whose only
+        # escalation is a tier that reports no confidence, and which therefore abstains in full by
+        # design — produced *no object at all*. The queue held its fields and there was nothing
+        # for a reviewer's decision to be about, because `handlers/decide.py` supersedes a
+        # published version and there was none. Claim 5 was unreachable for exactly the documents
+        # that need it most.
+        #
+        # A record whose every field abstained is a true statement about the document — doctrine
+        # rule 3's "missing is missing, and it is stated", written down rather than implied by an
+        # absence. It goes through no gate, because the gate has nothing to check: a gate invoked
+        # on an empty set returns `verified: true`, and a run that verified nothing must not be
+        # recorded as a run that verified everything.
+        PublishTheAbstentions = {
+          Type     = "Task"
+          Resource = "arn:aws:states:::aws-sdk:s3:putObject"
+          Parameters = {
+            "Bucket" : var.records_bucket,
+            "Key.$" : "States.Format('records/{}/{}.json', $.extraction.outcome.document_id, $.extraction.outcome.fingerprint)",
+            # The outcome itself, not `$.provenance.checked`: the gate did not run, and writing
+            # the key it would have produced would claim a verification that never happened.
+            "Body.$" : "$.extraction.outcome",
+            "ServerSideEncryption" : "aws:kms",
+            "SsekmsKeyId" : var.data_key_arn
+          }
+          ResultPath = "$.published"
+          Next       = "QueueForReview"
         }
 
         # **The state that was missing, and the reason it matters more than anything else here.**

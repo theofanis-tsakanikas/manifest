@@ -1028,7 +1028,7 @@ def _a_whole_shipment(estate: Estate, project: str) -> None:
         f"type that fails is a contract nobody has tested against a page",
     )
 
-    _approve_what_reconciliation_needs(estate, project, landed)
+    _approve_what_the_shipment_checks_need(estate, project, landed)
 
     _check_the_second_page(estate, landed)
     _check_the_check_digit(estate, landed)
@@ -1165,7 +1165,7 @@ def _check_the_human_decision(estate: Estate, project: str, landed: dict) -> Non
     )
 
 
-def _approve_what_reconciliation_needs(
+def _approve_what_the_shipment_checks_need(
     estate: Estate, project: str, landed: dict[str, dict[str, str]]
 ) -> None:
     """Approve the abstentions the reconciliation rules compare, and re-point at the new versions.
@@ -1184,7 +1184,10 @@ def _approve_what_reconciliation_needs(
 
     Claim 5 is what makes claim 4 reachable, and only running both in one estate shows it.
     """
-    wanted = _fields_the_rules_compare()
+    # The reconciliation rules' fields **and** the party fields. Both checks need values a human
+    # stood behind: a comparison needs two published sides, and a party mention is a name this
+    # system published rather than one it merely read.
+    wanted = _fields_the_rules_compare() | _party_fields()
     approved = 0
     for shipment, versions in sorted(landed.items()):
         for document_type, version in sorted(versions.items()):
@@ -1224,6 +1227,21 @@ def _approve_what_reconciliation_needs(
     )
 
 
+def _party_fields() -> set[tuple[str, str]]:
+    """Every `(document type, field)` a document contract declares as a party.
+
+    Read from the contracts rather than listed: `packing_list` and `arrival_notice` carry no
+    party at all, and a hand-written list would have quietly claimed otherwise.
+    """
+    found: set[tuple[str, str]] = set()
+    for path in sorted((ROOT / "contracts/documents").glob("*.yaml")):
+        contract = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for declared in contract.get("fields", []):
+            if declared.get("type") == "party":
+                found.add((path.stem, declared["name"]))
+    return found
+
+
 def _fields_the_rules_compare() -> set[tuple[str, str]]:
     """Every `(document type, field)` a reconciliation rule names, from the contract."""
     rules = yaml.safe_load(
@@ -1236,31 +1254,39 @@ def _fields_the_rules_compare() -> set[tuple[str, str]]:
     }
 
 
-def _check_the_second_page(estate: Estate, landed: dict[str, dict[str, str]]) -> None:
-    """A field on page two of the invoice published, which no single-page run could show.
+def _check_the_second_page(estate: Estate, _landed: dict[str, dict[str, str]]) -> None:
+    """Both pages of the two-page invoice were read, which no single-page run could show.
 
     *Tables that break across pages* is the third of the twelve properties `docs/SCENARIO.md`
-    names, and the one where naive extraction silently loses rows while the total still looks
-    plausible.
+    names, and the one where naive extraction silently loses rows while the total still adds up.
+
+    **Read from the reading, not from the record.** That invoice is Dutch; its only escalation is
+    the model tier, and that tier reports no confidence — so every field abstains and no record is
+    written at all. The evidence that the reader saw both pages therefore lives in what the
+    reader produced, which is where a question about the reader belongs. Asking the record would
+    make this a test of the thresholds.
     """
-    version = landed.get("SHP00001", {}).get("commercial_invoice")
-    if not version:
+    reading = _the_reading(estate, "SHP00001-commercial_invoice")
+    if reading is None:
         estate.check(
             "15 · a two-page document is read on both pages",
             False,
-            "the two-page commercial invoice published no record",
+            "no tier-0 reading was stored for the two-page commercial invoice",
         )
         return
 
-    record = _json_object(estate.records, f"records/SHP00001-commercial_invoice/{version}.json")
-    pages = sorted({int(f["page"]) for f in (record or {}).get("fields", []) if f.get("page")})
+    pages = sorted({int(page["number"]) for page in reading.get("pages", [])})
+    words = {
+        int(page["number"]): len(page.get("words", []) or page.get("lines", []))
+        for page in reading.get("pages", [])
+    }
     estate.check(
         "15 · a two-page document is read on both pages",
-        len(pages) > 1,
-        f"fields were located on pages {pages} — the reader saw the whole document"
+        len(pages) > 1 and all(words.get(number) for number in pages),
+        f"pages {pages} were read, carrying {words} words — the reader saw the whole document"
         if len(pages) > 1
-        else f"every field landed on page {pages or '—'}. A second page nothing reads is a "
-        f"table this system loses rows from while the total still adds up",
+        else f"only page(s) {pages} were read. A second page nothing reads is a table this "
+        f"system loses rows from while the total still adds up",
     )
 
 
