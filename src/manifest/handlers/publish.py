@@ -265,9 +265,13 @@ def _check_the_line_total(
         (
             o
             if o.field != table_contract.total_field
+            # **`publishable` is a property, not a field**, and this passed it to `replace` —
+            # the second guessed name in this function, and the second `TypeError` raised in the
+            # step that exists to protect the document. Setting `queued_because` *is* the
+            # refusal: `publishable` reads it. Passing both would have been the version that
+            # rots, because the two could then disagree.
             else replace(
                 o,
-                publishable=False,
                 queued_because=Reason.LINE_TOTAL_DISAGREES,
                 reason=(
                     f"{check.rows} row(s) across pages {list(table.pages_read)} sum to "

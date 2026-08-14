@@ -14,12 +14,15 @@ deliberately the dullest: *the branch runs at all*.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
 
 from manifest.core.geometry import Box
 from manifest.core.lineitems import Column, Row, Table, TotalOutcome, check_total
+from manifest.core.review import Reason
+from manifest.handlers.publish import Outcome, _check_the_line_total
 
 
 def test_the_two_directions_of_disagreement_are_both_named() -> None:
@@ -111,3 +114,67 @@ def test_the_tolerance_is_applied_rather_than_ignored() -> None:
 
     assert within.outcome is TotalOutcome.AGREES
     assert beyond.outcome is TotalOutcome.ROWS_MISSING
+
+
+# ── The handler's own function, which is what actually broke ─────────────────
+
+
+def test_the_refusal_sets_the_queue_reason_rather_than_the_derived_property() -> None:
+    """**The second guessed name, and the second `TypeError` from the estate.**
+
+    `Outcome.publishable` is a property computed from `queued_because` and `value`; the handler
+    passed it to `dataclasses.replace` and the two-page invoice failed again, in the same step,
+    one line further on.
+
+    The tests above did not catch it because they exercise `core.lineitems.check_total` — the
+    neighbour — and the code that broke was the handler's own. That is the lesson worth keeping:
+    a test of the thing beside the change is a test that passes while the change is broken.
+    """
+    published = Outcome(
+        field="invoice_total",
+        value="$ 81.832,10",
+        confidence=0.97,
+        page=2,
+        box=(0.6, 0.18, 0.1, 0.01),
+        reason="read at 0.97",
+        queued_because=None,
+        threshold=0.9,
+    )
+    assert published.publishable is True
+
+    refused = replace(
+        published,
+        queued_because=Reason.LINE_TOTAL_DISAGREES,
+        reason="9 rows sum to 78,000.00; the page prints 81,832.10",
+    )
+
+    assert refused.publishable is False
+    assert refused.queued_because is Reason.LINE_TOTAL_DISAGREES
+    # The value is kept. A human sees both numbers — replacing either with the other would
+    # smooth a disagreement on one document instead of two.
+    assert refused.value == "$ 81.832,10"
+
+
+def test_a_document_whose_contract_declares_no_table_is_untouched() -> None:
+    """Most of them. Reading columns off a bill of lading would be inventing a check."""
+
+    class _NoTable:
+        table = None
+
+    outcomes = [
+        Outcome(
+            field="gross_weight",
+            value="8959 KGS",
+            confidence=0.97,
+            page=1,
+            box=(0.1, 0.2, 0.1, 0.01),
+            reason="read at 0.97",
+            queued_because=None,
+            threshold=0.9,
+        )
+    ]
+
+    same, reported = _check_the_line_total(_NoTable(), object(), "en", outcomes)
+
+    assert same is outcomes
+    assert reported is None
