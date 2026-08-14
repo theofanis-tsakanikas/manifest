@@ -27,6 +27,12 @@
 #
 # Filling them anyway is doctrine rule 3 with a warehouse attached: a mart that reads an
 # invented column returns a number with the shape of an answer.
+# **What changed on 2026-08-14.** `handlers/decide.py` gave the estate a way to record a human
+# decision, and `scripts/load_warehouse.py` began joining it into `gold.review_item`. Ten columns
+# were still listed below as facts nothing produces — five of the human loop's, three the loader
+# derives from the lake, two modelled costs — and every check passed, because each of them read
+# this file and the schema and none of them read the loader. `check_warehouse_is_fed.py` now
+# parses the loader and refuses that disagreement in both directions.
 version: 1
 
 # Renames and computations a loader may perform, with the lake column each comes from. Written
@@ -43,6 +49,44 @@ derivable:
   read_on: "the lake's `extracted_on`, truncated to a date"
   found_on: "the lake's `extracted_on`, truncated to a date"
   outcome: "the lake's `review_decision`"
+  item_id: "the lake's `version` and `field`, joined — the item is the field at that version"
+  queued_reason: >-
+    `threshold IS NULL` tells always-review apart from below-threshold, which is the distinction
+    the column exists to make. Derived from the lake's `threshold` and `published`.
+  queued_on: "the lake's `extracted_on` — when the field was read and therefore queued"
+  modelled_cost: >-
+    The lake's `reader` identity gives the tier; the tier gives a published unit price. A model,
+    and the column is named `modelled_cost` because `docs/DECISIONS.md` 15 requires the label to
+    travel with the figure rather than sit in a footnote.
+  modelled_currency: >-
+    The currency the modelled price is published in, alongside the `reader`-derived tier that
+    selected it. Never "as above": this file's own guard refuses a derivability claim that names
+    no lake column, and it refused this one.
+
+# Columns nothing in the lake carries and something in this repository nevertheless writes. The
+# third category, added on 2026-08-14 because the first two could not describe the truth: the
+# lake is not the only thing this estate records. The human loop's record lives in DynamoDB, and
+# `scripts/check_warehouse_is_fed.py` requires every entry here to name a file that exists.
+sourced_elsewhere:
+  reviewer: >-
+    Recorded per decision by `src/manifest/handlers/decide.py` in the decisions table, and read
+    back by `scripts/load_warehouse.py`. **The personal-data question is named, not answered**:
+    this is an internal operator identifier rather than a data subject on a document, and
+    `review_queue_economics` groups by it because doctrine rule 2 is about *a reviewer* whose
+    agreement rate is 100% — an aggregate over everybody cannot see one. What is owed is a
+    retention class for it in `docs/REGULATORY.md`, and it is owed rather than paid.
+  decision: >-
+    Approved, corrected, supplied or rejected, from `src/manifest/handlers/decide.py`. Written
+    whatever it decided: a table holding only approvals makes every agreement rate 100% by
+    construction.
+  seconds_on_task: >-
+    Measured per decision by `src/manifest/handlers/decide.py`. The number doctrine rule 2 turns
+    on — a reviewer who spends four seconds on a field is not a control.
+  agreed_with_model: >-
+    Computed in `src/manifest/handlers/decide.py` from the decision and never accepted from the
+    caller, and carried through the loader rather than recomputed. Loaded as a tri-state: NULL
+    where nobody decided, which is a different fact from a reviewer who disagreed.
+  decided_on: "When the decision was recorded, by `src/manifest/handlers/decide.py`."
 
 # Columns nothing in this system produces, and the reason each one is absent. A mart that reads
 # one of these returns a shape rather than an answer until something that knows the fact is
@@ -59,38 +103,18 @@ unsourced:
   duty_amount: >-
     As above.
   human_decided: >-
-    The review loop records every decision in DynamoDB; nothing joins that into the lake. This
-    is the column that makes `duty_exposure_by_chapter` worth more than a duty total, and it is
-    the one most likely to be quietly defaulted to `true` by a loader in a hurry.
+    On a *declaration line*, and it stays unsourced for the reason the whole table does: nothing
+    loads `gold.declaration_line`, because a declaration line needs an HS code with a declared
+    value and this system produces classification proposals no human has decided. The review
+    loop's decisions are now joined into `gold.review_item`, which is a different table about a
+    different thing — a decision about a field a reader was unsure of, not a decision to declare
+    a tariff. Collapsing the two would be the quiet default to `true` this entry warns about.
   country_of_origin: >-
     An extracted field. Known at extraction, absent from the lake table.
   currency: >-
     As above.
   declared_on: >-
     As above — the declaration's own date, not the date this system read it.
-  seconds_on_task: >-
-    Measured by the review loop and held in DynamoDB. It is the number doctrine rule 2 turns on
-    — a reviewer who spends four seconds on a field is not a control — and nothing joins it into
-    the lake.
-  reviewer: >-
-    Recorded per decision in DynamoDB. Joining it into the lake would also put a person's
-    identity into an analytics table, which is a retention and personal-data question this
-    project has not answered — and answering it is the work, not the join.
-  queued_reason: >-
-    `Reason.BELOW_THRESHOLD` against `UNSCORED` against `ALWAYS_REVIEW` have opposite fixes, so
-    the queue's composition is the most useful column in this table. It is on the queue message
-    and in no lake table.
-  item_id: >-
-    The queue item's own identity, in DynamoDB. The whole `gold.review_item` table describes the
-    human loop, and the human loop's record lives in a table nothing exports — which is why five
-    of these appear together rather than one at a time.
-  queued_on: "As above — when the item reached the queue."
-  decided_on: "As above — when a person decided it."
-  decision: "As above — approved, corrected, supplied or rejected."
-  agreed_with_model: >-
-    As above, and it is the one that matters most: a reviewer whose agreement rate is 100% is a
-    rubber stamp with a login, and `review_queue_economics` cannot see that until this table is
-    fed.
   source_channel: >-
     How the document arrived — email, portal, EDI. The landing zone sees an object, not a
     channel.
@@ -100,11 +124,6 @@ unsourced:
     customer's master data, which this project does not have.
   client_id: >-
     As above, and further away: the client is a relationship, not a field on a page.
-  modelled_cost: >-
-    A per-page cost model exists in `src/manifest/core/scale.py` and is proved offline. Writing
-    its output into the warehouse would put a modelled figure in a table people read as measured,
-    which is the confusion `docs/DECISIONS.md` 15 exists to prevent.
-  modelled_currency: "As above."
   left_document: "Reconciliation findings are computed offline and never written to the lake."
   right_document: "As above."
   rule_id: "As above."

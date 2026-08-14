@@ -189,6 +189,25 @@ def _quietly_source_a_column_nothing_produces(root: Path) -> bool:
     )
 
 
+def _call_a_column_the_loader_fills_unsourced(root: Path) -> bool:
+    """Declare a column nothing produces, while the loader has been producing it.
+
+    The drift this catches is the other direction from `carrier`, and it happened: the human
+    loop's five columns sat in the unsourced list for a day after `scripts/load_warehouse.py`
+    began joining them in, and every check passed, because each one read the schema and the
+    acceptance and none of them read the loader.
+
+    Under-claiming looks harmless and is not. `review_queue_economics` reports an agreement rate
+    that says *nobody reviewed anything*, and the contract agrees with it — so the mart is
+    consistent with the document that describes it and both are wrong about the estate.
+    """
+    return _replace(
+        root / "contracts/analytics/acceptance.yaml",
+        "unsourced:\n  shipment_id:",
+        'unsourced:\n  decision: "nothing records what a human decided"\n  shipment_id:',
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -1053,8 +1072,17 @@ MUTATIONS: tuple[Mutation, ...] = (
         [sys.executable, "scripts/check_warehouse_is_fed.py"],
         "carrier",
         _quietly_source_a_column_nothing_produces,
-        "Thirty-four warehouse columns have no source anywhere. The list of them is the only "
+        "Twenty-one warehouse columns have no source anywhere. The list of them is the only "
         "thing standing between an empty warehouse and a mart that looks like it answered.",
+    ),
+    Mutation(
+        "call a column the loader fills unsourced",
+        "the warehouse has a source",
+        [sys.executable, "scripts/check_warehouse_is_fed.py"],
+        "writes a value for it",
+        _call_a_column_the_loader_fills_unsourced,
+        "The same drift pointed the other way, and the one that actually happened. A mart "
+        "reporting that nobody reviewed anything, and a contract that agrees with it.",
     ),
     Mutation(
         "read the clock inside the core",

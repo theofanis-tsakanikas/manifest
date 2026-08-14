@@ -11,14 +11,19 @@ or loads them into the warehouse. `scripts/check_marts.py` proves the marts only
 `analytics/schema.sql` declares — which is true, useful, and says nothing about whether a single
 one of them has a source.
 
-So this asks the next question: for every column `gold.published_field` declares, is there a
-column in the Glue catalogue it could come from? Three answers, and they are worth telling apart.
+So this asks the next question: for every column the warehouse declares, is there something that
+could produce it? Four answers, and they are worth telling apart.
 
 **Present in the lake.** It can be loaded; nothing more is needed than the load itself.
 
 **Derivable.** `reader_tier` is not in the lake, but the lake's `reader` string carries the
 identity a tier maps to. Named here so that "derivable" is a claim somebody wrote down rather
 than an assumption a loader made silently.
+
+**Sourced outside the lake.** The lake is not the only thing this estate records. A human's
+decision lives in DynamoDB, written by `handlers/decide.py` and read back by the loader — so the
+column has a source, and naming the file that writes it is what keeps that from being a word
+somebody chose.
 
 **Unsourced.** Nothing anywhere produces it. `carrier` and `client_id` are facts about a
 shipment that the extraction pipeline never sees — they belong to a customer system this project
@@ -28,10 +33,18 @@ a warehouse attached.
 The failure this prevents is specific and expensive: standing the analytics layer up, running
 the marts, getting rows back, and believing them — because a mart that reads an invented column
 returns a number with the shape of an answer.
+
+**And the same failure in reverse, which is the one that happened.** Everything above reads the
+schema, the catalogue and the acceptance, and for a long time none of it read the *loader*. So
+ten columns sat in the unsourced list while the loader filled them, the marts reported that
+nobody had reviewed anything, and the contract agreed. `_loader_writes` closes that by parsing
+the loader itself: a column declared unsourced that the loader writes a value for is a
+disagreement, and the loader is the one that runs.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -41,6 +54,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "analytics" / "schema.sql"
 LAKE = ROOT / "infra" / "lakehouse" / "main.tf"
+LOADER = ROOT / "scripts" / "load_warehouse.py"
+
+#: `_batched(table, columns, values)`. Named so the arity check below is a statement about that
+#: signature rather than a number somebody has to go and look up.
+_BATCHED_ARGUMENTS = 3
 ACCEPTANCE = ROOT / "contracts" / "analytics" / "acceptance.yaml"
 
 
@@ -75,12 +93,110 @@ def _lake_columns() -> set[str]:
     return set(re.findall(r'columns \{\s*name\s+= "([^"]+)"', text))
 
 
+def _loader_writes() -> dict[str, set[str]]:
+    """Each warehouse table the loader inserts into, and the columns it writes a value for.
+
+    **The question this file was not asking.** Everything above compares the *schema* against the
+    *lake* against the *acceptance*, and never once reads the loader — so a column could be
+    declared "nothing anywhere produces it" while the loader had been filling it for weeks, and
+    nothing would go red. That is what happened: `item_id`, `queued_on`, `queued_reason` and the
+    two modelled-cost columns are loaded and were still listed as unsourced, and the drift was
+    invisible because the check read two files and the truth was in a third.
+
+    `docs/DECISIONS.md` 24 by name — *the failure this project produces most is a check reading
+    the wrong thing* — and the habit it prescribes: parse the thing, do not match its shape. So
+    the loader is parsed. Each `_batched(table, "a, b, c", values)` call is paired with the list
+    comprehension that built `values`, whose element is `"(" + ", ".join((...)) + ")"` — a tuple
+    of one expression per column, positionally. A column whose expression is the bare literal
+    `"NULL"` is one the loader deliberately does not write; anything else is a value.
+    """
+    tree = ast.parse(LOADER.read_text(encoding="utf-8"))
+
+    # The value tuples, by the name each comprehension was assigned to.
+    tuples: dict[str, list[ast.expr]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.ListComp):
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        for inner in ast.walk(node.value.elt):
+            if (
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Attribute)
+                and inner.func.attr == "join"
+                and inner.args
+                and isinstance(inner.args[0], ast.Tuple)
+            ):
+                tuples[target.id] = list(inner.args[0].elts)
+                break
+
+    written: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_batched"
+            and len(node.args) == _BATCHED_ARGUMENTS
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[2], ast.Name)
+        ):
+            continue
+        columns = [name.strip() for name in _joined(node.args[1]).split(",") if name.strip()]
+        values = tuples.get(node.args[2].id)
+        if values is None or len(values) != len(columns):
+            # Refused rather than skipped. A column list this cannot pair with its values is a
+            # loader shape this parser no longer understands, and returning what it managed to
+            # read would report a clean warehouse because it stopped looking.
+            raise SystemExit(
+                f"{LOADER.relative_to(ROOT)}: could not pair {node.args[0].value}'s "
+                f"{len(columns)} column(s) with the values that fill them. This check parses the "
+                f"loader rather than trusting it, and it has stopped being able to"
+            )
+        written[str(node.args[0].value)] = {
+            column
+            for column, value in zip(columns, values, strict=True)
+            if not (isinstance(value, ast.Constant) and value.value == "NULL")
+        }
+    return written
+
+
+def _joined(node: ast.expr) -> str:
+    """A string literal that may have been written across several adjacent lines."""
+    if isinstance(node, ast.Constant):
+        return str(node.value)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _joined(node.left) + _joined(node.right)
+    raise SystemExit(f"{LOADER.relative_to(ROOT)}: a column list this check cannot read")
+
+
 def _classify(
-    table: str, column: str, lake: set[str], derivable: dict[str, str], accepted: dict[str, str]
+    table: str,
+    column: str,
+    *,
+    lake: set[str],
+    derivable: dict[str, str],
+    elsewhere: dict[str, str],
+    accepted: dict[str, str],
 ) -> tuple[str | None, str | None]:
     """Where this column would come from, or the complaint about it. One or the other."""
     if column in lake:
         return "in the lake", None
+    if column in elsewhere:
+        # **The same guard `derivable` has, pointed at a different kind of source.** The lake is
+        # not the only thing this estate writes — the decisions table holds what a human decided,
+        # and that is the record claim 5 is computed from. Saying so has to be as checkable as
+        # saying a column is derivable, or "sourced elsewhere" becomes the unsourced list with a
+        # third friendly heading: the description must name a file in this repository that
+        # produces it, and the file must exist.
+        named = [Path(ROOT, found) for found in re.findall(r"`([\w./-]+\.\w+)`", elsewhere[column])]
+        if any(path.exists() for path in named):
+            return "sourced outside the lake", None
+        return None, (
+            f"{table}.{column} is declared as sourced outside the lake and its description names "
+            f"no file in this repository that exists ({elsewhere[column]!r}). A source nobody "
+            f"can open is a source nobody can check"
+        )
     if column in derivable:
         # **A derivability claim must name the lake column it comes from.**
         #
@@ -113,22 +229,49 @@ def main() -> int:
 
     accepted: dict[str, str] = {}
     derivable: dict[str, str] = {}
+    elsewhere: dict[str, str] = {}
     if ACCEPTANCE.exists():
         loaded = yaml.safe_load(ACCEPTANCE.read_text(encoding="utf-8")) or {}
         accepted = dict(loaded.get("unsourced") or {})
         derivable = dict(loaded.get("derivable") or {})
+        elsewhere = dict(loaded.get("sourced_elsewhere") or {})
 
     lake = _lake_columns()
     problems: list[str] = []
-    counts = {"in the lake": 0, "derivable": 0, "unsourced and declared": 0}
+    counts = {
+        "in the lake": 0,
+        "derivable": 0,
+        "sourced outside the lake": 0,
+        "unsourced and declared": 0,
+    }
 
     for table, columns in _warehouse_columns().items():
         for column in sorted(columns):
-            where, complaint = _classify(table, column, lake, derivable, accepted)
+            where, complaint = _classify(
+                table,
+                column,
+                lake=lake,
+                derivable=derivable,
+                elsewhere=elsewhere,
+                accepted=accepted,
+            )
             if where:
                 counts[where] += 1
             if complaint:
                 problems.append(complaint)
+
+    # **The reverse question, asked of the loader itself.** A column declared unsourced and then
+    # quietly filled is the acceptance under-claiming what the system does — the same defect as
+    # over-claiming, pointed the other way, and the one that makes a mart look emptier than it is.
+    fed = _loader_writes()
+    for table, columns in sorted(fed.items()):
+        for column in sorted(columns & set(accepted)):
+            problems.append(
+                f"{table}.{column} is declared unsourced in "
+                f"{ACCEPTANCE.relative_to(ROOT)} — {accepted[column]!r} — and "
+                f"{LOADER.relative_to(ROOT)} writes a value for it. One of the two is wrong, and "
+                f"the loader is the one that runs"
+            )
 
     print("warehouse columns, by where they would come from:")
     for label, count in counts.items():
