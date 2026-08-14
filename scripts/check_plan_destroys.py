@@ -20,9 +20,17 @@ destroy" is a number and `aws_opensearchserverless_collection.records` is a deci
 Reads the plan as JSON rather than parsing Terraform's prose. `docs/DECISIONS.md` 24: parse the
 thing, do not match its shape — the human-readable output is formatting, and formatting changes.
 
-**Deletions, not replacements**, and the first run of this check got that wrong — see `_planned`.
-A resource Terraform must replace is being edited, not torn down, and refusing those would make
-this fire on ordinary applies until somebody kept the override flag on permanently.
+**Deletions, not replacements** — with one exception, and it is the exception that matters. A
+resource Terraform must replace is being edited, not torn down, and refusing every replacement
+would make this fire on ordinary applies until somebody kept the override flag on permanently.
+But a replaced *bucket* is an empty bucket, and a replaced table is an empty table. Those types
+are declared in `contracts/deploy/data_bearing.yaml`, and their replacement is refused like a
+deletion.
+
+`prevent_destroy` is Terraform's own answer to that and it is the wrong one here: it blocks
+`terraform destroy` as well, and tearing this estate down on demand is the discipline the whole
+repository is built around. A lifecycle rule cannot tell *replace* from *destroy*. A plan reader
+can, because the plan says which it is — and the teardown never goes through this guard.
 
     terraform plan -out=tfplan ...
     terraform show -json tfplan > plan.json
@@ -37,6 +45,8 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
 
 #: Terraform's own words for what it intends to do with a resource.
@@ -48,23 +58,36 @@ DELETE = "delete"
 GOING = [DELETE]
 
 
+#: Declared once, read here. A copy of this list in Python would be a second declaration of what
+#: holds data, and the two would disagree the first time the estate grew a resource type.
+DATA_BEARING = Path(__file__).resolve().parents[1] / "contracts" / "deploy" / "data_bearing.yaml"
+
+
+def _loses_data_when_replaced() -> dict[str, str]:
+    if not DATA_BEARING.exists():
+        return {}
+    loaded = yaml.safe_load(DATA_BEARING.read_text(encoding="utf-8")) or {}
+    return dict(loaded.get("replacement_loses_data") or {})
+
+
 def _planned(document: dict) -> tuple[list[str], list[str]]:
     """What the plan deletes outright, and what it replaces. Two different facts.
 
-    **The first run of this check refused a replacement, and was wrong to.** A replacement arrives
-    as `["delete", "create"]` — Terraform's way of saying a resource has an argument it cannot
-    change in place — and two Lake Formation grants had one. Nothing was being torn down; a grant
-    was being re-issued, which is how that resource type is edited at all.
+    **The first run of this check refused a replacement, and was wrong to.** A replacement
+    arrives as `["delete", "create"]` — Terraform's way of saying a resource has an argument it
+    cannot change in place — and two Lake Formation grants had one. Nothing was being torn down;
+    a grant was being re-issued, which is how that resource type is edited at all.
 
     Treating the two the same would make this check fire on ordinary applies, and a gate that
     fires on ordinary work is a gate people learn to pass with the override flag. So a pure
     delete refuses and a replacement is printed.
 
-    What that gives up, stated rather than left to be discovered: a replaced resource that holds
-    *data* loses it, and this will not stop that. The honest scope is deletions, and an estate
-    whose data-bearing resources can be replaced in place of destroyed is a separate control —
-    `prevent_destroy` on the resource, which is where Terraform puts it.
+    **With one exception, and it is the one that used to be missing.** A replaced bucket is an
+    empty bucket. The types whose replacement loses data are declared in
+    `contracts/deploy/data_bearing.yaml` and counted with the deletions — so a plan that would
+    empty the records zone stops here, and one that re-issues a grant does not.
     """
+    destructive = _loses_data_when_replaced()
     deleted, replaced = [], []
     for change in document.get("resource_changes", []):
         actions = list(change.get("change", {}).get("actions", []))
@@ -72,7 +95,15 @@ def _planned(document: dict) -> tuple[list[str], list[str]]:
         if actions == GOING:
             deleted.append(address)
         elif DELETE in actions:
-            replaced.append(address)
+            # A replacement of a declared data-bearing type is counted with the deletions, and
+            # the address says which: `aws_s3_bucket.lake` replaced is `aws_s3_bucket.lake`
+            # emptied. Everything else is an edit.
+            if str(change.get("type", "")) in destructive:
+                deleted.append(
+                    f"{address}  (replaced — {destructive[change['type']].strip()[:90]})"
+                )
+            else:
+                replaced.append(address)
     return sorted(deleted), sorted(replaced)
 
 

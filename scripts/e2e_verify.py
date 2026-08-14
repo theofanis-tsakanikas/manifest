@@ -1052,6 +1052,91 @@ def _a_whole_shipment(estate: Estate, project: str) -> None:
     _check_reconciliation(estate, project, landed)
     _check_entities(estate, project, landed)
     _check_the_human_decision(estate, project, landed)
+    _check_the_evidence_is_harvested(estate, project)
+    _check_the_envelope_is_watched(estate, project)
+
+
+#: `core.drift.assess` returns one finding per declared measure, and there are two: the median
+#: confidence and the abstention rate. Named so the assertion below is a statement about that
+#: contract rather than a number somebody has to go and count.
+DECLARED_MEASURES = 2
+
+
+def _check_the_evidence_is_harvested(estate: Estate, project: str) -> None:
+    """Claim 1's loop on the estate: the decisions just recorded become labelled observations.
+
+    **Deployed and never exercised.** `manifest-harvest` went up with the rest of the human loop
+    and nothing in this verifier touched it — the same state claims 4, 5 and 6 were in on the
+    morning it was written, one layer further along. It was invoked by hand once, which proves it
+    ran on that day and nothing about tomorrow.
+
+    The property is not *some observations came out*. It is that the decisions this run recorded,
+    with the confidence the model had when each was queued, arrive as evidence a threshold
+    derivation can consume — and that anything excluded is **counted**, because a harvest that
+    quietly lost its approvals is one whose N nobody can interpret.
+    """
+    answer, error = _invoke(f"{project}-harvest", {"reader": _the_reader(estate)})
+    if error:
+        estate.check("26 · recorded decisions become labelled observations", False, error)
+        return
+
+    read, unreadable = answer.get("decisions_read", 0), answer.get("decisions_unreadable", 0)
+    estate.check(
+        "26 · recorded decisions become labelled observations",
+        answer.get("observations", 0) > 0 and read > 0,
+        f"{read} decision(s) read, {unreadable} unreadable, "
+        f"{answer.get('observations')} observation(s) across {answer.get('fields')} field(s) "
+        f"from {answer.get('reviewers')} reviewer(s); {answer.get('excluded')} excluded and "
+        f"counted. A correction is the highest-quality label this system will ever see — a human "
+        f"looked at the page and said what it said — and nothing here derives a threshold from "
+        f"it: that is a ceremony, against the committed recording"
+        if answer.get("observations", 0) > 0
+        else f"{read} decision(s) read and no observation came out of any of them. Claim 1's "
+        f"loop is open: evidence is being produced and discarded",
+    )
+
+
+def _check_the_envelope_is_watched(estate: Estate, project: str) -> None:
+    """The declared envelope, applied to what actually arrived, reporting rather than adjusting.
+
+    Also deployed and never exercised. The property asserted here is deliberately **not** that
+    the traffic is inside the envelope — on this corpus it is not, and saying so is the control
+    working. It is that the window is assessed, that a verdict is returned per measure, and that
+    nothing was adjusted: an envelope that widened to fit the traffic would be a control agreeing
+    with whatever happened.
+    """
+    answer, error = _invoke(f"{project}-watch", {})
+    if error:
+        estate.check("27 · the arriving window is assessed against the envelope", False, error)
+        return
+
+    findings = answer.get("findings", [])
+    verdicts = {f["measure"]: f["verdict"] for f in findings}
+    estate.check(
+        "27 · the arriving window is assessed against the envelope",
+        len(findings) >= DECLARED_MEASURES and all(v for v in verdicts.values()),
+        f"{answer.get('documents')} document(s) in the last {answer.get('hours')}h, "
+        f"{answer.get('unscored_documents')} read by a tier that reports no score. "
+        f"median confidence {answer.get('median_confidence', 0):.3f} → "
+        f"{verdicts.get('median_confidence')}; abstention "
+        f"{answer.get('abstention_rate', 0):.3f} → {verdicts.get('abstention_rate')}. "
+        f"**A finding, never an adjustment** — and a drifted verdict here is the system telling "
+        f"the truth about itself rather than a failure of this check"
+        if len(findings) >= DECLARED_MEASURES
+        else f"{len(findings)} finding(s); the window was not assessed on both measures",
+    )
+
+
+def _the_reader(estate: Estate) -> str:
+    """The reader identity the readings were filed under, found rather than assembled.
+
+    A harvest is keyed by the reader that produced the confidences, and a verifier holding its
+    own copy of that convention is a verifier that forgets to update it.
+    """
+    listing = _client("s3").list_objects_v2(Bucket=estate.records, Prefix="readings/", MaxKeys=1)
+    for entry in listing.get("Contents", []):
+        return entry["Key"].split("/")[1]
+    return "reference-ocr@tesseract 5.5.0"
 
 
 def _check_the_check_digit(estate: Estate, landed: dict[str, dict[str, str]]) -> None:
@@ -1204,7 +1289,12 @@ def _approve_what_the_shipment_checks_need(
     # The reconciliation rules' fields **and** the party fields. Both checks need values a human
     # stood behind: a comparison needs two published sides, and a party mention is a name this
     # system published rather than one it merely read.
-    wanted = _fields_the_rules_compare() | _party_fields() | _classification_fields()
+    wanted = (
+        _fields_the_rules_compare()
+        | _party_fields()
+        | _classification_fields()
+        | _declaration_line_fields()
+    )
     approved = 0
     for shipment, versions in sorted(landed.items()):
         for document_type, version in sorted(versions.items()):
@@ -1277,6 +1367,37 @@ def _fields_published_across(estate: Estate, records: list[str]) -> set[str]:
             str(entry["field"]) for entry in record.get("fields", []) if entry.get("publishable")
         }
     return published
+
+
+#: What `gold.declaration_line` needs on one version before it is a line at all. Restated from
+#: `scripts/load_warehouse.py` deliberately: this is the *harness* deciding which fields a
+#: reviewer looks at, and the loader is the thing being tested. Two lists that must agree, and a
+#: mismatch shows up as a mart with no rows rather than as a passing test.
+DECLARATION_LINE_FIELDS = (
+    "hs_code",
+    "declared_value",
+    "currency",
+    "country_of_origin",
+    "declaration_date",
+)
+
+
+def _declaration_line_fields() -> set[tuple[str, str]]:
+    """The fields a duty line needs, on whichever document type declares them.
+
+    **The mart answered nothing for one field.** `hs_code` was decided the moment
+    `_classification_fields()` was added, and `gold.declaration_line` stayed empty because a
+    declaration line needs five fields on one version and `declaration_date` had abstained with
+    nobody to decide it. The loader was right to refuse half a line; this harness simply was not
+    deciding the other half.
+    """
+    found: set[tuple[str, str]] = set()
+    for path in sorted((ROOT / "contracts/documents").glob("*.yaml")):
+        contract = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for declared in contract.get("fields", []):
+            if str(declared.get("name")) in DECLARATION_LINE_FIELDS:
+                found.add((path.stem, str(declared["name"])))
+    return found
 
 
 def _classification_fields() -> set[tuple[str, str]]:

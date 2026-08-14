@@ -27,7 +27,14 @@ _spec.loader.exec_module(guard)
 def _plan(*changes: tuple[str, list[str]]) -> dict[str, Any]:
     return {
         "resource_changes": [
-            {"address": address, "change": {"actions": actions}} for address, actions in changes
+            {
+                "address": address,
+                # Terraform reports the resource type beside the address, and this check needs it
+                # to tell a replaced grant from a replaced bucket.
+                "type": address.split(".")[0],
+                "change": {"actions": actions},
+            }
+            for address, actions in changes
         ]
     }
 
@@ -116,3 +123,39 @@ def test_the_layer_is_named_in_the_refusal(tmp_path: Path, capsys) -> None:
     guard.main([str(_written(tmp_path, plan)), "--layer", "extraction"])
 
     assert "in extraction" in capsys.readouterr().err
+
+
+def test_replacing_something_that_holds_data_is_refused(tmp_path: Path) -> None:
+    """**A replaced bucket is an empty bucket**, and for a long time this waved it through.
+
+    The scope used to be deletions only, and the docstring said so and pointed at
+    `prevent_destroy` as the control for the rest. That is Terraform's answer and it is the wrong
+    one here: it blocks `terraform destroy` as well, and tearing this estate down on demand is
+    the discipline the whole repository is built around. A lifecycle rule cannot tell *replace*
+    from *destroy*; a plan reader can.
+    """
+    plan = _plan(("aws_s3_bucket.records", ["delete", "create"]))
+
+    assert guard.main([str(_written(tmp_path, plan))]) == 1
+
+
+def test_replacing_something_that_holds_nothing_is_still_an_edit(tmp_path: Path) -> None:
+    """The distinction the declaration exists to draw. A grant is re-issued; nothing is lost."""
+    plan = _plan(("aws_lakeformation_permissions.land_writes_the_table", ["delete", "create"]))
+
+    assert guard.main([str(_written(tmp_path, plan))]) == 0
+
+
+def test_the_declaration_is_read_rather_than_restated(tmp_path: Path) -> None:
+    """Every type this check refuses to replace comes from the contract, with a reason attached.
+
+    A copy of the list in Python would be a second declaration of what holds data, and the two
+    would disagree the first time the estate grew a resource type.
+    """
+    declared = guard._loses_data_when_replaced()
+
+    assert "aws_s3_bucket" in declared
+    assert "aws_dynamodb_table" in declared
+    assert all(len(reason.strip()) > 40 for reason in declared.values()), (
+        "a type declared data-bearing without a readable reason is a list nobody can review"
+    )

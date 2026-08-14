@@ -141,6 +141,29 @@ unsourced:
   rule_id: "As above."
   severity: "As above."
 
+# ── The rows that predate the schema ─────────────────────────────────────────
+#
+# The lake gained `document_type`, `language`, `reader_tier` and `published` on 2026-08-13.
+# Every row written before that carries NULL for them, and `scripts/load_warehouse.py` excludes
+# them from every load and prints how many.
+#
+# **They are left as they are, deliberately.** Three reasons, and the third is the one that
+# decides it:
+#
+#   - They are the lake's own history, and the lake is the record. Doctrine rule 4 says a
+#     correction never erases what was previously published; a backfill that invented a
+#     `document_type` for a row that never carried one would be writing history rather than
+#     keeping it.
+#   - The value is derivable from the records bucket, which still holds every version — so
+#     nothing is lost, and the backfill can be done on the day somebody needs those rows.
+#   - Nobody needs them. They are readings of documents this repository generated, from before
+#     the columns existed, in a corpus that regenerates from a seed. Spending a schema migration
+#     on them would be work performed to make a number look tidier.
+#
+# What is *not* given up: the loader says how many it excluded, every time. A load that quietly
+# dropped rows would be the silent-truncation failure this whole file exists to prevent.
+pre_schema_rows: "left in the lake, excluded from every load, and counted out loud"
+
 accepted_by: "Theofanis Tsakanikas"
 accepted_on: "2026-08-11"
 # Shorter than the others on purpose: this one blocks a claim rather than weakening a control,

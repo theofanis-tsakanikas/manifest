@@ -389,6 +389,16 @@ jobs:
           # being handled.
           python3 -m pip install --quiet --upgrade boto3
           python3 scripts/bda_project.py --delete
+      - name: delete the lineage SageMaker writes and never removes
+        # **The second resource here no `terraform destroy` removes**, and it was found the way
+        # the first one was: the teardown reported success and `estate_sweep.py` refused, naming
+        # fifty actions, fifty contexts and a log group that outlived their endpoint.
+        #
+        # Free, and that is not the point. A create path with no delete path is how an estate
+        # gets left standing, and the sentence carries no exception for resources AWS created on
+        # our behalf. Prefix-scoped: a sibling project's lineage comes out untouched.
+        if: always()
+        run: python3 scripts/sagemaker_lineage.py --delete --project ${{ env.PROJECT }}
 
   lakehouse:
     name: "destroy · lakehouse"

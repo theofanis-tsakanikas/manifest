@@ -597,6 +597,15 @@ data "aws_iam_policy_document" "deploy_data" {
       # deploy may write a decision, because a decision written by a pipeline is doctrine rule 5
       # with a service principal holding the pen.
       "dynamodb:Scan",
+      # **The teardown deletes what SageMaker created on its own.** Lineage entities are written
+      # automatically when a model is deployed and removed by nothing — not by deleting the
+      # endpoint, not by Terraform, which does not manage them. `scripts/sagemaker_lineage.py`
+      # removes them by name prefix, and the list verbs are here because it must find them
+      # before it can name them.
+      "sagemaker:ListActions",
+      "sagemaker:ListContexts",
+      "sagemaker:DeleteAction",
+      "sagemaker:DeleteContext",
       "states:CreateStateMachine",
       "states:DeleteStateMachine",
       "states:DescribeStateMachine",

@@ -1,0 +1,38 @@
+# Resources whose replacement loses data, and which `check_plan_destroys.py` therefore refuses.
+#
+# **Why not `prevent_destroy`.** That is Terraform's own answer and it is the wrong one here: it
+# blocks `terraform destroy` as well, and tearing this estate down on demand is the discipline the
+# whole repository is built around. A lifecycle rule cannot tell *replace* from *destroy*; a plan
+# reader can, because the plan says which it is.
+#
+# So the deploy refuses a replacement of anything named here unless the dispatch asked for it, and
+# the teardown — which never goes through that guard — is untouched.
+#
+# **What counts.** A resource that holds bytes somebody would miss. An IAM role, a log group, a
+# Lake Formation grant and a VPC endpoint are all replaced routinely and lose nothing; a bucket, a
+# table and a search collection do not come back.
+version: 1
+
+replacement_loses_data:
+  aws_s3_bucket: >-
+    Objects do not survive the bucket. The landing zone, the records zone, the evidence zone and
+    the lake are all one of these, and the records zone is the record — doctrine rule 4 protects
+    what is in it, and a replacement would take every version at once.
+  aws_dynamodb_table: >-
+    The decisions table is claim 5's evidence about people, and the reprocessing ledger is what
+    makes claim 7 idempotent. A replaced ledger re-plans four million documents.
+  aws_glue_catalog_table: >-
+    Iceberg keeps its own metadata and the catalogue points at it. Replacing the table is how a
+    lake stops being readable while every object is still there.
+  aws_opensearchserverless_collection: >-
+    An index is rebuildable from the records bucket and that is not the same as free: it is a
+    re-index of everything, and the search surface answers wrongly until it finishes.
+
+accepted_by: "Theofanis Tsakanikas"
+accepted_on: "2026-08-14"
+expires_on: "2027-08-14"
+
+ends_when: >-
+  Never, unless the list is wrong. This is a declaration of what holds data rather than a
+  temporary allowance, and the expiry exists only so that somebody re-reads it once a year and
+  asks whether the estate has grown a resource type nobody added here.
