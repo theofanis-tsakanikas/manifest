@@ -71,10 +71,10 @@ command in this repository, not a summary of one.
 
 | check | result |
 |---|---|
-| **claim 1** · derived thresholds | **4 derived**, 1 always-review by contract, **7 evidence-limited**, 26 quality-limited — with the reason named per field |
+| **claim 1** · derived thresholds | **5 derived**, 1 always-review by contract, **4 evidence-limited**, 30 quality-limited — with the reason named per field |
 | **claim 2** · provenance | honest records **30/40 verified**; corrupted boxes **40/40**, **40/40**, **2/2** refused, each by the layer it should be |
 | **claim 3** · reproducibility | **3,000/3,000** documents publish an identical version from the same input; **3,000/3,000** get a new version from a reader change |
-| **claim 4** · reconciliation | **116/116** planted disagreements found, **0** false positives on the set that agrees |
+| **claim 4** · reconciliation | **123/123** planted disagreements found, **0** false positives on the set that agrees |
 | **claim 5** · the human loop | queue capacity **4,320 decisions/day** declared against **119,208** implied — the gate fires, and passes only on a named acceptance that expires 2027-02-09 |
 | **claim 6** · reversible identity | 21 surface forms → 13 entities, **0** mixing two parties; un-merge re-points **every** downstream record |
 | **claim 7** · scale and cost | first pass 3,000, re-run **0**, resume **exactly** the 1,500 remaining; **0.59 USD per 1,000 pages, modelled** |
@@ -86,14 +86,14 @@ command in this repository, not a summary of one.
 | **production drift** | the declared envelope fires on a −0.25 shift **and** on a +0.25 one; a 9-document window returns **undecided**, never *inside* |
 | **out of distribution** | on 100 pages of **real photographed paper** nobody here designed (CC BY 4.0, `corpus/external/LICENCE.md`): ECE **0.0592** against **0.0371** on the generated corpus. The reader's confidences transport — which is the only answer to *"did you tune the generator until the claims passed?"* that does not come from the generator's author |
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
-| `make gate-proof` | **54 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **55 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
 | `checkov` | **718 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
 | test suite | **498 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
-does; `gate-proof` breaks 51 controls on purpose and requires the **named** gate to refuse
+does; `gate-proof` breaks 55 controls on purpose and requires the **named** gate to refuse
 each one, for the right reason.
 
 ---
@@ -265,7 +265,7 @@ Thirteen documents on one afternoon says only that the adapter does what the pla
 make install       # venv + editable install
 make test          # 498 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 51 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 55 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)

@@ -23,9 +23,11 @@ next one: a harness written next month and wired into nothing is a claim that sc
 list of harnesses is the directory, and the directory is the thing to compare against — anything
 else is a fourth hand-maintained list.
 
-An eval may be deliberately absent from CI — `external` reads a licensed corpus that is not in
-the repository, for instance — and that is a declaration with a reason, in
-`contracts/ci/gates.yaml`, not a silence.
+An eval may be deliberately absent from CI, and that is a declaration with a reason in
+`contracts/ci/gates.yaml`, never a silence. None is: `external` looked like the obvious
+exemption — it reads a licensed corpus nobody may redistribute — and needs none, because
+`recordings/external/` is committed exactly as `recordings/ocr/` is. It compares two committed
+curves and touches no external file at runtime.
 """
 
 from __future__ import annotations
@@ -114,8 +116,7 @@ def main() -> int:
 
     print(
         f"  {GREEN}ok{RESET}    {len(harnesses)} claim harness(es), every one run by CI and by "
-        f"`make claims`"
-        + (f", {len(declared)} declared absent with a reason" if declared else "")
+        f"`make claims`" + (f", {len(declared)} declared absent with a reason" if declared else "")
     )
     return 0
 

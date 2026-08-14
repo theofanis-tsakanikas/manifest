@@ -434,6 +434,19 @@ def run(check: Check) -> Result:
     return Result(check, status, elapsed, (completed.stdout + completed.stderr)[-3000:])
 
 
+#: Each claim's own summary line, and the numbers in it the README must repeat. Written as
+#: patterns over the harness's output rather than as expected values, so this file states *where
+#: to look* and never *what the answer is* — a scoreboard check carrying its own copy of the
+#: figures would agree with itself for ever.
+CLAIM_FIGURES = {
+    "1": (
+        r"(\d+) thresholds derived, (\d+) fields always-review by contract, "
+        r"(\d+) evidence-limited, (\d+) quality-limited"
+    ),
+    "4": r"exactly (\d+) planted disagreements found",
+}
+
+
 def _scoreboard_figures(report: Report) -> dict[str, str]:
     """The figures this run actually produced, keyed by the phrase the README must contain."""
     figures: dict[str, str] = {}
@@ -456,6 +469,41 @@ def _scoreboard_figures(report: Report) -> dict[str, str]:
     # prints, and the two agreeing is the whole point of the check.
     figures["preflight"] = f"{len(report.results) + 1} checks"
     return figures
+
+
+def _claim_table_disagreements(report: Report, readme: str) -> list[str]:
+    """Each claim's own summary numbers, against the README row that repeats them.
+
+    The paragraph in `check_the_scoreboard` says *"every count the README states is now extracted
+    and required to match, wherever it is written"*. It was not true: three figures were
+    extracted and the twenty on the claim table were not. Two had drifted a whole corpus
+    generation — claim 1 reported `4 derived, 7 evidence-limited, 26 quality-limited` against a
+    run producing `5, 4, 30`, and claim 4 said 116 planted disagreements against a corpus that
+    plants 123.
+
+    Read out of each harness's own output and matched against the README row for that claim.
+    Phrasing is free to differ; the numbers are not.
+    """
+    problems: list[str] = []
+    for claim, pattern in CLAIM_FIGURES.items():
+        output = next(
+            (r.output for r in report.results if r.check.name.startswith(f"claim {claim}")), ""
+        )
+        found = re.search(pattern, output)
+        if not found:
+            continue
+        row = next((line for line in readme.splitlines() if f"**claim {claim}**" in line), "")
+        if not row:
+            problems.append(f"the README has no scoreboard row for claim {claim}")
+            continue
+        stated = set(re.findall(r"\d+", row.replace(",", "")))
+        problems += [
+            f"claim {claim} produced {number} and the README row does not state it: "
+            f"{row.strip()[:120]}"
+            for number in found.groups()
+            if number and number not in stated
+        ]
+    return problems
 
 
 def check_the_scoreboard(report: Report) -> Result:
@@ -498,6 +546,8 @@ def check_the_scoreboard(report: Report) -> Result:
     # no check: it is the drift this file exists to catch, wearing the badge of the thing that
     # was supposed to catch it. So every count the README states is now extracted and required
     # to match, wherever it is written.
+    problems += _claim_table_disagreements(report, readme)
+
     counted = {
         "tests": re.findall(r"\*\*(\d+) passing\*\*|# (\d+) tests", readme),
         "gate-proof mutations": re.findall(
