@@ -1204,7 +1204,7 @@ def _approve_what_the_shipment_checks_need(
     # The reconciliation rules' fields **and** the party fields. Both checks need values a human
     # stood behind: a comparison needs two published sides, and a party mention is a name this
     # system published rather than one it merely read.
-    wanted = _fields_the_rules_compare() | _party_fields()
+    wanted = _fields_the_rules_compare() | _party_fields() | _classification_fields()
     approved = 0
     for shipment, versions in sorted(landed.items()):
         for document_type, version in sorted(versions.items()):
@@ -1277,6 +1277,28 @@ def _fields_published_across(estate: Estate, records: list[str]) -> set[str]:
             str(entry["field"]) for entry in record.get("fields", []) if entry.get("publishable")
         }
     return published
+
+
+def _classification_fields() -> set[tuple[str, str]]:
+    """Every `(document type, field)` a contract declares as a tariff classification.
+
+    **The one field claim 5 names by name.** *"A classification below threshold cannot be
+    published without a recorded human decision"* — and every check here decided ordinary fields
+    while `hs_code`, which is declared always-review by its own contract and carries the duty,
+    was never decided by anybody. `gold.declaration_line` was empty as a result, and the mart
+    over it answered nothing, which read as a scope decision rather than as a gap in this
+    harness.
+
+    Read from the contracts by *type* rather than by name, so a second document type that
+    carries a classification is covered the day it is declared.
+    """
+    found: set[tuple[str, str]] = set()
+    for path in sorted((ROOT / "contracts/documents").glob("*.yaml")):
+        contract = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for declared in contract.get("fields", []):
+            if declared.get("type") == "hs_code":
+                found.add((path.stem, str(declared["name"])))
+    return found
 
 
 @functools.cache
