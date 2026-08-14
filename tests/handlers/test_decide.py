@@ -236,7 +236,8 @@ def test_the_published_version_records_who_decided_it(estate) -> None:
     _decide()
 
     written = json.loads(store.puts[0]["Body"])
-    assert "review:eirini@piraeus" in written["reader"]
+    assert written["reader"] == "reference-ocr@tesseract 5.5.0+review"
+    assert written["reviewers"] == ["eirini@piraeus"]
     decided = next(f for f in written["fields"] if f["field"] == "consignee")
     assert decided["publishable"] is True
     assert decided["queued_because"] is None
@@ -289,3 +290,35 @@ def test_a_refused_decision_lands_nothing(estate) -> None:
     _decide(decision="rejected")
 
     assert store.lambdas.invocations == []
+
+
+def test_the_review_marker_does_not_accumulate(estate) -> None:
+    """**The reader identity is the key claim 1 looks thresholds up by.**
+
+    Each approval used to append `+review:<name>` again, so a document with four approved fields
+    carried the same reviewer four times. Redshift found it at 128 characters; the column width
+    was the least of it — a record approved five times had a reader identity nothing has ever
+    derived a threshold for.
+    """
+    store, _ = estate
+
+    _decide()
+    once = json.loads(store.puts[0]["Body"])
+
+    # The second decision is made against the version the first one produced, on a different
+    # field — `consignee` has published by now, and a decision recorded against a field that
+    # published on its own score is refused by name, which is the property above this one.
+    store.record = once
+    _decide(
+        version=once["fingerprint"],
+        field="shipper",
+        decision="supplied",
+        value="Northbridge Forwarding B.V.",
+        reviewer="dimitris@piraeus",
+    )
+    twice = json.loads(store.puts[1]["Body"])
+
+    assert twice["reader"] == "reference-ocr@tesseract 5.5.0+review"
+    assert twice["reader"].count("+review") == 1
+    # Both humans are named, where they can be counted.
+    assert twice["reviewers"] == ["dimitris@piraeus", "eirini@piraeus"]

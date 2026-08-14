@@ -208,13 +208,26 @@ def _publish_with(record: dict[str, Any], entry: dict[str, Any], made: Record) -
         for f in record.get("fields", [])
     ]
 
+    # **The reader identity says a human touched this, once.** A version published on a human's
+    # decision was not produced by the reader alone, and a record that claimed it was would let a
+    # threshold derivation count a human's value as evidence about an engine.
+    #
+    # It used to append `+review:<name>` on every approval, so a document with four approved
+    # fields carried the same reviewer four times and the string grew without bound. Redshift
+    # found it — `value too long for character varying(128)` — and the column width was the least
+    # of it: **this string is the key claim 1 looks thresholds up by**, so a record approved five
+    # times had a reader identity nothing has ever derived a threshold for.
+    #
+    # The marker goes on once and carries no name. *Which* human decided *which* field is on the
+    # field itself and in the decisions table, where it can be counted; in the reader it was only
+    # ever a flag, and a flag that accumulates is a flag that has stopped being one.
+    engine = str(record.get("reader", "")).split("+review")[0]
+    reviewers = sorted({*record.get("reviewers", []), made.reviewer})
+
     version = publish(
         document_id=str(record["document_id"]),
         source_digest=str(record.get("source_digest") or record.get("fingerprint") or ""),
-        # **The reader identity carries the reviewer.** A version published on a human's decision
-        # was not produced by the reader alone, and a record that claimed it was would let a
-        # threshold derivation count a human's value as evidence about an engine.
-        reader=f"{record.get('reader', '')}+review:{made.reviewer}",
+        reader=f"{engine}+review",
         contract_version=int(record.get("contract_version", 1)),
         fields=fields,
         supersedes=str(record["fingerprint"]),
@@ -241,6 +254,8 @@ def _publish_with(record: dict[str, Any], entry: dict[str, Any], made: Record) -
         "fingerprint": version.version,
         "supersedes": version.supersedes,
         "reader": version.reader,
+        # Named here rather than in the reader identity, where they used to accumulate.
+        "reviewers": reviewers,
         "fields": decided,
         "publishable_count": sum(1 for f in decided if f.get("publishable")),
         "queued_count": sum(1 for f in decided if f.get("queued_because")),
