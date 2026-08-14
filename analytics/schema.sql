@@ -53,7 +53,15 @@ CREATE TABLE gold.published_field (
     -- Which tier read it. The join key between quality and cost, and the reason those two
     -- questions can be asked of one table instead of reconciled across two.
     reader_tier        SMALLINT      NOT NULL,
-    reader_identity    VARCHAR(128)  NOT NULL,
+    -- **256, and the widening is a consequence rather than a preference.** `decide` appended a
+    -- review marker to this identity on every approval, so a document with four approved fields
+    -- carried one 109 characters long and Redshift refused the load with
+    -- `value too long for character varying(128)`. That defect is fixed at the source and the
+    -- records it produced are still in the lake, because doctrine rule 4 does not erase them.
+    --
+    -- The width is not the control. `scripts/load_warehouse.py` refuses a value that exceeds its
+    -- column and names the row, so the next one is a sentence rather than a driver error string.
+    reader_identity    VARCHAR(256)  NOT NULL,
     language           VARCHAR(8)    NOT NULL,
     page               SMALLINT,
     provenance_verified BOOLEAN      NOT NULL,

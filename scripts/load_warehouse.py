@@ -122,6 +122,46 @@ def _redshift(statements: list[str], workgroup: str, secret: str) -> None:
             )
 
 
+#: Every `VARCHAR(n)` the warehouse declares, by table and column. Read from the schema rather
+#: than restated, because a width copied here is a width that disagrees the first time one moves.
+def _widths() -> dict[tuple[str, str], int]:
+    import re  # noqa: PLC0415
+
+    text = (ROOT / "analytics" / "schema.sql").read_text(encoding="utf-8")
+    found: dict[tuple[str, str], int] = {}
+    for table, body in re.findall(
+        r"CREATE TABLE (?:IF NOT EXISTS )?(\S+) \((.*?)\n\);", text, re.DOTALL | re.IGNORECASE
+    ):
+        for line in body.splitlines():
+            match = re.match(r"\s*(\w+)\s+VARCHAR\((\d+)\)", line)
+            if match:
+                found[(table, match.group(1))] = int(match.group(2))
+    return found
+
+
+def _refuse_what_will_not_fit(table: str, columns: str, rows: list[tuple[str, str]]) -> None:
+    """Name a value too wide for its column, before the driver answers with a bare string.
+
+    Redshift's own message is `value too long for type character varying(128)` — no table, no
+    column, no row. It took reading the records bucket by hand to learn that a reader identity
+    had grown to 109 characters because a review marker was appended on every approval.
+
+    The width is not the control and never was. What this adds is a refusal that names the
+    column, the row and the length, so the next one is a sentence.
+    """
+    widths = _widths()
+    for column, value in rows:
+        limit = widths.get((table, column))
+        if limit is not None and len(value) > limit:
+            raise SystemExit(
+                f"{table}.{column} is VARCHAR({limit}) and this load carries a value of "
+                f"{len(value)}: {value[:80]!r}... A value too wide for a column it is a *key* "
+                f"in — reader_identity, document_version — is a fact about the producer rather "
+                f"than about the column, and widening one without reading the other is how the "
+                f"producer keeps doing it"
+            )
+
+
 def _literal(value: str | None) -> str:
     """One SQL literal. Quotes doubled, exactly as `core.lake` argues at length.
 
@@ -373,6 +413,11 @@ def main(argv: list[str] | None = None) -> int:
     # lake is the record — so a load is a projection of current truth rather than a history of
     # loads. Appending would double every figure on the second run, which is the same defect the
     # landing step had against Iceberg and the reason that one is now idempotent.
+    _refuse_what_will_not_fit(
+        "gold.published_field",
+        "reader_identity",
+        [("reader_identity", str(row[7] or "")) for row in lake],
+    )
     fields = [
         "("
         + ", ".join(
