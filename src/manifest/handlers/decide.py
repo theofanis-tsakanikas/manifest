@@ -235,16 +235,21 @@ def _publish_with(record: dict[str, Any], entry: dict[str, Any], made: Record) -
 def _write_decision(made: Record, *, version: str, published: bool, reason: str) -> None:
     """One row per decision, in the table that has never held one.
 
-    Keyed by `(document, field#version)` so a decision on a re-extracted document is a second row
-    rather than an overwrite — decision 12's point: a decision is about the value it was made on.
+    **Keyed by `(document_version, field)`, which is the table's own schema and is the better
+    idea.** This handler first wrote `(document, field#version)` — the same thought, arrived at
+    independently, and wrong because the table already said it: a decision belongs to the
+    *version* it was made against, so a re-extraction produces a new row rather than an overwrite.
+    Decision 12 turns on exactly that, and DynamoDB refused the mismatch by name rather than
+    storing a row nothing could find.
     """
     from datetime import UTC, datetime  # noqa: PLC0415 - the clock is the adapter's, not core's
 
     _client("dynamodb").put_item(
         TableName=_env("DECISIONS_TABLE"),
         Item={
+            "document_version": {"S": version},
+            "field": {"S": made.field},
             "document": {"S": made.document},
-            "field": {"S": f"{made.field}#{version}"},
             "reviewer": {"S": made.reviewer},
             "decision": {"S": str(made.decision)},
             "value": ({"S": made.value} if made.value is not None else {"NULL": True}),
