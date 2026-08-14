@@ -76,6 +76,16 @@ on:
           so switching it on is a decision about the queue as much as about the bill.
         type: boolean
         default: false
+      accept_destroys:
+        description: >-
+          Allow an apply whose plan deletes resources. Off by default, and the default is the
+          control: every feature flag above defaults to `false`, so a dispatch that forgets one
+          asks to tear that feature down without ever saying so. It happened — a deploy sent to
+          change one line in a state machine removed the search collection, its policies and its
+          VPC endpoint, and reported success. Switch this on to shrink the estate deliberately;
+          the deletions are listed either way.
+        type: boolean
+        default: false
       confirm:
         description: 'Type "apply" to confirm. Nothing in this repository has ever been applied.'
         required: true
@@ -224,6 +234,14 @@ jobs:
             -var "budget_notification_email=$BUDGET_EMAIL" \
             -var "enable_escalation_tiers=${{ inputs.enable_escalation_tiers }}" \
             -var "enable_classifier=${{ inputs.enable_classifier }}"
+      - name: refuse deletions nobody asked for
+        # A plan carrying deletions stops here unless the dispatch said so. Every feature flag
+        # on this workflow defaults to `false`, so a dispatch that forgets one asks to tear that
+        # feature down — and one did, silently, on 2026-08-14.
+        run: |
+          terraform -chdir=infra/foundation show -json tfplan > infra/foundation/tfplan.json
+          python3 scripts/check_plan_destroys.py infra/foundation/tfplan.json --layer foundation \
+            ${{ inputs.accept_destroys && '--accept' || '' }}
       - name: apply
         run: terraform -chdir=infra/foundation apply -auto-approve tfplan
 
@@ -340,9 +358,16 @@ jobs:
       - name: apply
         run: |
           terraform -chdir=infra/lakehouse init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/lakehouse apply -auto-approve \
+          terraform -chdir=infra/lakehouse plan -out=tfplan \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "enable_search=${{ inputs.enable_search }}"
+          terraform -chdir=infra/lakehouse show -json tfplan > infra/lakehouse/tfplan.json
+          # A plan carrying deletions stops here unless the dispatch said so. Every
+          # feature flag on this workflow defaults to `false`, so a dispatch that forgets
+          # one asks to tear that feature down — and one did, silently, on 2026-08-14.
+          python3 scripts/check_plan_destroys.py infra/lakehouse/tfplan.json --layer lakehouse \
+            ${{ inputs.accept_destroys && '--accept' || '' }}
+          terraform -chdir=infra/lakehouse apply -auto-approve tfplan
       - name: evolve the table's schema, because the catalogue is not the schema
         # **Terraform creates this table and cannot change it.** For a Glue-managed Iceberg
         # table, `aws_glue_catalog_table`'s `columns` are the schema it is *created* with;
@@ -650,7 +675,7 @@ jobs:
           # runs here rather than in the offline suite.
           python3 -m pip install --quiet pyyaml
           python3 scripts/check_optional_layers_plan.py
-          terraform -chdir=infra/extraction apply -auto-approve \
+          terraform -chdir=infra/extraction plan -out=tfplan \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
             -var "publish_package_key=${{ steps.package.outputs.key }}" \
@@ -663,6 +688,13 @@ jobs:
             -var "enable_classifier=${{ inputs.enable_classifier }}" \
             -var "classifier_model_data_url=${{ steps.classifier.outputs.model_data_url }}" \
             -var "escalation_model_id=${ESCALATION_MODEL_ARN##*/}"
+          terraform -chdir=infra/extraction show -json tfplan > infra/extraction/tfplan.json
+          # A plan carrying deletions stops here unless the dispatch said so. Every
+          # feature flag on this workflow defaults to `false`, so a dispatch that forgets
+          # one asks to tear that feature down — and one did, silently, on 2026-08-14.
+          python3 scripts/check_plan_destroys.py infra/extraction/tfplan.json --layer extraction \
+            ${{ inputs.accept_destroys && '--accept' || '' }}
+          terraform -chdir=infra/extraction apply -auto-approve tfplan
 
   batch:
     name: "apply · batch (opt-in)"
@@ -802,9 +834,16 @@ jobs:
       - name: apply
         run: |
           terraform -chdir=infra/batch init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/batch apply -auto-approve \
+          terraform -chdir=infra/batch plan -out=tfplan \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "job_image_uri=${{ steps.job_image.outputs.uri }}"
+          terraform -chdir=infra/batch show -json tfplan > infra/batch/tfplan.json
+          # A plan carrying deletions stops here unless the dispatch said so. Every
+          # feature flag on this workflow defaults to `false`, so a dispatch that forgets
+          # one asks to tear that feature down — and one did, silently, on 2026-08-14.
+          python3 scripts/check_plan_destroys.py infra/batch/tfplan.json --layer batch \
+            ${{ inputs.accept_destroys && '--accept' || '' }}
+          terraform -chdir=infra/batch apply -auto-approve tfplan
 
   analytics:
     name: "apply · analytics (opt-in)"
@@ -877,7 +916,14 @@ jobs:
       - name: apply
         run: |
           terraform -chdir=infra/analytics init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="region=${{ env.AWS_REGION }}"
-          terraform -chdir=infra/analytics apply -auto-approve -var 'expires_at=${{ inputs.expires_at }}'
+          terraform -chdir=infra/analytics plan -out=tfplan -var 'expires_at=${{ inputs.expires_at }}'
+          terraform -chdir=infra/analytics show -json tfplan > infra/analytics/tfplan.json
+          # A plan carrying deletions stops here unless the dispatch said so. Every
+          # feature flag on this workflow defaults to `false`, so a dispatch that forgets
+          # one asks to tear that feature down — and one did, silently, on 2026-08-14.
+          python3 scripts/check_plan_destroys.py infra/analytics/tfplan.json --layer analytics \
+            ${{ inputs.accept_destroys && '--accept' || '' }}
+          terraform -chdir=infra/analytics apply -auto-approve tfplan
       - name: create the warehouse schema and run every mart against it
         # **A workgroup with no tables in it is the analytics layer's version of the lake being
         # a schema over nothing.** Redshift stood up, answered `select 1`, and held nothing but
