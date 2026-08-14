@@ -19,10 +19,12 @@ about nothing. Nothing in the estate copied a single row out of Iceberg.
   reviewer who disagreed: this loaded every column NULL until `handlers/decide.py` gave the
   estate a way to record one, and leaving them NULL afterwards would under-report oversight
   that actually happened. It is the denominator claim 5's agreement rate is computed over.
-- `gold.declaration_line` — **nothing**, and the reason is printed rather than left to be
-  inferred. A declaration line needs an HS code with a declared value against it, and this
-  system produces classification *proposals* that no human has decided. Loading a proposal as a
-  declaration would put a number nobody approved into a duty-exposure figure.
+- `gold.declaration_line` — one row per customs declaration whose HS code a human **decided**,
+  and none at all for the others. `hs_code` is always-review by its own contract, so the join
+  against the decisions table *is* the control: `human_decided` is TRUE on every row by
+  construction, and a declaration nobody decided produces no row rather than a row saying FALSE.
+  The classifier's proposals are still loaded nowhere and must not be — a proposal is a ranking,
+  a declaration is a commitment, and the distance between them is the whole of claim 5.
 
 **`INSERT`, not `COPY`, at this volume and with that stated.** A warehouse load at scale
 unloads from Athena to storage and `COPY`s, in one command per table, because a million rows do
@@ -137,6 +139,104 @@ def _number(value: str | None) -> str:
 
 def _boolean(value: str | None) -> str:
     return "TRUE" if str(value).lower() == "true" else "FALSE"
+
+
+#: What a declaration line needs before it is one. `hs_code` is the classification; the other
+#: three are the money and the origin it is charged against. A row missing any of them is not a
+#: partial line — it is not a line, and defaulting one would put an invented number into a duty
+#: figure.
+DECLARATION_FIELDS = (
+    "hs_code",
+    "declared_value",
+    "currency",
+    "country_of_origin",
+    # **The declaration's own date, not the day this system read it.** Loading `extraction_date`
+    # here was wrong and `check_warehouse_is_fed.py` said so by name: the acceptance had declared
+    # `declared_on` unsourced with exactly that distinction written down, and the loader wrote the
+    # other one. A duty exposure grouped by when a broker happened to scan the paperwork is a
+    # different question from one grouped by when the goods were declared.
+    "declaration_date",
+)
+
+
+def _declaration_lines(
+    lake: list[list[str]], decisions: dict[tuple[str, str], dict[str, str]]
+) -> list[str]:
+    """One row per customs declaration whose HS code a human actually decided.
+
+    **The join is the control.** `hs_code` is declared always-review by its own contract, so a
+    published one always has a decision behind it — and this asks the decisions table rather than
+    trusting that, because `human_decided` is the column that makes `duty_exposure_by_chapter`
+    worth more than a duty total, and it is the one most likely to be defaulted to `true` by a
+    loader in a hurry. Here it cannot be: a declaration with no recorded decision produces no
+    row, so every row is `TRUE` by construction.
+
+    `duty_amount` is optional and stays so. It is printed on the declaration and is not what the
+    line is keyed on; a missing one is a NULL rather than a zero, because a zero is a duty figure
+    somebody would read.
+    """
+    by_version: dict[str, dict[str, str]] = {}
+    for row in lake:
+        version, document_type, field, value = row[0], row[2], row[3], row[4]
+        if document_type != "customs_declaration" or _boolean(row[12]) != "TRUE":
+            continue
+        by_version.setdefault(version, {})[field] = value
+
+    lines = []
+    for version, fields in sorted(by_version.items()):
+        if any(fields.get(name) in (None, "") for name in DECLARATION_FIELDS):
+            continue
+        if (version, "hs_code") not in decisions:
+            # Published, and nobody decided it. That is either a contract that stopped saying
+            # always-review or a decision that was never recorded, and both are questions rather
+            # than rows.
+            continue
+        lines.append(
+            "("
+            + ", ".join(
+                (
+                    _literal(version),
+                    "NULL",  # shipment_id — no source; see analytics/schema.sql
+                    _literal(fields["hs_code"]),
+                    _number(_amount(fields["declared_value"])),
+                    _number(_amount(fields.get("duty_amount"))),
+                    _literal(fields["currency"][-3:]),
+                    _literal(fields["country_of_origin"][:2]),
+                    "TRUE",  # human_decided — by construction: no decision, no row
+                    "NULL",  # client_id — no source
+                    _literal(fields["declaration_date"]),
+                )
+            )
+            + ")"
+        )
+    return lines
+
+
+def _amount(value: str | None) -> str | None:
+    """A printed money value as a number, or `None` if it is not one.
+
+    `81,832.10` and `81.832,10` are the same amount in two conventions and both appear in this
+    corpus. Read wrong, one becomes eighty-one — which is the shape of an error nobody notices
+    in a duty column, so a value this cannot read confidently returns `None` and the line is
+    dropped rather than guessed.
+    """
+    if not value:
+        return None
+    cleaned = value.strip().replace(" ", "")
+    for symbol in ("$", "€", "£", "¥", "USD", "EUR", "JPY", "GBP"):
+        cleaned = cleaned.replace(symbol, "")
+    if "," in cleaned and "." in cleaned:
+        # The rightmost separator is the decimal one; the other groups.
+        decimal_point = max(cleaned.rfind(","), cleaned.rfind("."))
+        grouping = "," if cleaned[decimal_point] == "." else "."
+        cleaned = cleaned.replace(grouping, "").replace(",", ".")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    try:
+        float(cleaned)
+    except ValueError:
+        return None
+    return cleaned
 
 
 def _decisions(table: str) -> dict[tuple[str, str], dict[str, str]]:
@@ -403,6 +503,32 @@ def main(argv: list[str] | None = None) -> int:
             queued,
         )
 
+    # **The duty line, and the only rows it may have.**
+    #
+    # `duty_exposure_by_chapter` read a table nothing loaded, and the reason printed here was
+    # right when it was written: a declaration line needs an HS code with a **declared value**,
+    # and this system produces classification *proposals* that no human has decided. Loading a
+    # proposal as a declaration would put a number nobody approved into a duty figure.
+    #
+    # What changed is that `hs_code` is a field on a customs declaration, declared always-review
+    # by its own contract, and `handlers/decide.py` now records a human's decision against it in
+    # the table above. So the input exists — for the declarations where somebody actually looked,
+    # and for no others. A declaration whose HS code nobody decided contributes **nothing**, and
+    # `human_decided` is therefore `TRUE` on every row here by construction rather than by
+    # assertion: the join is the control.
+    #
+    # The classifier's proposals are still not loaded and must not be. A proposal is a ranking;
+    # a declaration is a commitment, and the distance between them is the whole of claim 5.
+    declarations = _declaration_lines(lake, decisions)
+    if declarations:
+        statements.append("TRUNCATE gold.declaration_line")
+        statements += _batched(
+            "gold.declaration_line",
+            "document_version, shipment_id, hs_code, declared_value, duty_amount, currency, "
+            "country_of_origin, human_decided, client_id, declared_on",
+            declarations,
+        )
+
     _redshift(statements, arguments.workgroup, arguments.secret_arn)
     print(f"  {GREEN}ok{RESET}    gold.published_field  {len(fields)} row(s)")
     print(f"  {GREEN}ok{RESET}    gold.page_read        {len(reads)} row(s)")
@@ -410,12 +536,18 @@ def main(argv: list[str] | None = None) -> int:
         f"  {GREEN}ok{RESET}    gold.review_item      {len(queued)} row(s), {decided} with a "
         f"recorded decision"
     )
-    print(
-        f"  {DIM}gold.declaration_line 0 rows, deliberately: a declaration line needs an HS "
-        f"code with a declared value, and this system produces proposals no human has decided. "
-        f"Loading one as a declaration would put a number nobody approved into a duty figure."
-        f"{RESET}"
-    )
+    if declarations:
+        print(
+            f"  {GREEN}ok{RESET}    gold.declaration_line {len(declarations)} row(s), every one "
+            f"carrying an HS code a human decided"
+        )
+    else:
+        print(
+            f"  {DIM}gold.declaration_line 0 rows: no customs declaration has an HS code with a "
+            f"recorded human decision. A proposal is a ranking and a declaration is a "
+            f"commitment, and loading one as the other would put a number nobody approved into "
+            f"a duty figure.{RESET}"
+        )
     return 0
 
 

@@ -58,6 +58,30 @@ derivable:
     The lake's `reader` identity gives the tier; the tier gives a published unit price. A model,
     and the column is named `modelled_cost` because `docs/DECISIONS.md` 15 requires the label to
     travel with the figure rather than sit in a footnote.
+  declared_value: >-
+    The lake's `value` on the declaration's `declared_value` field, read as a number. `81,832.10`
+    and `81.832,10` are the same amount in two conventions and both appear in this corpus; a
+    value the loader cannot read confidently drops the whole line rather than guessing, because
+    the shape of that error is eighty-one euros in a duty column and nobody notices it.
+  declared_on: >-
+    The lake's `value` on the declaration's `declaration_date` field — the declaration's own
+    date, not the date this system read it. The loader wrote `extraction_date` here first and
+    `scripts/check_warehouse_is_fed.py` refused it against this very entry: a duty exposure
+    grouped by when a broker happened to scan the paperwork is a different question.
+  country_of_origin: >-
+    The lake's `value` on the declaration's `country_of_origin` field, truncated to the two-letter
+    code the column declares.
+  currency: >-
+    The lake's `value` on the declaration's `currency` field. The page prints it beside a symbol
+    — `$ USD` — so the loader takes the last three characters rather than the whole string.
+  hs_code: >-
+    The lake's `value` on the customs declaration's `hs_code` field. Extracted from the page like
+    any other field and declared always-review by its own contract — the classifier's output is a
+    *proposal* and is deliberately not loaded anywhere, because a proposal is a ranking and a
+    declaration is a commitment.
+  duty_amount: >-
+    The lake's `value` on the declaration's `duty_amount` field, when the page prints one. NULL
+    when it does not: a zero here is a duty figure somebody would read.
   modelled_currency: >-
     The currency the modelled price is published in, alongside the `reader`-derived tier that
     selected it. Never "as above": this file's own guard refuses a derivability claim that names
@@ -87,6 +111,14 @@ sourced_elsewhere:
     caller, and carried through the loader rather than recomputed. Loaded as a tri-state: NULL
     where nobody decided, which is a different fact from a reviewer who disagreed.
   decided_on: "When the decision was recorded, by `src/manifest/handlers/decide.py`."
+  human_decided: >-
+    **The join is the control.** `scripts/load_warehouse.py` emits a declaration line only for a
+    version whose `hs_code` carries a row in the decisions table written by
+    `src/manifest/handlers/decide.py`, so the column is `TRUE` on every row by construction
+    rather than by assertion — and a declaration nobody decided produces no row at all. This
+    entry previously warned that it was the column most likely to be quietly defaulted to `true`
+    by a loader in a hurry, and the defence is that there is no code path that can write `FALSE`
+    because there is no code path that emits an undecided line.
 
 # Columns nothing in this system produces, and the reason each one is absent. A mart that reads
 # one of these returns a shape rather than an answer until something that knows the fact is
@@ -95,26 +127,6 @@ unsourced:
   shipment_id: >-
     Documents arrive as files; the shipment they belong to is a fact a broker's operational
     system holds. The corpus encodes it in a filename because the corpus generated both.
-  hs_code: >-
-    Proposed by the classifier and always decided by a human. Known at extraction, absent from
-    the lake table — the same defect as `document_type`, on the field that carries the duty.
-  declared_value: >-
-    An extracted field on a customs declaration. Known at extraction, absent from the lake table.
-  duty_amount: >-
-    As above.
-  human_decided: >-
-    On a *declaration line*, and it stays unsourced for the reason the whole table does: nothing
-    loads `gold.declaration_line`, because a declaration line needs an HS code with a declared
-    value and this system produces classification proposals no human has decided. The review
-    loop's decisions are now joined into `gold.review_item`, which is a different table about a
-    different thing — a decision about a field a reader was unsure of, not a decision to declare
-    a tariff. Collapsing the two would be the quiet default to `true` this entry warns about.
-  country_of_origin: >-
-    An extracted field. Known at extraction, absent from the lake table.
-  currency: >-
-    As above.
-  declared_on: >-
-    As above — the declaration's own date, not the date this system read it.
   source_channel: >-
     How the document arrived — email, portal, EDI. The landing zone sees an object, not a
     channel.

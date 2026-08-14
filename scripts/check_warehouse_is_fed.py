@@ -112,15 +112,12 @@ def _loader_writes() -> dict[str, set[str]]:
     """
     tree = ast.parse(LOADER.read_text(encoding="utf-8"))
 
-    # The value tuples, by the name each comprehension was assigned to.
-    tuples: dict[str, list[ast.expr]] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.ListComp):
-            continue
-        target = node.targets[0]
-        if not isinstance(target, ast.Name):
-            continue
-        for inner in ast.walk(node.value.elt):
+    # The value tuples, by the name they were assigned to. Two shapes reach the same place: a
+    # list comprehension written inline, and a call to a helper that builds the rows and returns
+    # them. The second was added because this check refused it — correctly, saying it had stopped
+    # being able to pair the columns — rather than passing a table it could not read.
+    def _join_tuple(node: ast.AST) -> list[ast.expr] | None:
+        for inner in ast.walk(node):
             if (
                 isinstance(inner, ast.Call)
                 and isinstance(inner.func, ast.Attribute)
@@ -128,8 +125,31 @@ def _loader_writes() -> dict[str, set[str]]:
                 and inner.args
                 and isinstance(inner.args[0], ast.Tuple)
             ):
-                tuples[target.id] = list(inner.args[0].elts)
-                break
+                return list(inner.args[0].elts)
+        return None
+
+    builders: dict[str, list[ast.expr]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            found = _join_tuple(node)
+            if found is not None:
+                builders[node.name] = found
+
+    tuples: dict[str, list[ast.expr]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign) or not isinstance(node.targets[0], ast.Name):
+            continue
+        target = node.targets[0].id
+        if isinstance(node.value, ast.ListComp):
+            found = _join_tuple(node.value.elt)
+            if found is not None:
+                tuples[target] = found
+        elif (
+            isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Name)
+            and node.value.func.id in builders
+        ):
+            tuples[target] = builders[node.value.func.id]
 
     written: dict[str, set[str]] = {}
     for node in ast.walk(tree):
