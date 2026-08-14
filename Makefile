@@ -104,11 +104,37 @@ optional-layers: ## Every optional feature plans with its flag on and off (needs
 claims: core-pure map-matches planting-blind contracts-validate corpus-check envelope reader-version \
 	pipeline-routing \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
-	injection line-items classification marts warehouse-fed ## Every claim gate that exists today
+	claim-1-loop drift grounding baseline out-of-distribution \
+	injection line-items classification marts warehouse-fed \
+	every-gate-runs ## Every claim gate that exists today
 
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
 	$(PY) scripts/check_core_is_pure.py
+
+.PHONY: claim-1-loop
+claim-1-loop: ## Review evidence moves N, and never an error budget
+	$(PY) -m evals.feedback
+
+.PHONY: drift
+drift: ## The declared envelope, applied to arriving traffic, in both directions
+	$(PY) -m evals.drift
+
+.PHONY: grounding
+grounding: ## A classification must point at the text it came from
+	$(PY) -m evals.grounding
+
+.PHONY: baseline
+baseline: ## What the derived policy buys against a hand-picked threshold and against none
+	$(PY) -m evals.baseline
+
+.PHONY: out-of-distribution
+out-of-distribution: ## Does a confidence of 0.9 mean the same on paper nobody here designed
+	$(PY) -m evals.external
+
+.PHONY: every-gate-runs
+every-gate-runs: ## Every harness on disk is run by CI and by this file
+	$(PY) scripts/check_every_gate_runs.py
 
 .PHONY: map-matches
 map-matches: ## The documented tree exists, and every core module has a caller that runs

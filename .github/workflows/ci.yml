@@ -131,6 +131,13 @@ jobs:
         # against a system that had no path to any of them.
         run: python scripts/check_the_map_matches_the_ground.py
 
+      - name: every claim harness on disk is run by this workflow
+        # The check that would have caught the largest gap this project has had. Three
+        # hand-maintained lists of what proves this repository — `make claims`, the job below,
+        # and `preflight` — and nothing compared them to the directory. Six harnesses ran
+        # nowhere automatic, one of them `provenance`.
+        run: python scripts/check_every_gate_runs.py
+
       - name: the contract set loads and cross-checks
         run: python scripts/check_contracts.py
 
@@ -161,6 +168,40 @@ jobs:
         # confidences differ across versions, and a threshold that moved because a runner image
         # changed would make this check the first thing somebody deletes. See ADR-0005.
         run: python -m evals.calibration
+
+      - name: "claim 2 — every published field traces to a page and a box"
+        # **The project in one sentence, and it ran in no workflow.** `CLAUDE.md` calls it that:
+        # *a published field that cannot be located on a page is a build failure*. It was in
+        # `make claims` and in `make preflight`, and in neither workflow — so it could have
+        # broken and nothing would have gone red, which is the state six harnesses were in until
+        # `scripts/check_every_gate_runs.py` compared the directory against the lists.
+        #
+        # It needs the corpus rendered by the reader image, which is why it sat in the
+        # laptop-only path: the crops come from those pages, and a page rendered with a
+        # different font is a different crop. That is a reason to run it *after* the corpus job,
+        # not a reason to run it nowhere.
+        run: python -m evals.provenance
+
+      - name: "claim 1, as a loop — what review evidence does to a threshold"
+        # The arrow that must not exist: corrections move N, never an error budget.
+        run: python -m evals.feedback
+
+      - name: "the declared envelope, applied to arriving traffic"
+        # Fires in both directions. A reader that has become suddenly confident has usually
+        # stopped seeing something.
+        run: python -m evals.drift
+
+      - name: "a classification must point at the text it came from"
+        run: python -m evals.grounding
+
+      - name: "what the derived policy buys against the alternatives"
+        run: python -m evals.baseline
+
+      - name: "out of distribution — does 0.9 mean the same on paper nobody here designed"
+        # The answer to *did you tune the generator until the claims passed?*, and it ran
+        # nowhere. It needs no external corpus at runtime: `recordings/external/` is committed,
+        # the same way `recordings/ocr/` is, so this is a comparison of two committed curves.
+        run: python -m evals.external
 
       - name: "claim 3 — re-extraction is reproducible and versioned"
         run: python -m evals.reprocessing

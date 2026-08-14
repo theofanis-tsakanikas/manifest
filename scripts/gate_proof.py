@@ -242,6 +242,20 @@ def _orphan_a_decision_the_estate_makes(root: Path) -> bool:
     )
 
 
+def _drop_a_claim_harness_from_ci(root: Path) -> bool:
+    """Stop running the harness behind the sentence this project calls itself.
+
+    `provenance` is claim 2 — *a published field that cannot be located on a page is a build
+    failure*. It sat in `make claims` and in no workflow for the life of the repository, and the
+    only reason anybody noticed is that somebody compared the directory against the lists.
+    """
+    return _replace(
+        root / ".github/workflows/ci.yml",
+        "        run: python -m evals.provenance",
+        "        run: echo skipped",
+    )
+
+
 def _read_the_clock_inside_the_core(root: Path) -> bool:
     """Stamp a box with the time it was constructed.
 
@@ -1135,6 +1149,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _orphan_a_decision_the_estate_makes,
         "Six modules have been in exactly this state, and every check in this repository was "
         "green for all six. Proved offline, and never asked.",
+    ),
+    Mutation(
+        "drop a claim harness from CI",
+        "every gate runs",
+        [sys.executable, "scripts/check_every_gate_runs.py"],
+        "no job in ci.yml runs it",
+        _drop_a_claim_harness_from_ci,
+        "Six harnesses were in exactly this state, including the one behind the sentence this "
+        "project calls itself. Nothing was red for any of them.",
     ),
     Mutation(
         "read the clock inside the core",
