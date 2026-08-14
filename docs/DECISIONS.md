@@ -418,6 +418,17 @@ found by something else failing:
   parameter is opt-in. It reported "9 rows before, 9 after, and the step wrote 9": three facts
   that cannot all be true, assembled from two different runs.
 
+- The end-to-end verifier's reconciliation check reported a pass on `0 with both sides present`.
+  Nothing disagreed because nothing had been compared, and "no disagreements" is what the check
+  printed. **A check that cannot fail vacuously has to say what it examined**, which is why that
+  one now prints the count and refuses at zero.
+- `check_warehouse_is_fed.py` compared the schema against the Glue catalogue against the
+  acceptance, and never read the loader. Ten columns were declared *nothing anywhere produces
+  this* while `scripts/load_warehouse.py` was writing them — the human loop's five among them, so
+  `review_queue_economics` reported that nobody had reviewed anything and the contract agreed
+  with it. This is the category pointed the *other* way: the check was not fooled about a control,
+  it was fooled about the system having grown a capability, and under-claiming reads as modesty.
+
 The shape is always the same: **the check's input stopped being what the check believed it was,
 and nothing about that is visible from the check's own result.** A failing check names its
 problem. A check whose input vanished names nothing, and reads exactly like success.
