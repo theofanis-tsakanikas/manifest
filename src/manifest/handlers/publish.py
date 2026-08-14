@@ -245,7 +245,17 @@ def _check_the_line_total(
         "unreadable_rows": check.unreadable_rows,
         "pages_read": list(table.pages_read),
     }
-    if check.outcome is not TotalOutcome.DISAGREES:
+    # **Two shapes of disagreement, not one**, and this named a third that does not exist:
+    # `TotalOutcome.DISAGREES` was guessed rather than read, and the first two-page invoice
+    # through the estate failed with `AttributeError` — after the reading, after the extraction,
+    # in the step that was supposed to protect it. The offline suite did not catch it because no
+    # test put a document that declares a table through this handler, which is now the first test
+    # in `tests/handlers/test_publish_line_total.py`.
+    #
+    # `ROWS_MISSING` is the dropped-row signature and the direction that matters: the document
+    # says more was invoiced than its lines account for. `ROWS_SURPLUS` is a row read twice.
+    # Both refuse; only the first is the pathology this was built for.
+    if check.outcome not in (TotalOutcome.ROWS_MISSING, TotalOutcome.ROWS_SURPLUS):
         return outcomes, reported
 
     # The total is refused whatever its confidence. A high-confidence reading of a number that
