@@ -33,6 +33,7 @@ about production: it is one run, of documents this repository generated, on one 
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 import tempfile
@@ -752,22 +753,38 @@ def _edge_cases(estate: Estate, document: Path) -> None:
     # exact failure the edge cases exist to detect, passing under the name of the check written
     # to detect it.
     #
-    # The property is in the second half: **no record exists**. `SUCCEEDED` is a legitimate
+    # The property is in the second half: **no field is published**. `SUCCEEDED` is a legitimate
     # outcome here — a Greek packing list whose every field abstains ends successfully with
     # everything in the queue and nothing published — so the status alone can never separate the
-    # two, and the records bucket can.
+    # two.
+    #
+    # **This asked whether a record object exists, and that stopped being the question.** A
+    # document where everything abstains now writes a record saying exactly that, so a reviewer
+    # has something to decide against — without it, Greek and Dutch documents could never reach
+    # the human loop at all. The Greek page then published a record, this check called it a
+    # publication, and it was not one: the record has no publishable field in it.
+    #
+    # So the object is opened rather than counted. The three malformed documents still write
+    # nothing, because they fail before a record exists; the Greek one writes a record whose
+    # every field is queued, and *that* is the refusal.
     for key, why in (*cases[:3], cases[3]):
         status = started_for.get(key)
         document_id = key.rsplit("/", 1)[-1].removesuffix(".pdf")
         records = _records_under(estate, document_id)
+        published = _fields_published_across(estate, records)
         estate.check(
             f"edge · {key.split('/')[-1]} is refused, not published",
-            status in {"FAILED", "SUCCEEDED"} and not records,
+            status in {"FAILED", "SUCCEEDED"} and not published,
             f"{why} — execution {status or 'never started'}, "
             + (
-                f"and nothing under records/{document_id}/"
-                if not records
-                else f"and it PUBLISHED {len(records)} record(s): {records[:3]}"
+                (
+                    f"and nothing under records/{document_id}/"
+                    if not records
+                    else f"and its {len(records)} record(s) publish no field: every one is "
+                    f"queued for a human, which is the refusal"
+                )
+                if not published
+                else f"and it PUBLISHED {len(published)} field(s): {sorted(published)[:4]}"
             ),
         )
 
@@ -1203,6 +1220,24 @@ def _approve_what_the_shipment_checks_need(
                     or not entry.get("value")
                 ):
                     continue
+                # **The reviewer looks at the page.** This used to approve whatever tier 0 had
+                # read, which made it a rubber stamp with a login — doctrine rule 2's own
+                # example, built into the thing that verifies doctrine rule 2. It approved
+                # `USD. 3,518.78` as a currency, because the reader had swallowed the duty
+                # amount into the field beside it, and reconciliation then reported a
+                # disagreement on a shipment whose documents agree. Claim 4's zero-false-positive
+                # half was being scored against a reviewer who was not looking.
+                #
+                # So the decision is made against the corpus's own ground truth, which is what a
+                # human looking at that page would see: the read matches, and it is APPROVED; it
+                # does not, and it is CORRECTED to what is printed there. Those are different
+                # facts and `core.review` has always distinguished them.
+                #
+                # A planted mismatch survives this untouched, and must: the generator put that
+                # value *on the paper*, so a reviewer who looks confirms it and reconciliation
+                # finds the disagreement it was planted to produce.
+                truth = _ground_truth().get((shipment, document_type, str(entry["field"])))
+                agrees = truth is not None and str(entry.get("value")) == truth
                 answer, error = _invoke(
                     f"{project}-decide",
                     {
@@ -1210,7 +1245,8 @@ def _approve_what_the_shipment_checks_need(
                         "version": current,
                         "field": entry["field"],
                         "reviewer": "e2e-verifier",
-                        "decision": "approved",
+                        "decision": "approved" if agrees else "corrected",
+                        **({} if agrees else {"value": truth}),
                         "seconds_on_task": 28,
                     },
                 )
@@ -1225,6 +1261,58 @@ def _approve_what_the_shipment_checks_need(
         f"  {DIM}{approved} abstention(s) approved by a recorded decision, so the values the "
         f"reconciliation rules compare now exist{RESET}"
     )
+
+
+def _fields_published_across(estate: Estate, records: list[str]) -> set[str]:
+    """Every field these records actually publish. Empty is the refusal, and it is not nothing.
+
+    A record that exists and publishes no field is this system working: the reading is kept, the
+    provenance is kept, and every value waits for a human. Counting objects cannot see that
+    difference; opening them can.
+    """
+    published: set[str] = set()
+    for key in records:
+        record = _json_object(estate.records, key) or {}
+        published |= {
+            str(entry["field"]) for entry in record.get("fields", []) if entry.get("publishable")
+        }
+    return published
+
+
+@functools.cache
+def _planted_in(shipment: str) -> int:
+    """How many mismatches the generator planted in this shipment.
+
+    Counted from the corpus rather than written here. The planting is blind to the
+    reconciliation contract by construction — `scripts/check_planting_is_blind.py` is the check
+    that keeps it that way — so this is the one number claim 4's *exactly* can be scored against
+    without the expectation and the detector being the same function agreeing with itself.
+    """
+    corpus = json.loads((ROOT / "corpus/ground_truth/corpus.json").read_text(encoding="utf-8"))
+    return sum(
+        1
+        for planted in corpus.get("planted_mismatches", [])
+        if planted.get("shipment_id", planted.get("shipment")) == shipment
+    )
+
+
+@functools.cache
+def _ground_truth() -> dict[tuple[str, str, str], str]:
+    """`(shipment, document type, field) -> what is printed on the page`.
+
+    The corpus generated the documents and knows what it wrote. Read here so the verifier's
+    reviewer can *look*, which is the difference between a control and a rubber stamp — and,
+    for a field the generator deliberately perturbed, what it looks at is the perturbed value,
+    because that is what is on the paper.
+    """
+    corpus = json.loads((ROOT / "corpus/ground_truth/corpus.json").read_text(encoding="utf-8"))
+    printed: dict[tuple[str, str, str], str] = {}
+    for document in corpus["documents"]:
+        for printed_field in document["fields"]:
+            printed[(document["shipment_id"], document["document_id"], printed_field["field"])] = (
+                str(printed_field["value"])
+            )
+    return printed
 
 
 def _party_fields() -> set[tuple[str, str]]:
@@ -1307,7 +1395,11 @@ def _the_reading(estate: Estate, document_id: str) -> dict | None:
 
 def _check_reconciliation(estate: Estate, project: str, landed: dict[str, dict[str, str]]) -> None:
     """Claim 4 on the estate, both halves, on two shipments chosen for the difference."""
-    for shipment, expect_disagreement in (("SHP00001", False), ("SHP00002", True)):
+    # **Exactly N, not "at least one".** `bool(found) == expect` passed a run that found the
+    # planted container mismatch *and* a second disagreement on a misread currency — claim 4's
+    # two halves are exactly-N-found and zero false positives, and an assertion that stops at
+    # `bool` can only ever score the first. The counts come from the corpus's planted set.
+    for shipment, expected in (("SHP00001", 0), ("SHP00002", _planted_in("SHP00002"))):
         documents = [
             {"document_id": f"{shipment}-{document_type}", "version": version}
             for document_type, version in sorted(landed.get(shipment, {}).items())
@@ -1328,6 +1420,7 @@ def _check_reconciliation(estate: Estate, project: str, landed: dict[str, dict[s
             continue
 
         found, compared = answer.get("disagreements", 0), answer.get("compared", 0)
+        expect_disagreement = expected > 0
         if not compared:
             estate.check(
                 f"16 · {shipment} reconciles",
@@ -1341,18 +1434,24 @@ def _check_reconciliation(estate: Estate, project: str, landed: dict[str, dict[s
         estate.check(
             f"16 · {shipment} reconciles — "
             + ("a planted mismatch" if expect_disagreement else "a shipment that agrees"),
-            bool(found) == expect_disagreement,
-            f"{answer.get('rules_applied')} rule(s) applied, {answer.get('compared')} with both "
-            f"sides present, {found} disagreement(s) — "
+            found == expected,
+            f"{answer.get('rules_applied')} rule(s) applied, {compared} with both sides "
+            f"present, {found} disagreement(s) against {expected} planted — "
             + (
-                "the generator planted one, blind to the rules that found it"
+                "found by rules that never read the planting"
                 if expect_disagreement
                 else "and none, on a shipment whose documents agree"
             )
-            if bool(found) == expect_disagreement
-            else f"expected {'a disagreement' if expect_disagreement else 'none'} and got "
-            f"{found}. Claim 4 is exactly-N-found *and* zero false positives, and this is one "
-            f"of the two",
+            if found == expected
+            else f"expected {expected} disagreement(s) and got {found}. Claim 4 is "
+            f"exactly-N-found *and* zero false positives, and a count that is merely non-zero "
+            f"scores neither: "
+            + "; ".join(
+                f"{f['rule']} ({f['left']['value']!r} vs {f['right']['value']!r})"
+                for f in answer.get("findings", [])
+                if f.get("outcome", "").endswith("DISAGREE")
+                or "disagree" in str(f.get("outcome", "")).lower()
+            ),
         )
 
 
