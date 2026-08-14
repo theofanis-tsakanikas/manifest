@@ -590,6 +590,13 @@ data "aws_iam_policy_document" "deploy_data" {
       "dynamodb:DescribeContributorInsights",
       "dynamodb:DescribeKinesisStreamingDestination",
       "dynamodb:DescribeTableReplicaAutoScaling",
+      # **Reading the decisions, for the same reason the role holds `athena:StartQueryExecution`
+      # below.** The deploy applies the analytics layer and then *loads* it, and the load now
+      # joins each abstention to the human decision recorded against it — so the principal that
+      # creates the table is also the one that reads it. A read, and only a read: nothing in a
+      # deploy may write a decision, because a decision written by a pipeline is doctrine rule 5
+      # with a service principal holding the pen.
+      "dynamodb:Scan",
       "states:CreateStateMachine",
       "states:DeleteStateMachine",
       "states:DescribeStateMachine",

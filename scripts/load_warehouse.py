@@ -14,8 +14,11 @@ about nothing. Nothing in the estate copied a single row out of Iceberg.
 - `gold.page_read` — one row per page per tier, derived from the same rows and priced from
   `contracts/scale/`. Every figure is **modelled**: no page in this repository has been billed
   by a real invoice, and the column names say so.
-- `gold.review_item` — the abstentions, from the same rows. Their decisions are NULL because no
-  human has made one; that is the state, not a placeholder.
+- `gold.review_item` — the abstentions, from the same rows, joined to the decision a human
+  recorded against each. NULL where none was recorded, which stays a different fact from a
+  reviewer who disagreed: this loaded every column NULL until `handlers/decide.py` gave the
+  estate a way to record one, and leaving them NULL afterwards would under-report oversight
+  that actually happened. It is the denominator claim 5's agreement rate is computed over.
 - `gold.declaration_line` — **nothing**, and the reason is printed rather than left to be
   inferred. A declaration line needs an HS code with a declared value against it, and this
   system produces classification *proposals* that no human has decided. Loading a proposal as a
@@ -134,6 +137,50 @@ def _number(value: str | None) -> str:
 
 def _boolean(value: str | None) -> str:
     return "TRUE" if str(value).lower() == "true" else "FALSE"
+
+
+def _decisions(table: str) -> dict[tuple[str, str], dict[str, str]]:
+    """Every recorded human decision, keyed by the version and field it was made against.
+
+    A scan, and it should be one: this table holds one row per decision a human made, which is
+    bounded by how many people are looking at documents rather than by how many documents there
+    are. The load is a full projection of current truth — the same reason the tables above it are
+    truncated and rewritten — so reading all of it is the operation, not a shortcut.
+
+    A missing table is not an empty table, and this refuses rather than returning `{}`: an estate
+    deployed without the decisions table would otherwise load every review item with NULL
+    decisions and print a number that looked like *nobody has reviewed anything*.
+    """
+    rows: dict[tuple[str, str], dict[str, str]] = {}
+    paginator = _client("dynamodb").get_paginator("scan")
+    for page in paginator.paginate(TableName=table, ConsistentRead=True):
+        for item in page.get("Items", []):
+            key = (
+                str(item.get("document_version", {}).get("S", "")),
+                str(item.get("field", {}).get("S", "")),
+            )
+            rows[key] = {
+                "reviewer": item.get("reviewer", {}).get("S"),
+                "decision": item.get("decision", {}).get("S"),
+                "seconds_on_task": item.get("seconds_on_task", {}).get("N"),
+                "decided_on": item.get("decided_on", {}).get("S"),
+                # Kept as the tri-state it is: `None` means no decision was recorded, which is a
+                # different fact from a decision that disagreed with the model.
+                "agreed_with_model": item.get("agreed_with_model", {}).get("BOOL"),
+            }
+    return rows
+
+
+def _agreement(decision: dict[str, str] | None) -> str:
+    """`agreed_with_model`, and NULL when nobody decided.
+
+    Not `_boolean`, which answers FALSE to everything that is not the string `true` — including
+    the absence of a decision. That would report every unreviewed abstention as a reviewer who
+    disagreed with the model, inflating exactly the denominator doctrine rule 2 measures.
+    """
+    if decision is None or decision.get("agreed_with_model") is None:
+        return "NULL"
+    return "TRUE" if decision["agreed_with_model"] else "FALSE"
 
 
 def _batched(table: str, columns: str, values: list[str]) -> list[str]:
@@ -307,9 +354,25 @@ def main(argv: list[str] | None = None) -> int:
         reads,
     )
 
-    # The abstentions, with no decision against them. NULL rather than a placeholder: claim 5 is
-    # about whether a human looked, and a decision column filled by a loader is the exact lie
-    # that measurement exists to catch.
+    # The abstentions, each carrying the human decision made against it — and NULL where none
+    # was, which is a different fact and stays visibly different.
+    #
+    # **This join is claim 5's denominator, and until today there was no numerator to join to.**
+    # `gold.review_item` loaded every abstention with `reviewer`, `decision`, `seconds_on_task`
+    # and `agreed_with_model` hard-coded NULL, because nothing in the estate had ever recorded a
+    # decision. `handlers/decide.py` now does, so the honest thing changed: leaving the columns
+    # NULL while the table holds rows would be the mart under-reporting oversight that happened.
+    #
+    # Keyed on `(document_version, field)` — the table's own key, and the right one. A decision
+    # is made against the version the reviewer was looking at; approving it publishes a *new*
+    # version, so the row it belongs to is the one that says `published = FALSE`, which is
+    # exactly the row this list is built from. A join on document id would attach a decision to
+    # every version of the document including the ones that came after it.
+    #
+    # `agreed_with_model` is carried through rather than recomputed. It is computed in the
+    # handler, from the decision, and a loader that derived it a second time would be a second
+    # place for doctrine rule 2's numerator to be decided.
+    decisions = _decisions(f"{arguments.project}-review-decisions")
     queued = [
         "("
         + ", ".join(
@@ -318,19 +381,20 @@ def main(argv: list[str] | None = None) -> int:
                 _literal(row[0]),
                 _literal(row[3]),
                 "'below_threshold'" if row[6] not in (None, "") else "'always_review'",
-                "NULL",  # reviewer
-                "NULL",  # decision
-                "NULL",  # seconds_on_task
-                "NULL",  # agreed_with_model
+                _literal(decisions.get((row[0], row[3]), {}).get("reviewer")),
+                _literal(decisions.get((row[0], row[3]), {}).get("decision")),
+                _number(decisions.get((row[0], row[3]), {}).get("seconds_on_task")),
+                _agreement(decisions.get((row[0], row[3]))),
                 "NULL",  # client_id — no source
                 _literal(row[13]),
-                "NULL",  # decided_on
+                _literal(decisions.get((row[0], row[3]), {}).get("decided_on")),
             )
         )
         + ")"
         for row in lake
         if _boolean(row[12]) != "TRUE"
     ]
+    decided = sum(1 for row in lake if (row[0], row[3]) in decisions)
     if queued:
         statements += _batched(
             "gold.review_item",
@@ -342,7 +406,10 @@ def main(argv: list[str] | None = None) -> int:
     _redshift(statements, arguments.workgroup, arguments.secret_arn)
     print(f"  {GREEN}ok{RESET}    gold.published_field  {len(fields)} row(s)")
     print(f"  {GREEN}ok{RESET}    gold.page_read        {len(reads)} row(s)")
-    print(f"  {GREEN}ok{RESET}    gold.review_item      {len(queued)} row(s), no decisions")
+    print(
+        f"  {GREEN}ok{RESET}    gold.review_item      {len(queued)} row(s), {decided} with a "
+        f"recorded decision"
+    )
     print(
         f"  {DIM}gold.declaration_line 0 rows, deliberately: a declaration line needs an HS "
         f"code with a declared value, and this system produces proposals no human has decided. "

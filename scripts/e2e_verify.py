@@ -1261,10 +1261,10 @@ def _check_the_second_page(estate: Estate, _landed: dict[str, dict[str, str]]) -
     names, and the one where naive extraction silently loses rows while the total still adds up.
 
     **Read from the reading, not from the record.** That invoice is Dutch; its only escalation is
-    the model tier, and that tier reports no confidence — so every field abstains and no record is
-    written at all. The evidence that the reader saw both pages therefore lives in what the
-    reader produced, which is where a question about the reader belongs. Asking the record would
-    make this a test of the thresholds.
+    the model tier, and that tier reports no confidence — so every field abstains, and the record
+    the pipeline writes for it states exactly that and carries no page. The evidence that the
+    reader saw both pages therefore lives in what the reader produced, which is where a question
+    about the reader belongs. Asking the record would make this a test of the thresholds.
     """
     reading = _the_reading(estate, "SHP00001-commercial_invoice")
     if reading is None:
