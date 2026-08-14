@@ -830,8 +830,21 @@ jobs:
           repository="${TF_VAR_job_repository_url%%/*}"
           aws ecr get-login-password --region ${{ env.AWS_REGION }} \
             | docker login --username AWS --password-stdin "$repository"
-          docker build -f Dockerfile.emr -t "$TF_VAR_job_repository_url:${{ github.sha }}" .
-          docker push "$TF_VAR_job_repository_url:${{ github.sha }}"
+          # **The same immutable-tag rule as the reader image, and the same fix.** That one was
+          # repaired one deploy earlier and this one was not, because the repair was made where
+          # the failure appeared rather than to every place that pushes — which is the habit
+          # `docs/DECISIONS.md` 24 keeps recording under a different heading. Two pushes exist;
+          # both now ask before building.
+          existing=$(aws ecr describe-images \
+            --repository-name "${{ env.PROJECT }}-reprocessing" \
+            --image-ids imageTag=${{ github.sha }} \
+            --query 'imageDetails[0].imageDigest' --output text 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "None" ]; then
+            echo "the job image for ${{ github.sha }} is already in the registry; not rebuilding"
+          else
+            docker build -f Dockerfile.emr -t "$TF_VAR_job_repository_url:${{ github.sha }}" .
+            docker push "$TF_VAR_job_repository_url:${{ github.sha }}"
+          fi
           echo "uri=$TF_VAR_job_repository_url:${{ github.sha }}" >> "$GITHUB_OUTPUT"
       - name: package the reprocessing job
         # **The driver and the code it imports, from this commit, in one place.**
