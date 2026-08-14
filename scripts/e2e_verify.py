@@ -1003,8 +1003,14 @@ def _a_whole_shipment(estate: Estate, project: str) -> None:
             outcome = (_from_history(execution["executionArn"]).get("extraction") or {}).get(
                 "outcome"
             ) or {}
-            if outcome.get("fingerprint"):
-                landed.setdefault(shipment, {})[document_type] = outcome["fingerprint"]
+            version = outcome.get("fingerprint")
+            # **A fingerprint is not a published record**, and treating it as one made the next
+            # three checks ask for objects that were never written. A document whose every field
+            # abstained ends at `QueueForReview` having computed a version and published nothing
+            # — which is the system working, and it is exactly what the Greek and Dutch pages
+            # here do. So the bucket is asked rather than the history.
+            if version and _json_object(estate.records, f"records/{document_id}/{version}.json"):
+                landed.setdefault(shipment, {})[document_type] = version
 
     every_type = set(SHIPMENTS["SHP00001"])
     reached = set(landed.get("SHP00001", {}))

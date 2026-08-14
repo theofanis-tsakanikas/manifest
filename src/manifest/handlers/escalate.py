@@ -564,6 +564,18 @@ def _read_at(
 #: OCR is routinely over it: the corpus's pages are 2481×3508, and one arrived at 7,054,160 bytes.
 MODEL_IMAGE_LIMIT_BYTES = 5 * 1024 * 1024
 
+#: **The budget for the *raw* bytes, which is three quarters of the ceiling.**
+#:
+#: The ceiling applies to the image as the request carries it, and the request carries it base64
+#: encoded — four bytes out for every three in. Sizing the JPEG against the ceiling therefore
+#: produced a file that fit and a request that did not: a dense two-page invoice re-encoded to
+#: 3,987,501 bytes, which is comfortably under 5 MiB and arrives as 5,316,668, and the API
+#: refused it by exactly that number.
+#:
+#: Only a large, dense page finds this. Every earlier escalation was a bill of lading whose JPEG
+#: came out near 600 KB, where the difference between the two budgets is invisible.
+MODEL_IMAGE_RAW_BUDGET = MODEL_IMAGE_LIMIT_BYTES * 3 // 4
+
 #: How far JPEG quality is allowed to fall before resolution is given up instead. Below this the
 #: artefacts start eating thin strokes, which on a degraded scan is the difference between a `3`
 #: and an `8`.
@@ -585,8 +597,13 @@ def _within_the_model_limit(raster: bytes) -> tuple[str, bytes]:
     **What this does not do is refuse.** A page that cannot be made to fit is still sent at the
     smallest form reached, because the alternative is an abstention caused by an encoder rather
     than by the evidence, and the fields in question are already abstaining.
+
+    **Every comparison is against the raw budget, not the ceiling**, because the request carries
+    the image base64 encoded — see `MODEL_IMAGE_RAW_BUDGET`. Sizing against the ceiling made a
+    file that fits and a request that does not, and the API's refusal named the encoded number
+    while the code was reasoning about the other one.
     """
-    if len(raster) <= MODEL_IMAGE_LIMIT_BYTES:
+    if len(raster) <= MODEL_IMAGE_RAW_BUDGET:
         return "png", raster
 
     from io import BytesIO  # noqa: PLC0415 - kept off the import path of the offline suite
@@ -597,7 +614,7 @@ def _within_the_model_limit(raster: bytes) -> tuple[str, bytes]:
     for quality in (90, 80, 70, LOWEST_USEFUL_QUALITY):
         buffer = BytesIO()
         page.save(buffer, "JPEG", quality=quality, optimize=True)
-        if buffer.tell() <= MODEL_IMAGE_LIMIT_BYTES:
+        if buffer.tell() <= MODEL_IMAGE_RAW_BUDGET:
             return "jpeg", buffer.getvalue()
 
     # Only now, and by halving rather than by a computed ratio: the relationship between pixels
@@ -608,7 +625,7 @@ def _within_the_model_limit(raster: bytes) -> tuple[str, bytes]:
         smaller = smaller.resize((smaller.width // 2, smaller.height // 2))
         buffer = BytesIO()
         smaller.save(buffer, "JPEG", quality=LOWEST_USEFUL_QUALITY, optimize=True)
-        if buffer.tell() <= MODEL_IMAGE_LIMIT_BYTES:
+        if buffer.tell() <= MODEL_IMAGE_RAW_BUDGET:
             return "jpeg", buffer.getvalue()
     return "jpeg", buffer.getvalue()
 
