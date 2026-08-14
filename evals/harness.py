@@ -74,23 +74,34 @@ def ground_truth() -> dict:
 
 
 @cache
-def recorded_pages() -> dict[tuple[str, str], tuple[Page, ...]]:
+def recorded_pages(directory: Path | None = None) -> dict[tuple[str, str], tuple[Page, ...]]:
+    """The recording's pages, grouped by document.
+
+    `directory` defaults to the tier-0 recording, which is what every claim gate scores against.
+    It is a parameter because a *second* reader can be recorded over the same corpus — Textract,
+    under `recordings/textract/` — and the whole point of deriving a threshold for it is that the
+    derivation is the same one, over the same labelled set, with only the confidences changed.
+
+    A second scoring path would be two functions that could disagree about what a field is, and
+    the docstring below already says why that is the thing to avoid.
+    """
     grouped: dict[tuple[str, str], list[Page]] = {}
-    for shipment, document, page in read_pages():
+    for shipment, document, page in read_pages(directory) if directory else read_pages():
         grouped.setdefault((shipment, document), []).append(page)
     return {
         key: tuple(sorted(pages, key=lambda page: page.number)) for key, pages in grouped.items()
     }
 
 
-def score_all() -> list[Scored]:
+def score_all(directory: Path | None = None) -> list[Scored]:
     """Every declared field on every document, extracted and scored.
 
     One pass, cached by the caller. Claims 1, 2 and 5 all read from the same list, which is
-    what stops them describing different systems.
+    what stops them describing different systems — and `directory` is how a second *reader* is
+    scored by that same list rather than by a copy of it.
     """
     contract_set = contracts()
-    pages_by_document = recorded_pages()
+    pages_by_document = recorded_pages(directory)
     scored: list[Scored] = []
 
     for document in ground_truth()["documents"]:

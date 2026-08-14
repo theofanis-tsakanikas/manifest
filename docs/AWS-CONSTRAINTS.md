@@ -80,6 +80,7 @@ read 2026-08-09. These are *set* quotas — they cannot be raised.
 | Handwriting | Supported, **English only** | The handwritten-correction pathology produces abstentions in Greek and Dutch by construction. Say so; do not present it as a capability |
 | Queries | 15 per page synchronous, 30 asynchronous | Caps a query-based extraction strategy; a six-document contract set stays under it |
 | Vertical text | **Not supported** | See above |
+| **Synchronous transaction rate** | Not on this page. An account-level quota, and the default in `eu-central-1` refuses eight concurrent `DetectDocumentText` calls within seconds: `ProvisionedThroughputExceededException`. Found by being refused on 2026-08-14, recording the corpus | `scripts/textract_record.py` runs two at a time with adaptive retry. Recorded here because the next person will look for it on this page and it is not on it |
 
 ### Geometry — the normalised representation was the right call
 
