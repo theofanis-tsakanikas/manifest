@@ -185,6 +185,44 @@ class in the contract is therefore **data with a jurisdiction**, and this reposi
 state a Dutch or Greek retention period until one has been read from the national instrument.
 Writing "three years" as *the* answer would be a traced-sounding number that is only a floor.
 
+### The reviewer is a data subject too, and the analytics table forgot it
+
+**The question, stated because it was open and named in a contract for two days.**
+`review_queue_economics` groups by `reviewer`, and it must: doctrine rule 2 is about *a* reviewer
+whose agreement rate is 100%, and an aggregate over everybody cannot see one. So an operator's
+identity is in a warehouse table, and `contracts/analytics/acceptance.yaml` said only that this
+was *"a retention and personal-data question this project has not answered"*.
+
+It is answered here, and the answer is narrower than the document's other ones because the
+subject is different.
+
+**The identity is an employee's, not a trader's.** It is an internal operator account, processed
+because the employer has an interest in knowing whether its own control worked — GDPR Art. 6(1)(f),
+legitimate interests, and the interest is oversight quality rather than performance management.
+That distinction is the whole of it: an agreement rate read as *"is this control real"* is
+oversight, and the same number read as *"is this person productive"* is something the employer
+would need a different basis and a different conversation for. **This repository states the first
+purpose and no other**, which is why `review_queue_economics` reports both tails of the agreement
+rate and never a ranking.
+
+**Its retention is the decision's, not the document's.** A decision is evidence about a control
+and is not a customs record, so UCC Art. 51 does not reach it and the erasure exemption in
+Art. 17(3) does not either. Point 3 above already says so in general — *reviewer-integrity metrics
+are not a customs record and are not kept behind the exemption* — and this is that sentence
+applied to the column that carries the name.
+
+**What is therefore owed and is not yet done**, stated rather than implied: the decisions table
+and `gold.review_item` inherit the records zone's lifecycle, which is the *customs* retention
+class. That is longer than oversight needs, and it is the wrong class for this data. The right
+shape is a separate, shorter class for reviewer-attributable rows — and it is a change to
+`infra/` and to the loader rather than a paragraph, so it is named here as a build requirement
+with nothing pretending it is finished.
+
+**Reviewed by a person: not yet.** This section is written by the author of the system and it
+concerns the system's own employees, which is precisely the position where a self-assessment is
+weakest. It is a stated position, dated, and it is the kind of statement a data protection
+officer signs rather than an engineer.
+
 ---
 
 ## Verification log
@@ -193,6 +231,7 @@ Writing "three years" as *the* answer would be a traced-sounding number that is 
 |---|---|---|
 | AI Act Art. 4, Art. 113, Annex III (headings and point 7), Art. 50 | artificialintelligenceact.eu, reproducing OJ L, 2024/1689 | 2026-08-09 |
 | GDPR Art. 5(1)(c), 5(1)(e), 17(3) | gdpr-info.eu, reproducing Reg. (EU) 2016/679 | 2026-08-09 |
+| GDPR Art. 6(1)(f) — legitimate interests, for the reviewer's own identity | gdpr-info.eu, reproducing Reg. (EU) 2016/679 | 2026-08-14 |
 | UCC Art. 15, 39, 51 — **paraphrased, not quoted** | EUR-Lex consolidated CELEX 02013R0952-20221212 | 2026-08-09 |
 
 Re-verify before Phase 4's README, and stamp again. A citation with an old date is a citation
