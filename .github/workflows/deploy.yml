@@ -675,7 +675,23 @@ jobs:
           # runs here rather than in the offline suite.
           python3 -m pip install --quiet pyyaml
           python3 scripts/check_optional_layers_plan.py
+          # **The declared bands travel from the declaration, once.** `handlers/watch.py` applies
+          # `corpus/envelope.yaml` to arriving traffic and refuses to run without them; the layer
+          # takes them as variables rather than reading the file, because a Terraform root that
+          # reaches two directories up is not a unit and the offline plan check refused it.
+          # Read here, so there is still exactly one place these numbers are written down — and
+          # passed as `-var` rather than through the environment, because `check_deploy_path.py`
+          # reads the command and a variable arriving invisibly is one nobody can check.
+          band() { python3 -c "import yaml,sys;print(yaml.safe_load(open('corpus/envelope.yaml'))['overall'][sys.argv[1]][sys.argv[2]])" "$1" "$2"; }
+          MEDIAN_CONFIDENCE_MIN=$(band median_confidence min)
+          MEDIAN_CONFIDENCE_MAX=$(band median_confidence max)
+          ABSTENTION_RATE_MIN=$(band abstention_rate min)
+          ABSTENTION_RATE_MAX=$(band abstention_rate max)
           terraform -chdir=infra/extraction plan -out=tfplan \
+            -var "median_confidence_min=$MEDIAN_CONFIDENCE_MIN" \
+            -var "median_confidence_max=$MEDIAN_CONFIDENCE_MAX" \
+            -var "abstention_rate_min=$ABSTENTION_RATE_MIN" \
+            -var "abstention_rate_max=$ABSTENTION_RATE_MAX" \
             -var 'expires_at=${{ inputs.expires_at }}' \
             -var "reader_image_digest=${{ steps.image.outputs.digest }}" \
             -var "publish_package_key=${{ steps.package.outputs.key }}" \

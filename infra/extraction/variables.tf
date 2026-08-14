@@ -344,3 +344,34 @@ variable "drift_minimum_documents" {
   type        = number
   default     = 5
 }
+
+# **The declared bands, passed in rather than read from disk.**
+#
+# These came from `yamldecode(file("${path.module}/../../corpus/envelope.yaml"))` for about an
+# hour, and `scripts/check_optional_layers_plan.py` refused the layer: that check copies a layer
+# into a temporary directory to plan it against an empty state, and a layer reaching two
+# directories up for a file is a layer that is no longer self-contained. Every tool that treats a
+# Terraform root as a unit — this check, a module registry, a `-chdir` from anywhere else —
+# breaks on it, and the error names an attribute rather than a missing file.
+#
+# `deploy.yml` reads `corpus/envelope.yaml` and passes these in, so the declaration is still the
+# single source and the layer is a unit again. The handler refuses to run without them.
+variable "median_confidence_min" {
+  description = "corpus/envelope.yaml -> overall.median_confidence.min"
+  type        = number
+}
+
+variable "median_confidence_max" {
+  description = "corpus/envelope.yaml -> overall.median_confidence.max"
+  type        = number
+}
+
+variable "abstention_rate_min" {
+  description = "corpus/envelope.yaml -> overall.abstention_rate.min"
+  type        = number
+}
+
+variable "abstention_rate_max" {
+  description = "corpus/envelope.yaml -> overall.abstention_rate.max"
+  type        = number
+}

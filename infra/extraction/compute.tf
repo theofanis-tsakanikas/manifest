@@ -1046,10 +1046,6 @@ resource "aws_lambda_function" "search" {
 locals {
   # One role's worth of shared access, written once. All three read published records; two write
   # something; none of them may delete anything at all.
-  # Read rather than restated. A copy of these numbers in HCL would be a second declaration of
-  # the operating envelope, and the two would disagree the first time one of them was edited.
-  envelope = yamldecode(file("${path.module}/../../corpus/envelope.yaml"))
-
   human_loop_functions = var.enable_escalation_tiers ? toset(["decide", "reconcile", "entities", "harvest", "watch"]) : toset([])
 }
 
@@ -1252,10 +1248,10 @@ resource "aws_lambda_function" "human_loop" {
       ALERTS_TOPIC_ARN      = var.alerts_topic_arn
       WINDOW_HOURS          = tostring(var.drift_window_hours)
       MINIMUM_DOCUMENTS     = tostring(var.drift_minimum_documents)
-      MEDIAN_CONFIDENCE_MIN = tostring(local.envelope.overall.median_confidence.min)
-      MEDIAN_CONFIDENCE_MAX = tostring(local.envelope.overall.median_confidence.max)
-      ABSTENTION_RATE_MIN   = tostring(local.envelope.overall.abstention_rate.min)
-      ABSTENTION_RATE_MAX   = tostring(local.envelope.overall.abstention_rate.max)
+      MEDIAN_CONFIDENCE_MIN = tostring(var.median_confidence_min)
+      MEDIAN_CONFIDENCE_MAX = tostring(var.median_confidence_max)
+      ABSTENTION_RATE_MIN   = tostring(var.abstention_rate_min)
+      ABSTENTION_RATE_MAX   = tostring(var.abstention_rate_max)
     }
   }
 

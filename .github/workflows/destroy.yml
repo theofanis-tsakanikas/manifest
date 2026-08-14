@@ -362,7 +362,16 @@ jobs:
             -var 'expires_at=1970-01-01' \
             -var 'enable_escalation_tiers=true' \
             -var "escalation_model_arns=[\"$ESCALATION_MODEL_ARN\"]" \
-            -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000'
+            -var 'reader_image_digest=sha256:0000000000000000000000000000000000000000000000000000000000000000' \
+            `# The declared bands decide nothing in a teardown and still have to resolve, for` \
+            `# the same reason the digest does: a destroy evaluates the configuration. Zeros` \
+            `# rather than the real numbers, so a teardown that somehow ended in an apply would` \
+            `# stand up a drift watch whose every band is empty and which therefore reports on` \
+            `# the first document it sees, instead of one quietly running the right policy.` \
+            -var 'median_confidence_min=0' \
+            -var 'median_confidence_max=0' \
+            -var 'abstention_rate_min=0' \
+            -var 'abstention_rate_max=0'
       - name: delete the document-automation project Terraform does not manage
         # **The one resource in this estate no `terraform destroy` removes.** The AWS provider
         # declares no resource for a Bedrock Data Automation project, so `deploy.yml` creates it
