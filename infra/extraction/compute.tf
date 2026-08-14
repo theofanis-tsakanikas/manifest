@@ -1113,6 +1113,24 @@ data "aws_iam_policy_document" "human_loop" {
     }
   }
 
+  # **`sns:Publish` on an encrypted topic is not enough**, and the first invocation said so:
+  # `KMSAccessDenied ... not authorized to perform kms:GenerateDataKey`. The alerts topic is
+  # encrypted with the *logs* key, not the data key this role already holds, and SNS asks the
+  # caller's credentials for the grant rather than using its own.
+  #
+  # Worth the note because of how it failed: the handler had already done its work — read the
+  # window, applied the bands, found the drift — and then lost the report. A control that
+  # computes a finding and cannot deliver it is indistinguishable from one that found nothing.
+  dynamic "statement" {
+    for_each = each.key == "watch" ? [1] : []
+    content {
+      sid       = "EncryptTheFindingForTheTopic"
+      effect    = "Allow"
+      actions   = ["kms:GenerateDataKey", "kms:Decrypt"]
+      resources = [var.logs_key_arn]
+    }
+  }
+
   dynamic "statement" {
     for_each = each.key == "harvest" ? [1] : []
     content {
