@@ -20,9 +20,13 @@ destroy" is a number and `aws_opensearchserverless_collection.records` is a deci
 Reads the plan as JSON rather than parsing Terraform's prose. `docs/DECISIONS.md` 24: parse the
 thing, do not match its shape — the human-readable output is formatting, and formatting changes.
 
+**Deletions, not replacements**, and the first run of this check got that wrong — see `_planned`.
+A resource Terraform must replace is being edited, not torn down, and refusing those would make
+this fire on ordinary applies until somebody kept the override flag on permanently.
+
     terraform plan -out=tfplan ...
     terraform show -json tfplan > plan.json
-    python3 scripts/check_plan_destroys.py plan.json          # refuses on any delete
+    python3 scripts/check_plan_destroys.py plan.json          # refuses a pure delete
     python3 scripts/check_plan_destroys.py plan.json --accept  # allowed, and still printed
 """
 
@@ -35,21 +39,41 @@ from pathlib import Path
 
 GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
 
-#: Terraform's own words for what it intends to do with a resource. A replacement arrives as the
-#: pair `["delete", "create"]` (or `["create", "delete"]` for `create_before_destroy`), and it is
-#: a deletion: the resource that exists now stops existing. A collection replaced is a collection
-#: whose contents are gone, whatever the count of resources afterwards says.
+#: Terraform's own words for what it intends to do with a resource.
 DELETE = "delete"
 
+#: A resource that is deleted and not replaced. **This is what the check is about**, and the
+#: distinction is not pedantry: the teardown that prompted it was five pure deletes, because a
+#: feature flag went from on to off and the resources simply stopped being in the configuration.
+GOING = [DELETE]
 
-def _planned(document: dict) -> list[tuple[str, list[str]]]:
-    """Every resource the plan would delete, with the actions that say so."""
-    going: list[tuple[str, list[str]]] = []
+
+def _planned(document: dict) -> tuple[list[str], list[str]]:
+    """What the plan deletes outright, and what it replaces. Two different facts.
+
+    **The first run of this check refused a replacement, and was wrong to.** A replacement arrives
+    as `["delete", "create"]` — Terraform's way of saying a resource has an argument it cannot
+    change in place — and two Lake Formation grants had one. Nothing was being torn down; a grant
+    was being re-issued, which is how that resource type is edited at all.
+
+    Treating the two the same would make this check fire on ordinary applies, and a gate that
+    fires on ordinary work is a gate people learn to pass with the override flag. So a pure
+    delete refuses and a replacement is printed.
+
+    What that gives up, stated rather than left to be discovered: a replaced resource that holds
+    *data* loses it, and this will not stop that. The honest scope is deletions, and an estate
+    whose data-bearing resources can be replaced in place of destroyed is a separate control —
+    `prevent_destroy` on the resource, which is where Terraform puts it.
+    """
+    deleted, replaced = [], []
     for change in document.get("resource_changes", []):
         actions = list(change.get("change", {}).get("actions", []))
-        if DELETE in actions:
-            going.append((str(change.get("address", "?")), actions))
-    return sorted(going)
+        address = str(change.get("address", "?"))
+        if actions == GOING:
+            deleted.append(address)
+        elif DELETE in actions:
+            replaced.append(address)
+    return sorted(deleted), sorted(replaced)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,15 +95,21 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     document = json.loads(arguments.plan.read_text(encoding="utf-8"))
-    going = _planned(document)
+    going, replaced = _planned(document)
     where = f" in {arguments.layer}" if arguments.layer else ""
 
+    for address in replaced:
+        print(f"  {DIM}replaced{RESET}  {address}")
+
     if not going:
-        print(f"  {GREEN}ok{RESET}    the plan{where} destroys nothing")
+        print(
+            f"  {GREEN}ok{RESET}    the plan{where} deletes nothing"
+            + (f", and replaces {len(replaced)}" if replaced else "")
+        )
         return 0
 
-    for address, actions in going:
-        print(f"  {'→'.join(actions):>15}  {address}")
+    for address in going:
+        print(f"  {RED}deleted{RESET}   {address}")
 
     if arguments.accept:
         print(
