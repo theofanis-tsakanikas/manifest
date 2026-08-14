@@ -175,6 +175,7 @@ def handler(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
         ServerSideEncryption="aws:kms",
         SSEKMSKeyId=_env("DATA_KEY_ARN"),
     )
+    landed = _land(superseding)
     return {
         "document_id": document_id,
         "version": superseding["fingerprint"],
@@ -183,6 +184,8 @@ def handler(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
         "decision": str(decision),
         "published": True,
         "reason": why,
+        # Stated rather than assumed. See `_land`.
+        "landed": landed,
     }
 
 
@@ -242,6 +245,42 @@ def _publish_with(record: dict[str, Any], entry: dict[str, Any], made: Record) -
         "publishable_count": sum(1 for f in decided if f.get("publishable")),
         "queued_count": sum(1 for f in decided if f.get("queued_because")),
     }
+
+
+def _land(record: dict[str, Any]) -> bool:
+    """Carry the superseding version into the lake, the way every other published record gets there.
+
+    **The lake is described as a view of the records bucket, and for reviewed records it was
+    not.** A decision wrote a new version to S3 and nothing landed it, so every analytical
+    surface kept showing the pre-decision truth for ever: `gold.published_field` said the field
+    was unpublished, `gold.declaration_line` found no customs declaration with a decided HS code,
+    and the duty mart answered nothing — all of it correct about the lake and wrong about the
+    system. Found because that mart stayed at zero rows after the classification was decided.
+
+    The landing handler is asked rather than reimplemented. It already refuses to write a version
+    twice, which is what makes recording the same decision again cost a lookup instead of a
+    duplicate — the same idempotence the version derivation gives on the object side.
+
+    **A failure here does not fail the decision.** The record in the records bucket *is* the
+    record; the lake is a view that can be rebuilt from it. Losing the landing is a gap in a
+    projection, and turning that into a refusal would make the view more important than the
+    thing it is a view of. It is reported, and the caller can see it.
+    """
+    function = os.environ.get("LAND_FUNCTION")
+    if not function:
+        print("LAND_FUNCTION is unset; the superseding version is in the bucket and not the lake")
+        return False
+    try:
+        _client("lambda").invoke(
+            FunctionName=function,
+            InvocationType="RequestResponse",
+            Payload=json.dumps({"record": record}).encode("utf-8"),
+        )
+    # Broad on purpose: the decision stands whatever went wrong here.
+    except Exception as error:
+        print(f"the superseding version did not reach the lake: {error}")
+        return False
+    return True
 
 
 def _write_decision(

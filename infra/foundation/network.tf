@@ -225,6 +225,11 @@ locals {
     # was ever deployed — which is the third time that check has caught this exact shape, and the
     # first time it caught it before an invocation had been billed for the silence.
     "sns",
+    # A reviewer's decision publishes a superseding version and asks the landing function to
+    # carry it into the lake. One function calling another inside a VPC goes out to the Lambda
+    # API like any other client, so the same silence applies: without this, a decision would
+    # publish, record itself, and then hang for three minutes on the projection.
+    "lambda",
   ]
 
   # Reachability for tiers nothing calls yet. Standing them up by default is paying for a road

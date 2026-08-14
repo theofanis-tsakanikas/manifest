@@ -88,13 +88,29 @@ class _Table:
         return {}
 
 
+class _Lambda:
+    def __init__(self) -> None:
+        self.invocations: list[dict[str, Any]] = []
+
+    def invoke(self, **kwargs: Any) -> dict[str, Any]:
+        self.invocations.append(kwargs)
+        return {"StatusCode": 200}
+
+
 @pytest.fixture
 def estate(monkeypatch: pytest.MonkeyPatch) -> tuple[_Store, _Table]:
     store, table = _Store(RECORD), _Table()
     monkeypatch.setenv("RECORDS_BUCKET", "manifest-records-111111111111")
     monkeypatch.setenv("DECISIONS_TABLE", "manifest-review-decisions")
     monkeypatch.setenv("DATA_KEY_ARN", "arn:aws:kms:eu-central-1:111111111111:key/abc")
-    monkeypatch.setattr(decide, "_client", lambda name: store if name == "s3" else table)
+    monkeypatch.setenv("LAND_FUNCTION", "manifest-land")
+    invoker = _Lambda()
+    monkeypatch.setattr(
+        decide,
+        "_client",
+        lambda name: {"s3": store, "dynamodb": table, "lambda": invoker}[name],
+    )
+    store.lambdas = invoker
     return store, table
 
 
@@ -225,3 +241,51 @@ def test_the_published_version_records_who_decided_it(estate) -> None:
     assert decided["publishable"] is True
     assert decided["queued_because"] is None
     assert decided["decided_by"] == "eirini@piraeus"
+
+
+def test_the_superseding_version_reaches_the_lake(estate) -> None:
+    """**The lake is a view of the records bucket, and for a reviewed record it was not.**
+
+    A decision wrote a new version to S3 and nothing landed it, so every analytical surface kept
+    showing the pre-decision truth: the field read as unpublished, no customs declaration had a
+    decided HS code, and the duty mart answered nothing — all of it correct about the lake and
+    wrong about the system.
+    """
+    store, _ = estate
+
+    answer = _decide()
+
+    assert answer["landed"] is True
+    sent = json.loads(store.lambdas.invocations[0]["Payload"])
+    assert sent["record"]["fingerprint"] == answer["version"]
+    assert sent["record"]["supersedes"] == "a" * 32
+
+
+def test_a_landing_that_fails_does_not_undo_the_decision(estate) -> None:
+    """The record in the bucket *is* the record; the lake is a view that can be rebuilt from it.
+
+    Reported rather than raised — turning it into a refusal would make the view more important
+    than the thing it is a view of.
+    """
+    store, table = estate
+
+    def _broken(**_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("no route to the landing function")
+
+    store.lambdas.invoke = _broken
+
+    answer = _decide()
+
+    assert answer["published"] is True
+    assert answer["landed"] is False
+    assert store.puts, "the superseding record was still written"
+    assert table.rows, "the decision was still recorded"
+
+
+def test_a_refused_decision_lands_nothing(estate) -> None:
+    """Nothing was published, so there is no new version for the lake to hold."""
+    store, _ = estate
+
+    _decide(decision="rejected")
+
+    assert store.lambdas.invocations == []

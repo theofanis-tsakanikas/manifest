@@ -1103,6 +1103,20 @@ data "aws_iam_policy_document" "human_loop" {
   # `watch` reports a finding to a person and does nothing else. **No write anywhere**: an
   # envelope that could widen to accommodate the traffic would be a control agreeing with
   # whatever happened, and the only way to change a band is to edit the declaration and say why.
+  # **The lake is a view of the records bucket, and a reviewed record has to reach it.** A
+  # decision writes a superseding version; without this, nothing lands it, and every analytical
+  # surface keeps showing the pre-decision truth for ever. The landing handler is asked rather
+  # than reimplemented — it already refuses to write a version twice.
+  dynamic "statement" {
+    for_each = each.key == "decide" ? [1] : []
+    content {
+      sid       = "LandsTheSupersedingVersion"
+      effect    = "Allow"
+      actions   = ["lambda:InvokeFunction"]
+      resources = [aws_lambda_function.land.arn]
+    }
+  }
+
   dynamic "statement" {
     for_each = each.key == "watch" ? [1] : []
     content {
@@ -1259,6 +1273,7 @@ resource "aws_lambda_function" "human_loop" {
       DECISIONS_TABLE  = aws_dynamodb_table.decisions.name
       REVIEW_QUEUE_URL = aws_sqs_queue.review.url
       CONTRACTS_DIR    = "/var/task/contracts"
+      LAND_FUNCTION    = aws_lambda_function.land.function_name
 
       # **The bands travel as declared data, from the declaration.** `handlers/watch.py` refuses
       # to run without them rather than defaulting: a band chosen by whoever wrote the handler,
