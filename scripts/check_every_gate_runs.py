@@ -57,8 +57,16 @@ def _harnesses() -> set[str]:
 
 
 def _run_by_ci() -> set[str]:
-    """Every `python -m evals.<name>` the workflow runs, in any job."""
-    return set(re.findall(r"python -m evals\.(\w+)", CI.read_text(encoding="utf-8")))
+    """Every `-m evals.<name>` the workflow runs, in any job, however python is spelled.
+
+    Matched on the module argument rather than on `python -m …`, and the difference is not
+    cosmetic: `claim 2` runs *inside the reader image*, because the corpus pages are generated
+    there and exist nowhere else, so its line is `-m evals.provenance` under a `docker run`
+    with the interpreter given as an entrypoint. The stricter pattern reported the harness as
+    unrun while it was running — a check reading the wrong thing, on the very check written to
+    stop checks reading the wrong thing.
+    """
+    return set(re.findall(r"-m evals\.(\w+)", CI.read_text(encoding="utf-8")))
 
 
 def _run_by_make() -> set[str]:

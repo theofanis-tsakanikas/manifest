@@ -1,12 +1,12 @@
 {
  "corpus_fingerprint": "b566f174d57a20bbba8c1cfed55dba7d0c542efb263eae7aeb7cd41025ec7bc6",
  "corpus_seed": 20260809,
- "digest": "e6157cf1b83f556ac301581fd7a4b604b39c7a4934e2161015f557e704eaa835",
+ "digest": "3938c775fdee15ad3fa1f7c1cb7e10244fb2cbbfa0edd079034f69bea9de24f4",
  "language_data": [
   "en"
  ],
- "pages": 15,
+ "pages": 2336,
  "reader_name": "managed-ocr",
  "reader_version": "detect-document-text@2026-08-09",
- "words": 853
+ "words": 127142
 }

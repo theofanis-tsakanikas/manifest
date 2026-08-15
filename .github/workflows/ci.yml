@@ -169,19 +169,6 @@ jobs:
         # changed would make this check the first thing somebody deletes. See ADR-0005.
         run: python -m evals.calibration
 
-      - name: "claim 2 — every published field traces to a page and a box"
-        # **The project in one sentence, and it ran in no workflow.** `CLAUDE.md` calls it that:
-        # *a published field that cannot be located on a page is a build failure*. It was in
-        # `make claims` and in `make preflight`, and in neither workflow — so it could have
-        # broken and nothing would have gone red, which is the state six harnesses were in until
-        # `scripts/check_every_gate_runs.py` compared the directory against the lists.
-        #
-        # It needs the corpus rendered by the reader image, which is why it sat in the
-        # laptop-only path: the crops come from those pages, and a page rendered with a
-        # different font is a different crop. That is a reason to run it *after* the corpus job,
-        # not a reason to run it nowhere.
-        run: python -m evals.provenance
-
       - name: "claim 1, as a loop — what review evidence does to a threshold"
         # The arrow that must not exist: corrections move N, never an error budget.
         run: python -m evals.feedback
@@ -285,6 +272,29 @@ jobs:
             --entrypoint /usr/local/bin/python \
             manifest-reader:ci \
             -m corpus.generate --check
+
+      - name: "claim 2 — every published field traces to a page and a box"
+        # **The project in one sentence, and it ran in no workflow.** `CLAUDE.md` calls it that:
+        # *a published field that cannot be located on a page is a build failure*.
+        #
+        # It belongs **here** rather than in the claim-gates job, and putting it there first was
+        # a mistake that CI caught in one run: `corpus/rendered does not exist`. The pages are
+        # not in the repository — box geometry comes from font metrics, so they are generated in
+        # the image, by the step directly above. This is the only job that has them.
+        #
+        # Which means claim 2 rides the same acceptance as the corpus check: every push to main
+        # runs it, and the deploy gate skips it under `contracts/ci/acceptance.yaml`. That is
+        # weaker than the other fourteen and it is stated rather than hidden — and it is
+        # incomparably stronger than the previous arrangement, which was nowhere at all.
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            --env PYTHONPATH=/work/src \
+            --entrypoint /usr/local/bin/python \
+            manifest-reader:ci \
+            -m evals.provenance
 
   gate-proof:
     name: attack our own gates

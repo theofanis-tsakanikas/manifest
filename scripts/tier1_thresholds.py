@@ -39,6 +39,10 @@ sys.path.insert(0, str(ROOT))
 RECORDING = ROOT / "recordings" / "textract"
 OUT = ROOT / "recordings" / "thresholds.textract.json"
 
+#: How far a threshold must fall before the report calls it a change rather than noise. Two
+#: hundredths of a confidence point is well inside the derivation's own candidate spacing.
+MATERIAL = 0.02
+
 GREEN, RED, YELLOW, DIM, RESET = (
     "\033[32m",
     "\033[31m",
@@ -46,6 +50,42 @@ GREEN, RED, YELLOW, DIM, RESET = (
     "\033[2m",
     "\033[0m",
 )
+
+
+def _report(gained: list[str], loosened: list[str], lost: list[str], unchanged: int) -> None:
+    """What the second reader bought, counted in the two ways it can be bought.
+
+    **The first version of this counted one of them.** A field whose threshold falls from 0.92
+    to 0.00 publishes vastly more of itself, and it was filed under *unchanged* because neither
+    end was always-review — so the summary reported the smaller half of the effect and left out
+    the larger. Leaving out the largest effect and reporting the rest is how a summary flatters
+    a result it did not have to flatter.
+    """
+    print(
+        f"\n  {GREEN}{len(gained)} field(s) leave always-review{RESET} · "
+        f"{GREEN}{len(loosened)} publish materially more{RESET} · "
+        f"{YELLOW}{len(lost)} return to always-review{RESET} · {unchanged} unchanged"
+    )
+    if gained:
+        print(f"  {DIM}left always-review: {', '.join(gained)}{RESET}")
+    if loosened:
+        print(f"  {DIM}threshold fell by {MATERIAL}+: {', '.join(loosened)}{RESET}")
+    if lost:
+        print(f"  {DIM}returned to always-review: {', '.join(lost)}{RESET}")
+    if gained or loosened:
+        print(
+            f"\n  {DIM}A threshold of 0.000 is not a rounding artefact and is not a bug: it is "
+            f"the derivation saying this reader made **no error at all** on that field in this "
+            f"population, so even publishing at any score fits the budget. It is also the least "
+            f"comfortable number on the page — it means confidence carries no information there "
+            f"— and it is an argument for more labelled data before anybody acts on it.{RESET}"
+        )
+    else:
+        print(
+            f"  {DIM}Tier 1 is no better on this corpus, and that is a result rather than a "
+            f"failure: the escalation buys a reading for a human and not a published field. "
+            f"Three dollars fifty to know it instead of assuming it, with an N and a date.{RESET}"
+        )
 
 
 def main() -> int:
@@ -78,8 +118,22 @@ def main() -> int:
         )
         return 1
 
-    tier0 = by_field(score_all())
-    tier1 = by_field(score_all(RECORDING))
+    # **Both readers, on the same pages, or the comparison is about language and not reading.**
+    #
+    # Tier 1 read 2,336 of the corpus's 3,255 pages: the routing contract keeps Greek and Dutch
+    # away from a service that publishes neither. So a naive comparison puts tier 0's `currency`
+    # at N=999 against tier 1's at N=556 — two populations, and any difference between them is
+    # the language mix as much as the reader. The first version of this script did exactly that
+    # and would have reported a result about Dutch documents as a fact about Textract.
+    #
+    # So tier 0 is restricted to the documents tier 1 actually read. What is left is one
+    # question with one variable in it: on these pages, whose confidence carries more.
+    scored_tier1 = score_all(RECORDING)
+    read_by_tier1 = {(entry.shipment, entry.document) for entry in scored_tier1}
+    tier0 = by_field(
+        [entry for entry in score_all() if (entry.shipment, entry.document) in read_by_tier1]
+    )
+    tier1 = by_field(scored_tier1)
 
     print(
         f"\n  reader {manifest.reader_name}@{manifest.reader_version}, "
@@ -88,7 +142,7 @@ def main() -> int:
     print(f"  {'field':26} {'tier 0':>14} {'N':>7}   {'tier 1':>14} {'N':>7}   {'budget':>8}\n")
 
     derived: dict[str, dict[str, object]] = {}
-    gained, lost, unchanged = [], [], 0
+    gained, lost, loosened, unchanged = [], [], [], 0
     for field in sorted(set(tier0) | set(tier1)):
         budget = field_contract(field).error_budget
         if budget is None:
@@ -104,6 +158,16 @@ def main() -> int:
             colour, _ = GREEN, gained.append(field)
         elif before.value is not None and after.value is None:
             colour, _ = YELLOW, lost.append(field)
+        elif (
+            before.value is not None
+            and after.value is not None
+            and before.value - after.value >= MATERIAL
+        ):
+            # **The gain that the first version of this report did not count.** A field whose
+            # threshold falls from 0.92 to 0.00 publishes vastly more of itself and was being
+            # filed under "unchanged" because neither end was always-review. Leaving out the
+            # largest effect and reporting the rest is how a summary flatters a result.
+            colour, _ = GREEN, loosened.append(field)
         else:
             unchanged += 1
 
@@ -118,18 +182,7 @@ def main() -> int:
             "error_budget": str(budget),
         }
 
-    print(
-        f"\n  {GREEN}{len(gained)} field(s) tier 1 can publish that tier 0 cannot{RESET}"
-        f" · {len(lost)} the other way · {unchanged} unchanged"
-    )
-    if gained:
-        print(f"  {DIM}{', '.join(gained)}{RESET}")
-    else:
-        print(
-            f"  {DIM}Tier 1 is no better on this corpus, and that is a result rather than a "
-            f"failure: the escalation buys a reading for a human and not a published field. "
-            f"Three dollars fifty to know it instead of assuming it, with an N and a date.{RESET}"
-        )
+    _report(gained, loosened, lost, unchanged)
 
     if not os.environ.get("ACCEPT"):
         print(
