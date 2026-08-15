@@ -1,0 +1,63 @@
+# The budget ceiling was raised, by whom, why, and what has to happen before it goes back.
+#
+# **What the brake did was correct.** On 2026-08-15 `manifest-budget-stop` attached itself to the
+# deploy role and refused `s3:CreateBucket`, and the estate stopped being deployable. That is the
+# control working: an alert nobody reads has never stopped a bill, so it is an action.
+#
+# **What it measured was not.** The account stood at 199.24 USD for the month, against a
+# `manifest-estate` ceiling of 175. Of that:
+#
+#     64.45  VPC interface endpoints — all sixteen in `watermark-vpc`
+#     47.06  Kinesis and Kinesis Analytics — this system has never created a stream
+#     38.72  tax
+#     25.09  OpenSearch — zero collections standing at the time
+#      1.49  SageMaker — ours
+#
+# Roughly 111 USD belongs to a sibling project. The budget carries no cost filter, so it counts
+# the whole account: `attestor-estate` reports the identical figure, which is the proof. A budget
+# named for one project that stops that project because another one spent is not a guard, it is a
+# coincidence with an IAM policy attached.
+version: 1
+
+acceptance:
+  what: >-
+    `monthly_budget_usd` is raised from 175 to 400, and the budget action that had already fired
+    is reversed so the deploy role can create again.
+
+  accepted_by: "Theofanis Tsakanikas"
+  accepted_on: "2026-08-15"
+  expires_on: "2026-09-15"
+
+  why: >-
+    400 is not a statement that this system may spend 400. Its own attributable spend is around
+    ten dollars a month — Textract 3.50 for the one recording, SageMaker 1.49, a few dollars of
+    Bedrock, and its share of shared infrastructure. 400 is the number at which a budget
+    measuring three projects stops blocking one, and nothing more than that.
+
+    Raising a guard is the move `infra/bootstrap/variables.tf` warns about in its own comment,
+    and the warning is about a guard that measures the right thing and fires early. This one
+    measured the wrong thing, which is a different defect with a different fix.
+
+  # What is deliberately NOT given up.
+  still_holds:
+    - >-
+      **The brake still exists and still fires.** It was raised, not removed, and the deny policy
+      is still attached to the role by the action on the day the new ceiling is crossed.
+    - >-
+      **The asymmetry is untouched**: at the ceiling the deploy role loses the ability to create
+      and keeps the ability to tear down. An estate that cannot be destroyed because it ran out
+      of budget is the worst of both.
+    - >-
+      **`CLAUDE.md`'s under-EUR-150 design ceiling is unchanged.** That is a constraint on what
+      may be built, and this file changes an enforcement threshold rather than that constraint.
+
+  ends_when: >-
+    The budget carries a cost filter that restricts it to this project's resources, at which
+    point the ceiling goes back to 175 — where a guard measuring ten dollars of real spend
+    against 175 has enormous headroom and is still a guard.
+
+    **Blocked on one thing, and it is a waiting period rather than work.** Filtering a budget by
+    tag requires the tag to be activated as a *cost allocation tag* in Billing, and AWS backfills
+    those over roughly a day before they can be used. `manifest:expires-at` is on every resource
+    this estate creates and is activated on the date above; the filter goes in as soon as it
+    resolves, and this acceptance is what makes that a scheduled act rather than a forgotten one.

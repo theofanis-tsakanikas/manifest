@@ -148,9 +148,24 @@ variable "monthly_budget_usd" {
 
     The euro figure is the design ceiling and stays in `CLAUDE.md`. This is the enforceable
     approximation of it, and the difference is written down rather than quietly absorbed.
+
+    **Raised from 175 to 400 on 2026-08-15, and the reason is not that Manifest spends more.**
+    It spends about ten dollars. The brake fired at an account total of 199 USD of which
+    **roughly 111 belongs to a sibling project** — sixteen interface endpoints and two Kinesis
+    streams in `watermark-vpc`, neither of which this system has ever created.
+
+    A budget named `manifest-estate` that counts three projects is not measuring what its name
+    says, and this file's own comment — *a guard that fires early because the euro moved is a
+    guard somebody raises, and a raised guard is no guard* — is about a guard that measures the
+    right thing and fires early. This one measured the wrong thing.
+
+    **So 400 is an interim, not a judgement**: it is the number at which a budget measuring three
+    projects stops blocking one. The real fix is a cost filter so it measures Manifest, and that
+    is blocked on activating cost-allocation tags, which AWS backfills over about a day.
+    `contracts/deploy/budget.yaml` carries the acceptance and its expiry.
   EOT
   type        = number
-  default     = 175
+  default     = 400
 
   validation {
     condition     = var.monthly_budget_usd > 0 && var.monthly_budget_usd <= 600
