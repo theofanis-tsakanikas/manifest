@@ -654,6 +654,9 @@ jobs:
         # and was refused by name — correctly, and permanently, until this shipped one.
         run: |
           set -euo pipefail
+          # The floor comes from `contracts/cascade/routing.yaml`, and this step runs on a runner
+          # that never installs the package. One dependency, named.
+          python -m pip install --quiet pyyaml
           for reader in tier0 tier1; do
             python scripts/thresholds_artefact.py --reader "$reader" --out "thresholds.$reader.json"
             key=$(python scripts/thresholds_artefact.py --reader "$reader" --print-key)

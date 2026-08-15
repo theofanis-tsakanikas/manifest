@@ -53,10 +53,31 @@ def _floor() -> float:
 
     In `contracts/cascade/routing.yaml` with its reasoning, and read rather than restated: it is
     a policy about what counts as evidence, and a copy of it here would be a second policy.
-    """
-    from manifest.contracts.loader import load  # noqa: PLC0415
 
-    return float(load(ROOT / "contracts").cascade.minimum_useful_threshold)
+    **Read as YAML rather than through the contract loader**, and the reason is where this runs.
+    The deploy renders the artefact on a bare runner that has never installed this package —
+    reaching for the loader pulled in pydantic and the apply died on `ModuleNotFoundError` after
+    the layer had been applied, on a step whose whole job is to ship a file.
+
+    Nothing is given up by reading it directly. The contract is validated by
+    `scripts/check_contracts.py`, which runs in the gate before any apply, so a malformed one
+    never reaches this line — and every handler that *decides* anything still loads the whole
+    contract through the model.
+    """
+    import yaml  # noqa: PLC0415
+
+    routing = yaml.safe_load((ROOT / "contracts/cascade/routing.yaml").read_text(encoding="utf-8"))
+    declared = routing.get("minimum_useful_threshold")
+    if declared is None:
+        # Refused rather than defaulted. A floor this cannot find would ship every derived
+        # threshold including the ones that separate nothing, which is the thing it exists to
+        # stop — and it would do it silently.
+        raise SystemExit(
+            "contracts/cascade/routing.yaml declares no minimum_useful_threshold. A threshold "
+            "of zero separates nothing, and shipping one would publish on a score that has "
+            "never been shown to mean anything"
+        )
+    return float(declared)
 
 
 def main() -> int:
