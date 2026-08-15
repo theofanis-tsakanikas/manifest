@@ -273,19 +273,28 @@ def _keys_pending_deletion(session) -> set[str]:
     """
     kms = session.client("kms")
     pending: set[str] = set()
+    # A key this account can list and cannot describe belongs to another principal, and is not
+    # ours to report either way. Counted rather than passed over in silence: a sweep that quietly
+    # skipped keys would under-report, and under-reporting is the direction that costs money.
+    #
+    # **Counted rather than listed, which is the correction.** This printed one line per key, and
+    # on an account holding three projects that is several hundred lines of opaque UUIDs — under
+    # which the teardown of 2026-08-15 buried its one real finding. Every line was true and the
+    # report was unreadable, which is this file's own stated failure mode two functions up: *a
+    # report somebody stops reading*. The count carries the same information an operator can act
+    # on; the individual identifiers carried none.
+    skipped: dict[str, int] = {}
     for page in kms.get_paginator("list_keys").paginate():
         for entry in page.get("Keys", ()):
             try:
                 metadata = kms.describe_key(KeyId=entry["KeyId"])["KeyMetadata"]
             except Exception as error:
-                # A key this account can list and cannot describe belongs to another principal,
-                # and is not ours to report either way. Printed rather than passed over in
-                # silence: a sweep that quietly skipped keys would under-report, and
-                # under-reporting is the direction that costs money.
-                print(f"  (skipping key {entry['KeyId']}: {error.__class__.__name__})")
+                skipped[error.__class__.__name__] = skipped.get(error.__class__.__name__, 0) + 1
                 continue
             if metadata.get("KeyState") == "PendingDeletion":
                 pending.add(metadata["Arn"])
+    for name, count in sorted(skipped.items()):
+        print(f"  ({count} key(s) this role may list and not describe: {name} — another owner's)")
     return pending
 
 

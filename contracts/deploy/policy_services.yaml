@@ -1,0 +1,26 @@
+# Actions that are legitimately granted on another service's ARN.
+#
+# `scripts/check_policy_actions_can_match.py` requires every action's service prefix to appear
+# among the resource ARNs of the statement granting it. That rule is right almost everywhere and
+# wrong in a handful of places where AWS authorises one service's API against a second service's
+# resource. This file is where those are named.
+#
+# **Declared, one at a time, with the reason.** The alternative is widening a statement to `["*"]`
+# to silence the lint, which trades a lint failure for a real over-grant — the exact move the
+# check exists to prevent. An entry here is a claim somebody can argue with. A `["*"]` is not.
+#
+# Shape: the action's prefix, then the ARN services it may be granted on.
+version: 1
+
+# **The Redshift Data API is authorised against the warehouse, not against itself.**
+# `redshift-data:ExecuteStatement` and its neighbours carry no `redshift-data:` resource type at
+# all; IAM evaluates them against the cluster or, for Serverless, the workgroup —
+# `arn:aws:redshift-serverless:<region>:<account>:workgroup/<id>`. Granting them on a
+# `redshift-data:` ARN would be granting them on a resource type that does not exist.
+#
+# This is not a documentation reading: `infra/analytics` applies with exactly this scoping and
+# the mart load runs through it, which is the only kind of evidence this repository accepts for
+# a permission.
+redshift-data:
+  - redshift-serverless
+  - redshift

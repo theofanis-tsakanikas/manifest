@@ -356,6 +356,12 @@ jobs:
         # acquired in a pull request: somebody adds a layer to deploy.yml and the destroy file
         # is the one they do not have open.
         run: python scripts/check_deploy_path.py
+      - name: every granted action sits where its resources could match it
+        # The teardown of 2026-08-15 left thirty-three SageMaker lineage entities standing with
+        # the four verbs needed to remove them present in the policy file — inside a statement
+        # scoped to SQS queues and DynamoDB tables. Terraform validates the document's shape and
+        # checkov asks whether it is too broad. Neither asks whether an action can fire at all.
+        run: python scripts/check_policy_actions_can_match.py
       - run: terraform fmt -check -recursive infra
       - name: validate every layer against real provider schemas
         # `-backend=false`: no state, no credentials, nothing reached but the provider registry.

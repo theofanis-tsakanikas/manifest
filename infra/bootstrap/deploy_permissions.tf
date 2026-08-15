@@ -597,15 +597,6 @@ data "aws_iam_policy_document" "deploy_data" {
       # deploy may write a decision, because a decision written by a pipeline is doctrine rule 5
       # with a service principal holding the pen.
       "dynamodb:Scan",
-      # **The teardown deletes what SageMaker created on its own.** Lineage entities are written
-      # automatically when a model is deployed and removed by nothing — not by deleting the
-      # endpoint, not by Terraform, which does not manage them. `scripts/sagemaker_lineage.py`
-      # removes them by name prefix, and the list verbs are here because it must find them
-      # before it can name them.
-      "sagemaker:ListActions",
-      "sagemaker:ListContexts",
-      "sagemaker:DeleteAction",
-      "sagemaker:DeleteContext",
       "states:CreateStateMachine",
       "states:DeleteStateMachine",
       "states:DescribeStateMachine",
@@ -620,6 +611,47 @@ data "aws_iam_policy_document" "deploy_data" {
       "arn:aws:sqs:*:${data.aws_caller_identity.current.account_id}:${var.project}-*",
       "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/${var.project}-*",
       "arn:aws:states:*:${data.aws_caller_identity.current.account_id}:stateMachine:${var.project}-*",
+    ]
+  }
+
+  # **The lineage SageMaker writes for an endpoint and removes for nobody.** Deleting the
+  # endpoint does not remove it, Terraform does not manage it, and it accumulates one set per
+  # deployment. `scripts/sagemaker_lineage.py` removes it by name prefix during the teardown.
+  #
+  # **These four verbs were already in this file and granted nothing.** They sat inside
+  # `TheQueueAndTheRecords` above, whose resources name SQS queues, DynamoDB tables and state
+  # machines — so a `sagemaker:` action there could match no resource at all. The teardown of
+  # 2026-08-15 tore down all five layers, reported success, and left thirty-three lineage
+  # entities standing; the estate sweep is what refused. `scripts/check_policy_actions_can_match.py`
+  # now fails the build on an action whose statement cannot reach it, because the permission was
+  # spelled correctly, reviewed, and inert — and nothing in the estate could tell.
+  #
+  # Split in two because the two halves scope differently, and collapsing them into one `["*"]`
+  # would be the easy version of this fix and a worse one.
+  #checkov:skip=CKV_AWS_356:`ListActions` and `ListContexts` are account-level enumerations with no resource-level scoping in IAM; the delete half below is prefix-scoped, which is where the constraint belongs.
+  statement {
+    sid    = "FindTheLineageBeforeNamingIt"
+    effect = "Allow"
+    actions = [
+      "sagemaker:ListActions",
+      "sagemaker:ListContexts",
+    ]
+    resources = ["*"]
+  }
+
+  # The delete half, scoped by name to this project. An account holding a sibling project's
+  # lineage comes out of this teardown untouched, and that is enforced here rather than trusted
+  # to the script — `sagemaker_lineage.py` filters by prefix, and this makes the filter binding.
+  statement {
+    sid    = "DeleteOnlyTheLineageThisProjectCaused"
+    effect = "Allow"
+    actions = [
+      "sagemaker:DeleteAction",
+      "sagemaker:DeleteContext",
+    ]
+    resources = [
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:action/${var.project}-*",
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:context/${var.project}-*",
     ]
   }
 

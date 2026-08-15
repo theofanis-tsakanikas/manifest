@@ -36,33 +36,58 @@ def _client(name: str):
     return boto3.client(name)
 
 
-def _ours(prefix: str) -> tuple[list[str], list[str], list[str]]:
-    """Every action, context and log group whose name begins with the project's.
+def _ours(prefix: str) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Every action, context and log group whose name begins with the project's, and what failed.
 
     Artifacts are deliberately **not** collected. They are keyed by the S3 URI of a model
     artefact rather than by a name we choose, so a prefix cannot identify ours — and deleting one
     that belongs to something else is worse than leaving a free record behind.
+
+    **Each of the three is collected on its own**, because they used to share a failure. The
+    teardown of 2026-08-15 was refused `sagemaker:ListActions`, the first call raised, and the
+    other two never ran — so a single missing verb hid a log group the role could have deleted
+    all along. Three listings that fail together are one listing wearing three names.
     """
-    sagemaker = _client("sagemaker")
-    actions = [
-        summary["ActionName"]
-        for page in sagemaker.get_paginator("list_actions").paginate()
-        for summary in page.get("ActionSummaries", [])
-        if summary["ActionName"].startswith(prefix)
-    ]
-    contexts = [
-        summary["ContextName"]
-        for page in sagemaker.get_paginator("list_contexts").paginate()
-        for summary in page.get("ContextSummaries", [])
-        if summary["ContextName"].startswith(prefix)
-    ]
-    groups = [
-        group["logGroupName"]
-        for page in _client("logs").get_paginator("describe_log_groups").paginate()
-        for group in page.get("logGroups", [])
-        if prefix in group["logGroupName"]
-    ]
-    return actions, contexts, groups
+    sagemaker, logs = _client("sagemaker"), _client("logs")
+    found: dict[str, list[str]] = {"actions": [], "contexts": [], "groups": []}
+    refused: list[str] = []
+
+    def collect(kind: str, call) -> None:
+        try:
+            found[kind] = sorted(call())
+        # Broad on purpose: one listing that fails must not stop the other two from running,
+        # and every failure is carried out in `refused` rather than swallowed.
+        except Exception as error:
+            refused.append(f"{kind}: {error}")
+
+    collect(
+        "actions",
+        lambda: [
+            summary["ActionName"]
+            for page in sagemaker.get_paginator("list_actions").paginate()
+            for summary in page.get("ActionSummaries", [])
+            if summary["ActionName"].startswith(prefix)
+        ],
+    )
+    collect(
+        "contexts",
+        lambda: [
+            summary["ContextName"]
+            for page in sagemaker.get_paginator("list_contexts").paginate()
+            for summary in page.get("ContextSummaries", [])
+            if summary["ContextName"].startswith(prefix)
+        ],
+    )
+    collect(
+        "groups",
+        lambda: [
+            group["logGroupName"]
+            for page in logs.get_paginator("describe_log_groups").paginate()
+            for group in page.get("logGroups", [])
+            if prefix in group["logGroupName"]
+        ],
+    )
+    return found["actions"], found["contexts"], found["groups"], refused
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -71,13 +96,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delete", action="store_true", help="Remove them. Without it, list.")
     arguments = parser.parse_args(argv)
 
-    try:
-        actions, contexts, groups = _ours(arguments.project)
-    # Broad on purpose: a teardown must not fail because a listing did. The sweep runs after this
-    # and reports anything that survived, which is the check that matters.
-    except Exception as error:
-        print(f"{RED}could not list lineage: {error}{RESET}", file=sys.stderr)
-        return 0
+    actions, contexts, groups, refused = _ours(arguments.project)
+
+    # **A listing that was refused is not a listing that found nothing**, and the first version
+    # of this file reported the two identically. It caught every exception, printed to stderr and
+    # returned zero — so on 2026-08-15 the step printed `AccessDeniedException`, went green, and
+    # thirty-three lineage entities survived a teardown that reported success. Only the estate
+    # sweep three jobs later noticed.
+    #
+    # The old justification was that a teardown must not fail because a listing did. That is
+    # right about the *teardown* and wrong about the *report*: every job downstream of this one
+    # runs `if: always()`, so the layers still come down. What a non-zero exit costs is a green
+    # tick nobody should have had. Doctrine rule 3 — a default is a lie with a plausible shape —
+    # and "0 lineage records found" from a call that never returned is exactly that shape.
+    if refused:
+        for failure in refused:
+            print(f"  {RED}could not list {failure}{RESET}", file=sys.stderr)
+        print(
+            f"{RED}Lineage was not checked. This is not the same as finding none.{RESET}",
+            file=sys.stderr,
+        )
+        return 1
 
     total = len(actions) + len(contexts) + len(groups)
     if not total:
@@ -115,6 +154,12 @@ def main(argv: list[str] | None = None) -> int:
             removed += 1
         except Exception as error:
             print(f"  {DIM}log group {name}: {error}{RESET}")
+
+    if removed != total:
+        # Same rule as the refused listing above: the sweep would catch these anyway, three jobs
+        # later and with no indication of which step was supposed to have removed them.
+        print(f"  {RED}only {removed} of {total} lineage record(s) removed{RESET}", file=sys.stderr)
+        return 1
 
     print(f"  {GREEN}ok{RESET}    {removed} of {total} lineage record(s) removed")
     return 0

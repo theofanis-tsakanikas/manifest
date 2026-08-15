@@ -673,6 +673,30 @@ def _leave_an_optional_feature_with_no_switch(root: Path) -> bool:
     )
 
 
+def _grant_a_verb_where_its_resources_cannot_match(root: Path) -> bool:
+    """Move the lineage delete verbs into a statement scoped to something else entirely.
+
+    **This was the repository's actual state on 2026-08-15**, and it cost a teardown. All four
+    `sagemaker:` lineage verbs sat inside `TheQueueAndTheRecords`, whose resources name SQS
+    queues, DynamoDB tables and state machines. The policy was well-formed, checkov found
+    nothing, `terraform validate` passed, and the grant was worth nothing: the destroy tore down
+    five layers, reported success, and left thirty-three lineage entities standing.
+
+    The mutation is a relocation, not a deletion. The verbs are still granted, still spelled
+    correctly, still reviewed — which is exactly why nothing else in the estate can see it.
+    """
+    return _replace(
+        root / "infra/bootstrap/deploy_permissions.tf",
+        """    resources = [
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:action/${var.project}-*",
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:context/${var.project}-*",
+    ]""",
+        """    resources = [
+      "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/${var.project}-*",
+    ]""",
+    )
+
+
 def _let_a_push_cancel_a_deploy_in_flight(root: Path) -> bool:
     """Put the CI gate back in the same concurrency group as an ordinary push.
 
@@ -1286,6 +1310,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_a_push_cancel_a_deploy_in_flight,
         "A declaration in the right place that could not defend itself: deploy.yml refuses to "
         "be cancelled, and the gate it calls was cancellable by anyone merging a README fix.",
+    ),
+    Mutation(
+        "grant a verb where its resources cannot match",
+        "deploy path",
+        [sys.executable, "scripts/check_policy_actions_can_match.py"],
+        "unreachable",
+        _grant_a_verb_where_its_resources_cannot_match,
+        "The permission is present, correctly spelled and inert. Every other check on this file "
+        "reads its shape or its breadth; none asks whether an action could ever fire.",
     ),
     Mutation(
         "leave an optional feature with no switch",

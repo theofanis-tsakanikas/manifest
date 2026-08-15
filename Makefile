@@ -209,6 +209,7 @@ gate-proof: ## Break every gate on purpose; each must be refused, for the right 
 .PHONY: deploy-path
 deploy-path: ## Every applied layer is torn down, in reverse; both workflows human-only
 	$(PY) scripts/check_deploy_path.py
+	$(PY) scripts/check_policy_actions_can_match.py
 
 .PHONY: tf-fmt
 tf-fmt: ## terraform fmt across every layer
