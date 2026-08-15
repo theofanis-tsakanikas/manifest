@@ -1,0 +1,212 @@
+{
+ "bill_of_lading_number": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 1000,
+  "threshold": null
+ },
+ "buyer": {
+  "always_review": true,
+  "error_budget": "0.01",
+  "observations": 225,
+  "threshold": null
+ },
+ "certificate_number": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 354,
+  "threshold": null
+ },
+ "consignee": {
+  "always_review": false,
+  "error_budget": "0.01",
+  "observations": 793,
+  "threshold": 0.375
+ },
+ "container_number": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 1291,
+  "threshold": null
+ },
+ "country_of_origin": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 659,
+  "threshold": null
+ },
+ "currency": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 556,
+  "threshold": null
+ },
+ "date_of_issue": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 500,
+  "threshold": null
+ },
+ "declarant": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 306,
+  "threshold": null
+ },
+ "declaration_date": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 306,
+  "threshold": null
+ },
+ "declaration_reference": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 306,
+  "threshold": null
+ },
+ "declared_value": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 306,
+  "threshold": null
+ },
+ "duty_amount": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 306,
+  "threshold": null
+ },
+ "estimated_arrival": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 500,
+  "threshold": null
+ },
+ "gross_weight": {
+  "always_review": false,
+  "error_budget": "0.005",
+  "observations": 794,
+  "threshold": 0.0
+ },
+ "incoterm": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 243,
+  "threshold": null
+ },
+ "invoice_date": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 246,
+  "threshold": null
+ },
+ "invoice_number": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 250,
+  "threshold": null
+ },
+ "invoice_total": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 250,
+  "threshold": null
+ },
+ "issue_date": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 354,
+  "threshold": null
+ },
+ "issuing_chamber": {
+  "always_review": false,
+  "error_budget": "0.02",
+  "observations": 354,
+  "threshold": 0.42000000000000004
+ },
+ "line_item_count": {
+  "always_review": true,
+  "error_budget": "0.01",
+  "observations": 250,
+  "threshold": null
+ },
+ "net_weight": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 294,
+  "threshold": null
+ },
+ "notice_reference": {
+  "always_review": true,
+  "error_budget": "0.002",
+  "observations": 500,
+  "threshold": null
+ },
+ "package_count": {
+  "always_review": false,
+  "error_budget": "0.005",
+  "observations": 794,
+  "threshold": 0.0
+ },
+ "packing_list_number": {
+  "always_review": true,
+  "error_budget": "0.01",
+  "observations": 294,
+  "threshold": null
+ },
+ "port_of_discharge": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 500,
+  "threshold": null
+ },
+ "port_of_loading": {
+  "always_review": true,
+  "error_budget": "0.005",
+  "observations": 500,
+  "threshold": null
+ },
+ "procedure_code": {
+  "always_review": true,
+  "error_budget": "0.001",
+  "observations": 306,
+  "threshold": null
+ },
+ "seller": {
+  "always_review": true,
+  "error_budget": "0.01",
+  "observations": 231,
+  "threshold": null
+ },
+ "shipper": {
+  "always_review": false,
+  "error_budget": "0.01",
+  "observations": 465,
+  "threshold": 0.855
+ },
+ "terminal": {
+  "always_review": false,
+  "error_budget": "0.02",
+  "observations": 500,
+  "threshold": 0.0
+ },
+ "total_net_weight": {
+  "always_review": true,
+  "error_budget": "0.01",
+  "observations": 164,
+  "threshold": null
+ },
+ "vessel_name": {
+  "always_review": false,
+  "error_budget": "0.02",
+  "observations": 500,
+  "threshold": 0.0
+ },
+ "volume": {
+  "always_review": true,
+  "error_budget": "0.02",
+  "observations": 294,
+  "threshold": null
+ }
+}
