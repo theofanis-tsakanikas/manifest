@@ -647,18 +647,25 @@ jobs:
         # Rendered from the committed recording rather than recomputed here. Recomputing would
         # let a threshold move because a runner image was updated, in the one place where it
         # decides whether a value reaches a customer.
+        #
+        # **One artefact per recorded reader**, because the handler looks a threshold up by the
+        # identity that produced the value and two readers' 0.8 are different events. Tier 1
+        # joined on 2026-08-15: an escalated reading previously found no artefact for Textract
+        # and was refused by name — correctly, and permanently, until this shipped one.
         run: |
           set -euo pipefail
-          python scripts/thresholds_artefact.py --out thresholds.json
-          key=$(python scripts/thresholds_artefact.py --print-key)
-          aws s3api put-object \
-            --bucket "$TF_VAR_records_bucket" \
-            --key "$key" \
-            --body thresholds.json \
-            --content-type application/json \
-            --server-side-encryption aws:kms \
-            --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
-          echo "uploaded $key"
+          for reader in tier0 tier1; do
+            python scripts/thresholds_artefact.py --reader "$reader" --out "thresholds.$reader.json"
+            key=$(python scripts/thresholds_artefact.py --reader "$reader" --print-key)
+            aws s3api put-object \
+              --bucket "$TF_VAR_records_bucket" \
+              --key "$key" \
+              --body "thresholds.$reader.json" \
+              --content-type application/json \
+              --server-side-encryption aws:kms \
+              --ssekms-key-id "$TF_VAR_data_key_arn" >/dev/null
+            echo "uploaded $key"
+          done
       - name: fit and upload the classification artefact
         # **The gate is the point of this step, not the upload.** `train_classifier.py` refuses to
         # write anything if the fitted model separates a contested pair by more than the band

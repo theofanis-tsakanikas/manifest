@@ -32,17 +32,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from manifest.core.document import ReaderIdentity
 
 ROOT = Path(__file__).resolve().parents[1]
-RECORDING = ROOT / "recordings" / "ocr" / "manifest.json"
-DERIVED = ROOT / "recordings" / "thresholds.json"
+#: Each reader this repository has recorded, and where its derivation lives. Tier 1 arrived on
+#: 2026-08-15: the estate looks a threshold up by the reader that produced the value, so an
+#: escalated reading found no artefact and `handlers/publish.py` refused it by name — correctly,
+#: and permanently, until this renders one.
+READERS = {
+    "tier0": (ROOT / "recordings/ocr/manifest.json", ROOT / "recordings/thresholds.json"),
+    "tier1": (
+        ROOT / "recordings/textract/manifest.json",
+        ROOT / "recordings/thresholds.textract.json",
+    ),
+}
+
+RECORDING = READERS["tier0"][0]
+DERIVED = READERS["tier0"][1]
+
+
+def _floor() -> float:
+    """The declared minimum a threshold must clear before it ships.
+
+    In `contracts/cascade/routing.yaml` with its reasoning, and read rather than restated: it is
+    a policy about what counts as evidence, and a copy of it here would be a second policy.
+    """
+    from manifest.contracts.loader import load  # noqa: PLC0415
+
+    return float(load(ROOT / "contracts").cascade.minimum_useful_threshold)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, help="where to write the artefact")
     parser.add_argument("--print-key", action="store_true", help="print the object key and exit")
+    parser.add_argument(
+        "--reader",
+        choices=sorted(READERS),
+        default="tier0",
+        help="Which recorded reader's derivation to render. Each ships its own artefact.",
+    )
     arguments = parser.parse_args()
 
-    manifest = json.loads(RECORDING.read_text(encoding="utf-8"))
+    recording, derivation = READERS[arguments.reader]
+    if not recording.exists():
+        print(
+            f"{recording} does not exist; nothing recorded for {arguments.reader}", file=sys.stderr
+        )
+        return 1
+
+    manifest = json.loads(recording.read_text(encoding="utf-8"))
     identity = ReaderIdentity(name=manifest["reader_name"], version=manifest["reader_version"])
     reader = str(identity)
     # The **same** function the handler uses to look it up. Two places building this string is
@@ -57,7 +93,9 @@ def main() -> int:
     if arguments.out is None:
         parser.error("--out is required unless --print-key is given")
 
-    derived = json.loads(DERIVED.read_text(encoding="utf-8"))
+    derived = json.loads(derivation.read_text(encoding="utf-8"))
+    floor = _floor()
+    floored: list[str] = []
 
     thresholds: dict[str, float | None] = {}
     for field, entry in sorted(derived.items()):
@@ -86,6 +124,14 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+        # **A threshold below the declared floor ships as always-review.** Zero is arithmetically
+        # correct and operationally empty — the derivation never saw this reader be wrong, so the
+        # confidence was never asked to separate anything — and shipping it would publish on a
+        # score that has not been shown to mean anything. See the contract for the argument.
+        if float(threshold) < floor:
+            floored.append(f"{field} ({float(threshold):.3f})")
+            thresholds[field] = None
+            continue
         thresholds[field] = float(threshold)
 
     payload = {
@@ -110,6 +156,11 @@ def main() -> int:
     review = sum(1 for value in thresholds.values() if value is None)
     print(f"thresholds artefact: {len(thresholds)} field(s) for {reader}")
     print(f"  {review} always-review, {len(thresholds) - review} with a derived threshold")
+    if floored:
+        print(
+            f"  {len(floored)} below the declared floor of {floor} and shipped as "
+            f"always-review: {', '.join(floored)}"
+        )
     print(f"  key: {key}")
     return 0
 

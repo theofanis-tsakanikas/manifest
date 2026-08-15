@@ -501,6 +501,13 @@ class CascadeContract(Strict):
     #: Which tiers may publish on the confidence they report. Data rather than prose, because a
     #: test used to grep the prose and a paragraph *about* the phrase satisfied the grep.
     publishes_on_its_own_score: Annotated[dict[int, bool], Field(min_length=1)]
+    #: Below this, a derived threshold is not shipped and the field stays always-review.
+    #:
+    #: A threshold of zero is arithmetically correct and operationally empty: it means the
+    #: derivation never saw the reader be wrong, so the confidence was never asked to separate
+    #: anything. Shipping it would publish on a score that has not been shown to mean anything.
+    #: The contract carries the reasoning; this is the number it turns on.
+    minimum_useful_threshold: Annotated[float, Field(gt=0.0, lt=1.0)] = 0.02
     languages: Annotated[tuple[TierEligibility, ...], Field(min_length=1)]
 
     @model_validator(mode="after")

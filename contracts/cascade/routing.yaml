@@ -73,6 +73,27 @@ publishes_on_its_own_score:
   2: false
   3: false
 
+# **A derived threshold of zero is not a threshold, and may not ship.**
+#
+# Recording Textract over the labelled corpus produced four fields whose derivation came out at
+# exactly 0.000 — `gross_weight`, `package_count`, `terminal`, `vessel_name`. The arithmetic is
+# right: the reader made no error at all on those fields in that population, so publishing at any
+# score fits the budget.
+#
+# It is also the least useful number the derivation can produce. A threshold exists to separate
+# the readings that may publish from the ones that may not, and a threshold of zero separates
+# nothing: it says the confidence carried no information because the reader never had to be
+# wrong. That is evidence of a clean sample, not of a working confidence signal — and shipping it
+# would put values into a customs record on a score that has never been shown to mean anything.
+#
+# So a derivation at or below this floor ships as **always-review** instead, with its N on the
+# report either way. The fix is more labelled data, not a lower floor: a field that genuinely
+# publishes at 0.02 will say so once the population contains an error to learn from.
+#
+# Declared as data rather than written into the renderer, because it is a policy about what
+# counts as evidence and those live in contracts.
+minimum_useful_threshold: 0.02
+
 languages:
   - language: en
     eligible_tiers: [0, 1, 2, 3]
