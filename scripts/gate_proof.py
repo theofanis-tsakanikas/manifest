@@ -248,11 +248,16 @@ def _drop_a_claim_harness_from_ci(root: Path) -> bool:
     `provenance` is claim 2 — *a published field that cannot be located on a page is a build
     failure*. It sat in `make claims` and in no workflow for the life of the repository, and the
     only reason anybody noticed is that somebody compared the directory against the lists.
+
+    **The anchor moved once already**, when claim 2 was relocated into the job that generates the
+    corpus — the only job that has the pages it rasterises. This harness reported STALE rather
+    than passing, which is the third of Attestor's three rules doing its work: a mutation whose
+    target has moved is not evidence that the gate holds.
     """
     return _replace(
         root / ".github/workflows/ci.yml",
-        "        run: python -m evals.provenance",
-        "        run: echo skipped",
+        "            -m evals.provenance",
+        "            -m evals.injection",
     )
 
 
