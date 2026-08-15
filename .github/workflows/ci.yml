@@ -243,7 +243,10 @@ jobs:
     # Anything but the literal string `false` runs it, including the empty value a push gives.
     if: ${{ inputs.run_corpus != 'false' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # One generation of three thousand documents with their pages, plus claim 2 rasterising
+    # a sample of them. Ninety rather than sixty because the previous arrangement hit sixty
+    # exactly, and a timeout is a failure that reads like a flake.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -262,25 +265,18 @@ jobs:
       - name: build the image the corpus is generated in
         run: docker build --tag manifest-reader:ci .
 
-      - name: check
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            --volume "$GITHUB_WORKSPACE:/work" \
-            --workdir /work \
-            --env PYTHONPATH=/work/src \
-            --entrypoint /usr/local/bin/python \
-            manifest-reader:ci \
-            -m corpus.generate --check
-
-      - name: render the pages claim 2 rasterises
-        # **`--check` writes no images, on purpose.** It regenerates the ground truth with
-        # `write_images=False` because comparing box geometry needs the numbers and not the
-        # pixels, and skipping the render is most of its speed. Claim 2 needs the pixels: it
-        # crops each published box out of the page and looks for ink.
+      - name: generate the corpus once, with its pages
+        # **Once, not twice.** This job used to run `corpus.generate --check`, which regenerates
+        # the ground truth from the seed with `write_images=False` and compares it — thirty
+        # minutes on a runner, all of it layout arithmetic. Adding claim 2 then added a *second*
+        # full generation to render the pages it rasterises, and the job hit its sixty-minute
+        # timeout mid-render.
         #
-        # So the render runs as its own step, and it costs what it costs. That is the price of
-        # having the claim in a workflow at all, and the previous price was that nothing ran it.
+        # A plain generate writes the ground truth *and* the images in one pass, and the
+        # comparison it was doing is `git diff` against the committed file — which is a stronger
+        # check than the one it replaced, because it compares the actual committed bytes rather
+        # than a copy this job read back out of the working tree. `--check` itself warned about
+        # that fallback in its own output.
         run: |
           set -euo pipefail
           docker run --rm \
@@ -290,6 +286,12 @@ jobs:
             --entrypoint /usr/local/bin/python \
             manifest-reader:ci \
             -m corpus.generate
+
+      - name: the ground truth reproduces byte for byte
+        # Box geometry comes from font metrics, so a different font is a different ground truth.
+        # A loud failure on purpose: the alternative is every claim being scored against boxes
+        # that quietly moved.
+        run: git diff --exit-code -- corpus/ground_truth/
 
       - name: "claim 2 — every published field traces to a page and a box"
         # **The project in one sentence, and it ran in no workflow.** `CLAUDE.md` calls it that:
