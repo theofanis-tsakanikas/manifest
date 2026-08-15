@@ -273,6 +273,24 @@ jobs:
             manifest-reader:ci \
             -m corpus.generate --check
 
+      - name: render the pages claim 2 rasterises
+        # **`--check` writes no images, on purpose.** It regenerates the ground truth with
+        # `write_images=False` because comparing box geometry needs the numbers and not the
+        # pixels, and skipping the render is most of its speed. Claim 2 needs the pixels: it
+        # crops each published box out of the page and looks for ink.
+        #
+        # So the render runs as its own step, and it costs what it costs. That is the price of
+        # having the claim in a workflow at all, and the previous price was that nothing ran it.
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$GITHUB_WORKSPACE:/work" \
+            --workdir /work \
+            --env PYTHONPATH=/work/src \
+            --entrypoint /usr/local/bin/python \
+            manifest-reader:ci \
+            -m corpus.generate
+
       - name: "claim 2 — every published field traces to a page and a box"
         # **The project in one sentence, and it ran in no workflow.** `CLAUDE.md` calls it that:
         # *a published field that cannot be located on a page is a build failure*.
