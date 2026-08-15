@@ -635,8 +635,37 @@ data "aws_iam_policy_document" "deploy_data" {
     actions = [
       "sagemaker:ListActions",
       "sagemaker:ListContexts",
+      # Lineage is a graph, and a node with edges refuses to delete: `DeleteAction` on an
+      # associated entity answers `ValidationException: Cannot delete entity with associations`.
+      # The edges have to be enumerated before they can be cut, and `ListAssociations` filters by
+      # the ARN at one end rather than being scoped by IAM to it.
+      "sagemaker:ListAssociations",
     ]
     resources = ["*"]
+  }
+
+  # **Cutting an edge, where IAM cannot express what the script can.** An association joins two
+  # entities, and the far end of ours is usually an *artifact* — keyed by the S3 URI of a model
+  # artefact, carrying no name this project chose. So the grant has to reach `artifact/*`, and
+  # the constraint that it only ever touches edges incident to a `manifest-*` action or context
+  # lives in `scripts/sagemaker_lineage.py`, which enumerates from our entities outward.
+  #
+  # Stated plainly rather than folded into the statement above, because it is the one grant here
+  # whose scoping is weaker than its sid would suggest, and a reader deserves to see that rather
+  # than discover it. Deleting an association removes an edge and never what is on the end of it:
+  # no artifact is deleted by anything in this file, which is why the reach is acceptable.
+  #checkov:skip=CKV_AWS_111:Constrained to association edges by the caller; the artifact end of an edge carries no name IAM can pattern-match.
+  statement {
+    sid    = "CutTheEdgesTouchingThisProjectsLineage"
+    effect = "Allow"
+    actions = [
+      "sagemaker:DeleteAssociation",
+    ]
+    resources = [
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:action/${var.project}-*",
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:context/${var.project}-*",
+      "arn:aws:sagemaker:*:${data.aws_caller_identity.current.account_id}:artifact/*",
+    ]
   }
 
   # The delete half, scoped by name to this project. An account holding a sibling project's

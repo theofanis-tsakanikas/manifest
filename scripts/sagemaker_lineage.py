@@ -60,10 +60,12 @@ def _ours(prefix: str) -> tuple[list[str], list[str], list[str], list[str]]:
         except Exception as error:
             refused.append(f"{kind}: {error}")
 
+    # The ARN travels with the name because deleting one of these takes both: the name names it,
+    # and the association API — which has to run first — speaks only ARNs.
     collect(
         "actions",
         lambda: [
-            summary["ActionName"]
+            f"{summary['ActionName']}\t{summary['ActionArn']}"
             for page in sagemaker.get_paginator("list_actions").paginate()
             for summary in page.get("ActionSummaries", [])
             if summary["ActionName"].startswith(prefix)
@@ -72,7 +74,7 @@ def _ours(prefix: str) -> tuple[list[str], list[str], list[str], list[str]]:
     collect(
         "contexts",
         lambda: [
-            summary["ContextName"]
+            f"{summary['ContextName']}\t{summary['ContextArn']}"
             for page in sagemaker.get_paginator("list_contexts").paginate()
             for summary in page.get("ContextSummaries", [])
             if summary["ContextName"].startswith(prefix)
@@ -88,6 +90,53 @@ def _ours(prefix: str) -> tuple[list[str], list[str], list[str], list[str]]:
         ],
     )
     return found["actions"], found["contexts"], found["groups"], refused
+
+
+def _cut_the_edges(sagemaker, entities: list[str]) -> None:
+    """Remove every association incident to one of these entities.
+
+    **Lineage is a graph, and a node with edges will not delete.** `DeleteAction` on an entity
+    that is still associated with anything answers `ValidationException: Cannot delete entity
+    with associations` — which is what the teardown of 2026-08-15 hit the moment the permission
+    was fixed and it could finally try. Thirty-three entities, every deletion refused.
+
+    Both directions are asked for, because an association is directed and ours may sit at either
+    end: a context is the *source* of the actions it groups, and an action is the *source* of the
+    artifact it produced. Deduplicated, because an edge whose two ends are both ours comes back
+    once from each.
+
+    **Deleting an edge does not delete what is on the end of it.** Artifacts stay exactly as they
+    were — which is the whole reason `_ours` refuses to collect them, and why the `artifact/*`
+    reach in `CutTheEdgesTouchingThisProjectsLineage` is acceptable. Enumeration starts from our
+    prefixed entities, so no edge is touched that does not have one of ours at one end.
+
+    Failures are printed and not raised. An edge that will not come off surfaces immediately
+    afterwards as an entity that will not delete, and *that* is what returns non-zero — one
+    failure reported once, at the point where it means something.
+    """
+    edges: set[tuple[str, str]] = set()
+    for entity in entities:
+        arn = entity.split("\t")[1]
+        for direction in ("SourceArn", "DestinationArn"):
+            try:
+                for page in sagemaker.get_paginator("list_associations").paginate(
+                    **{direction: arn}
+                ):
+                    for summary in page.get("AssociationSummaries", []):
+                        edges.add((summary["SourceArn"], summary["DestinationArn"]))
+            except Exception as error:
+                print(f"  {DIM}associations of {arn} ({direction}): {error}{RESET}")
+
+    if not edges:
+        return
+    cut = 0
+    for source, destination in sorted(edges):
+        try:
+            sagemaker.delete_association(SourceArn=source, DestinationArn=destination)
+            cut += 1
+        except Exception as error:
+            print(f"  {DIM}association {source} -> {destination}: {error}{RESET}")
+    print(f"  {cut} of {len(edges)} association(s) cut")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -132,17 +181,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     sagemaker, logs = _client("sagemaker"), _client("logs")
+    _cut_the_edges(sagemaker, [*actions, *contexts])
+
     removed = 0
-    for name in actions:
+    for entity in actions:
         # Each deletion is attempted on its own. One that fails — a race with something else
         # deleting it, a permission this role does not hold — must not strand the rest, because
         # the alternative is a teardown that leaves more behind the more it finds.
+        name = entity.split("\t")[0]
         try:
             sagemaker.delete_action(ActionName=name)
             removed += 1
         except Exception as error:
             print(f"  {DIM}action {name}: {error}{RESET}")
-    for name in contexts:
+    for entity in contexts:
+        name = entity.split("\t")[0]
         try:
             sagemaker.delete_context(ContextName=name)
             removed += 1
