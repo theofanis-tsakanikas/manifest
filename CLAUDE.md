@@ -137,18 +137,23 @@ confidence, page and geometry. The core never learns which engine produced a val
 engines must be an adapter change and nothing else, and there is a test that fails if an
 engine name appears anywhere in `core/`.
 
-**Nothing is applied to AWS yet — and "yet" is the whole of the word.** This system is built
-to run on AWS. That is the point of it, and every service in the header above is there to do a
-job rather than to be listed. What is deferred is the *timing* of the first apply, not the
-apply: the estate is written, formatted, validated against real provider schemas and scanned
-to zero findings, and it stays unapplied — including `infra/bootstrap/` — until the author
-dispatches it deliberately. The `deploy` and `destroy` workflows are written and gated behind
-the environment their OIDC trust is scoped to, and **have not been dispatched**.
+**The estate is applied deliberately and torn down the same day — and "the same day" is the
+whole of the rule.** This system is built to run on AWS. That is the point of it, and every
+service in the header above is there to do a job rather than to be listed.
 
 **`infra/bootstrap` was applied on 2026-08-10**, deliberately, by the author — the state
-backend, its KMS key, the OIDC role, the SSM reference table and the budget guard. That is the
-one layer whose design permits a laptop apply, and it is the only one that has been applied.
-Everything above it is still unapplied.
+backend, its KMS key, the OIDC role, the SSM reference table and the budget guard. It is the
+one layer whose design permits a laptop apply, because it creates the bucket the other five
+store their state in and cannot use a backend that does not exist yet. It stands permanently.
+
+**Everything above it was first applied on 2026-08-15**, through `deploy.yml`, and torn down
+the same day through `destroy.yml`. Both have now been dispatched many times. The five layers
+stand only for as long as a dispatch keeps them standing; the resting state of this repository
+is an account holding a state bucket, a key, five parameters and a role.
+
+That is the posture, and it is not timidity: an estate left standing to look impressive is a
+bill, and the teardown is the half of the pair that usually gets written and never run. This
+one runs, it is filmed, and `scripts/estate_sweep.py` goes red when it leaves anything behind.
 
 **Required reviewers on those environments are currently off**, under a dated acceptance that
 expires (`contracts/deploy/acceptance.yaml`). The reason is doctrine rule 2 turned on this
@@ -158,10 +163,16 @@ clicking to approve a run whose purpose is to find out what is broken. What is *
 the environment itself, which the trust names and without which no credentials are issued;
 `workflow_dispatch` as the only trigger; the teardown path; and the budget brake.
 
-Until that day, and only until then: no screenshot from a real console, no wall-clock figure,
-no euro figure stated as measured. Every claim in this repository is scored offline, and stays
-scored offline afterwards, because a claim that needs a running estate to check is a claim
-nobody can reproduce.
+**What a real console changed, and what it did not.** Screenshots and wall-clock figures from a
+running estate are now available and may be used, with the run they came from. What did not
+change is where the seven claims are scored: every one of them is scored **offline**, from a
+committed recording, and stays scored offline — because a claim that needs a running estate to
+check is a claim nobody can reproduce.
+
+Cost is the line to hold hardest. One euro figure is now measured — **Textract, 2,336 pages,
+$3.50, on 2026-08-15** — and it may be quoted with its date. Everything else remains a *model*:
+routing measured on the corpus, multiplied by published unit prices, and labelled `modelled`
+everywhere it appears, down to the column name in `analytics/schema.sql`.
 
 **An earlier revision of this file said "nothing is *ever* applied" and treated that as the
 posture.** It was a misreading of a sequencing instruction as a permanent stance, and it cost
@@ -287,8 +298,8 @@ manifest/
 ├── docs/                       # adr/ · SCENARIO · REGULATORY · DECISIONS · PORTFOLIO-CONTEXT · AWS-CONSTRAINTS · DAY-ONE
 └── .github/workflows/          # ci.yml (every PR) · deploy.yml · destroy.yml
                                 #   deploy and destroy name the environment their OIDC trust
-                                #   and have not been dispatched yet. Both must exist and both
-                                #   must be validated — a repository with a deploy path and no
+                                #   is scoped to. Both dispatched, both exercised, both
+                                #   validated — a repository with a deploy path and no
                                 #   destroy path is how an estate gets left standing.
 ```
 
@@ -316,9 +327,12 @@ it requires a version bump and CI demands the diff report.
 
 ## Cost controls — always active
 
-**Nothing is applied, so the real cost of this repository is zero.** These controls are
-therefore *design* constraints, written and validated so that the estate is safe on the day
-somebody does apply it — not budget management for a running system.
+**The estate stands only while a dispatch keeps it standing, so the cost of this repository is
+a handful of dollars a month.** These controls are therefore still mostly *design* constraints
+— but they are no longer untested ones: the budget action fired on 2026-08-15, attached its
+deny policy to the deploy role and stopped the estate being deployable. It was measuring the
+whole account rather than this project, which is a different defect with a different fix
+(`contracts/deploy/budget.yaml`), and the brake itself worked exactly as written.
 
 - Every resource tagged `manifest:expires-at`, with a scheduled reaper. An AWS Budget action
   disables the deploy role at its threshold. Both written, both validated, neither exercised.

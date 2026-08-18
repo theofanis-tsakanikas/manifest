@@ -34,9 +34,20 @@ Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageM
 > It is **not** an accuracy figure for the escalated fraction — one document is not a
 > measurement, and *"accuracy held at X for Y% of the cost"* remains unavailable here.
 >
-> No distributed job has run. There are no screenshots and no wall-clock figures. The one cost
-> figure here is labelled **modelled** everywhere it appears and says what it is built from; it
-> becomes a measurement when a run produces one, with that run's date beside it, and not before.
+> **Both remaining tiers have since been called, and each moved a sentence rather than a claim.**
+> Bedrock Data Automation, on **2026-08-13**, returned a per-word confidence on every word — against
+> a published schema saying it reports none, and the schema is what had been checked. A page routed
+> there still cannot publish on that score, because **no threshold is derived from it**. The
+> multilingual model was called on **2026-08-15**, sending 7 fields of one abstaining document up to
+> the only tier that reads Greek and Dutch; it reports no confidence and is refused any it is asked
+> for. Neither is an accuracy figure, for the same reason as above.
+>
+> No distributed job has run — claim 7 is proved by the pure planner and its ledger on a laptop, and
+> the batch layer is an adapter over that planner rather than the thing being proved. **One cost
+> figure is now measured**: Textract, **2,336 pages on 2026-08-15, $3.50**, quotable with that date
+> and that N. Every other cost figure here is labelled **modelled** everywhere it appears, down to
+> the column named `modelled_cost` in the warehouse, and becomes a measurement only when a run
+> produces one.
 >
 > Every claim below is scored **offline, with no AWS account**, and stayed that way through the
 > deploy. A claim that needs a running estate to check is a claim you cannot reproduce.
@@ -86,11 +97,11 @@ command in this repository, not a summary of one.
 | **production drift** | the declared envelope fires on a −0.25 shift **and** on a +0.25 one; a 9-document window returns **undecided**, never *inside* |
 | **out of distribution** | on 100 pages of **real photographed paper** nobody here designed (CC BY 4.0, `corpus/external/LICENCE.md`): ECE **0.0592** against **0.0371** on the generated corpus. The reader's confidences transport — which is the only answer to *"did you tune the generator until the claims passed?"* that does not come from the generator's author |
 | **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
-| `make gate-proof` | **55 refused, 0 accepted, 0 stale** |
+| `make gate-proof` | **56 refused, 0 accepted, 0 stale** |
 | `terraform validate` | **6/6 layers** against real provider schemas |
 | `checkov` | **718 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
 | corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **498 passing**, offline, credential-free |
+| test suite | **501 passing**, offline, credential-free |
 
 The last three rows are the ones worth reading first. A suite tells you the code does what it
 does; `gate-proof` breaks 55 controls on purpose and requires the **named** gate to refuse
@@ -265,7 +276,7 @@ Thirteen documents on one afternoon says only that the adapter does what the pla
 make install       # venv + editable install
 make test          # 498 tests, offline, under a minute
 make claims        # every claim gate that exists
-make gate-proof    # break 55 controls on purpose; each must be refused, for the right reason
+make gate-proof    # break 56 controls on purpose; each must be refused, for the right reason
 make preflight     # all of it: correctness, consistency, deployability
 
 make corpus        # regenerate 3,000 documents from one seed (~20 minutes)

@@ -57,3 +57,10 @@ corpus/rendered/
 
 # macOS
 .DS_Store
+
+# Raw screen recordings and their exports. The *storyboard* is committed and the two rendered
+# videos in promo/out/ are the deliverable; the Screen Studio project directories behind them are
+# hundreds of megabytes of intermediate footage that regenerate from nothing and belong in git
+# even less than the rasterised corpus does.
+promo/*.screenstudio/
+images/

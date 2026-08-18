@@ -87,7 +87,7 @@ on:
         type: boolean
         default: false
       confirm:
-        description: 'Type "apply" to confirm. Nothing in this repository has ever been applied.'
+        description: 'Type "apply" to confirm. This stands the estate up and it starts billing.'
         required: true
         type: string
 

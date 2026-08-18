@@ -1065,7 +1065,7 @@ def _check_every_optional_feature_can_be_switched_on() -> list[str]:
                 problems.append(
                     f"infra/{layer.name} declares `{name}` and deploy.yml never passes it. The "
                     f"feature cannot be switched on by any dispatch, which is not the same as "
-                    f"being off: nothing it builds has ever been applied, and no offline check "
+                    f"being off: what it declares has never been stood up, and no offline check "
                     f"can tell the two apart"
                 )
     return problems

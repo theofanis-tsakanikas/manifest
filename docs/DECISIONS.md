@@ -165,6 +165,31 @@ What it did **not** change, and these are the ones a reader should check first:
   number would have to have been measured. Decision 15 is unchanged.
 - **Every claim is still scored offline.** Not one of the seven moved into the estate.
 
+**Superseded in three places on 2026-08-15, by dispatch. The text above stands as written;
+these are the sentences that stopped being true, and what replaced them.**
+
+- **"Bedrock Data Automation and the LLM extractor have not [been called]" — both have now.**
+  BDA was first called on **2026-08-13** and returned a per-word confidence on every word,
+  0.729 to 1.0, against a published schema that says it reports none. The schema is what had
+  been checked. A page routed to tier 2 still cannot publish on that score — not because the
+  number is absent but because **no threshold is derived from it**, which is doctrine rule 3
+  applied to a number that exists rather than to one that does not. The LLM extractor was
+  called on **2026-08-15**: one bill of lading abstained and seven fields went to tier 3, which
+  reports no confidence and is refused any it is asked for. Neither call is an accuracy figure,
+  and the sentence below about the escalated fraction is unchanged.
+
+- **"`batch` was never applied" — it was, on 2026-08-15**, along with `analytics`, both through
+  their opt-in inputs, and both torn down the same day. **"No distributed job has ever executed"
+  is still true**, and is the half that matters: claim 7 is proved by the pure planner and its
+  ledger on a laptop, and the batch layer is an adapter over that planner rather than the thing
+  being proved.
+
+- **"Every cost figure is still modelled" — one is now measured.** Textract, **2,336 eligible
+  pages on 2026-08-15**, at the published per-page price: **$3.50**. It may be quoted with that
+  date and that N. Nothing else moved category: the cascade saving is still a model, and
+  `analytics/schema.sql` names the column `modelled_cost` so that it cannot be quoted as
+  anything else.
+
 The order is: build everything up to and including the deploy path — all code, all local
 tests, all Terraform, the compute that executes the pipeline, `ci.yml`, `deploy.yml` and
 `destroy.yml`, validated and scanned and scoped to the environment their trust names — and **then**
