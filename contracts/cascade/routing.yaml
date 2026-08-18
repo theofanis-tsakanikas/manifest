@@ -21,8 +21,18 @@ tiers:
     it has data for. Zero marginal cost.
   1: >-
     Managed per-page OCR. Better on degraded print, tables and forms. Six documented input
-    languages. **Reports a confidence per word**, so a page it reads can publish on its score.
-    Written as an adapter, schema-tested against the documented shape, not yet called.
+    languages. **Reports a confidence per word**, so a page it reads can publish on its score —
+    and unlike tier 2, that score now has thresholds derived from a recording of this reader
+    against the labelled set, which is what the permission to publish actually rests on.
+    **Called for the first time on 2026-08-15**: 2,336 eligible pages, 127,142 words, recorded
+    to `recordings/textract/` with the reader version and a corpus fingerprint. This line read
+    "not yet called" until then. Of its 35 fields, 3 derived a usable threshold and 32 are
+    always-review; 4 more derived 0.000 and were floored to always-review by
+    `minimum_useful_threshold` below, because a threshold of zero separates nothing — it says
+    the reader was never caught being wrong, which is a small sample rather than a safe field.
+    The comparison against tier 0 is made on the pages **both** readers saw: this reader has no
+    Greek or Dutch, and comparing its English-only set against tier 0's whole corpus would
+    measure the language mix and report it as reader quality.
   2: >-
     Managed document automation, per page. Best on reading order and table structure, and it
     measures its own raster. **It reports a per-word confidence, and this project does not
