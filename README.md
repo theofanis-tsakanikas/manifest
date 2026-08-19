@@ -360,6 +360,19 @@ without an AWS account.
   straight to the only tier that does. That is the contract as executed, not a diagram.</sub>
 </p>
 
+What the model tier actually did is in the estate's own telemetry, per document.
+
+<p align="center">
+  <img src="images/cloudwatch_bedrock.png" width="900" alt="An OTEL span from the escalation handler showing tier 3 and the published/queued split"><br>
+  <sub><b>One span, and the two numbers that matter are beside each other</b> —
+  <code>reader_tier: 3</code>, so this document went to the language model; then
+  <code>fields_extracted: 9</code>, <code>fields_published: 0</code>,
+  <code>fields_queued: 8</code>. The model read nine fields and published none of them. It is the
+  only tier that reads Greek and Dutch, it reports no confidence at all, and any it is asked for
+  is refused at the adapter — a self-reported score is a token the prompt made likely, not a
+  measured frequency.</sub>
+</p>
+
 Above the readers, a classifier proposes tariff codes. It is allowed to rank. It is not allowed to
 decide.
 
