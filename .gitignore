@@ -63,3 +63,13 @@ corpus/rendered/
 # hundreds of megabytes of intermediate footage that regenerate from nothing and belong in git
 # even less than the rasterised corpus does.
 promo/*.screenstudio/
+
+# **The LinkedIn drafts.** Post bodies, the long-form article, and the screenshots copied out of
+# `images/` under the names the article refers to them by.
+#
+# Ignored rather than tracked, for the same reason `promo/*.screenstudio/` is: nothing in here is
+# evidence for a claim, it is *writing about* the evidence, and every screenshot in it is a second
+# copy of a file already tracked under `images/`. Two copies of the same frame under two names is
+# how the one on the feed comes to disagree with the one in the README, and the feed is the copy
+# nobody re-derives.
+linkedin/
