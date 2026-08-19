@@ -676,9 +676,15 @@ def _counts_stated(readme: str) -> dict[str, set[str]]:
             r"|\*\*(\d+) tests\*\*|:\s*(\d+)\s*\n\s*tests[ ,]",
             spelled,
         ),
+        # The last three were added on 2026-08-20, after the same figure sat wrong in three
+        # places at once for a day: the claim-table row said 57 planted violations, and the
+        # screenshot's alt text and caption both said 57 over an image that read 56 — while the
+        # badge, twelve lines up, said 61. All four are the same fact. None of the three was in
+        # any shape above, so the check that exists to catch exactly this reported green.
         "gate-proof mutations": re.findall(
             r"\*\*(\d+) refused|break (\d+) controls|breaks (\d+) controls"
-            r"|gate-proof-(\d+) planted|planted · (\d+) refused|(\d+) planted gate violations",
+            r"|gate-proof-(\d+) planted|planted · (\d+) refused|(\d+) planted gate violations"
+            r"|(\d+) planted violations|gate-proof: (\d+) refused|<b>(\d+) refused",
             spelled,
         ),
     }

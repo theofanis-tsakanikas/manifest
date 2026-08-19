@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/AWS-Redshift-8C4FFF?logo=amazonredshift&logoColor=white" alt="Redshift">
   <img src="https://img.shields.io/badge/OCR-Tesseract-4A9?logo=tesseract&logoColor=white" alt="Tesseract">
   <br>
-  <img src="https://img.shields.io/badge/tests-516%20passing-2ea44f" alt="516 tests passing">
+  <img src="https://img.shields.io/badge/tests-520%20passing-2ea44f" alt="520 tests passing">
   <img src="https://img.shields.io/badge/gate--proof-61%20planted%20%C2%B7%2061%20refused-2ea44f" alt="gate-proof 61 refused">
   <img src="https://img.shields.io/badge/live-34%2F34%20against%20the%20estate-2ea44f" alt="34/34 live checks">
   <img src="https://img.shields.io/badge/thresholds-5%20derived%20%C2%B7%2031%20always--review-2ea44f" alt="5 derived, 31 always-review">
@@ -82,7 +82,7 @@ whether it had behaved.
 </p>
 
 **The estate is destroyed.** The resting state of this repository is a state bucket, its key, five
-SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 516
+SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 520
 tests, 15 evaluation harnesses and 61 planted gate violations, on a laptop, in twelve minutes.
 
 ---
@@ -127,7 +127,7 @@ hand-picked 0.85 is **4.68%**, derived is **0.22%** — with **no declared budge
 | [The human loop is real, and measured](#the-human-loop-is-real-and-measured) | claim 5, capacity and rubber stamps |
 | [A correction never erases](#a-correction-never-erases) | claims 3 and 4, versions and disagreement |
 | [The cascade, and what it may not claim](#the-cascade-and-what-it-may-not-claim) | claim 7, routing and a cost *model* |
-| [The gates are attacked](#the-gates-are-attacked) | 57 planted violations, each refused by name |
+| [The gates are attacked](#the-gates-are-attacked) | 61 planted violations, each refused by name |
 | [Quickstart](#quickstart) · [Testing](#testing) · [Repository layout](#repository-layout) | |
 | [What this does not do](#what-this-does-not-do) · [Cost](#cost) · [Decisions](#decisions) | |
 | [Docs](#docs) · [Security](#security) · [License](#license) | |
@@ -434,19 +434,16 @@ Every gate in this repository is broken on purpose and required to refuse — **
 right reason**. A mutation whose target has moved reports `STALE`, never `passed`.
 
 <p align="center">
-  <img src="images/gate_proof1.png" width="900" alt="gate-proof: 57 refused, 0 accepted, 0 stale"><br>
-  <sub><b>57 refused, 0 accepted, 0 stale</b> on the run of 2026-08-19 that this picture is of;
-  the harness plants <b>61</b> since. The four added all break the same thing — a control that
-  exists on paper and is enforced by nobody: <i>let the verifier reuse the assembler that
-  produced the record</i> (ADR-0003 declared that gate and it was never written),
-  <i>point the prose at a file that is not there</i> (which is how nobody noticed),
-  <i>let an acceptance no other gate reads expire</i> (five of eight were in that state), and
-  <i>leave a gate on disk and run it nowhere</i>. The picture is the run, not the current count;
-  read the mutation names, not either number.
-  <i>let review volume relax the error budget</i> is the forbidden move from ADR-0001 planted as
-  code. <i>count an approval from a reviewer who agrees with everything</i> plants a rubber stamp
-  into the feedback loop. <i>grant a verb where its resources cannot match</i> was a real defect in
-  this repository, found by a teardown, before it became a test.</sub>
+  <img src="images/gate_proof1.png" width="900" alt="gate-proof: 61 refused, 0 accepted, 0 stale"><br>
+  <sub><b>61 refused, 0 accepted, 0 stale</b> — the whole run, from <code>baseline green</code> to
+  the summary, because a list of refusals proves nothing without the green it started from.
+  Read the mutation names, not the total. <i>let review volume relax the error budget</i> is the
+  forbidden move from ADR-0001 planted as code. <i>count an approval from a reviewer who agrees
+  with everything</i> plants a rubber stamp into the feedback loop. <i>let the verifier reuse the
+  assembler that produced the record</i> is a gate ADR-0003 declared and nobody wrote.
+  <i>point the prose at a file that is not there</i> is how nobody noticed. And <i>grant a verb
+  where its resources cannot match</i> was a real defect in this repository, found by a teardown,
+  before it became a test.</sub>
 </p>
 
 Each of the seven claims has its own command, and so does every rule that supports them.
@@ -491,7 +488,7 @@ The corpus is not committed — 3,255 rendered pages regenerate byte-identically
 
 ## Testing
 
-**516 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
+**520 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
 (threshold derivation, reconciliation, entity resolution, versioning, drift, feedback), the
 contract loader, the engine adapters against documented response schemas, the handlers, and every
 gate.
@@ -509,7 +506,7 @@ make preflight   # everything that must be true before the estate is stood up
 
 The figures this README quotes are the figures those commands print, and a check enforces it.
 `make preflight` runs **40 checks**, one of which re-reads this file: the test suite at
-**516 passing**, `gate-proof` at **61 refused, 0 accepted, 0 stale**, and checkov at
+**520 passing**, `gate-proof` at **61 refused, 0 accepted, 0 stale**, and checkov at
 **718 passed, 0 findings** across six Terraform layers. A scoreboard drifts by the ordinary act of
 adding a gate, silently, in the direction of looking more finished than it is — so the repository
 whose first claim is that every number is reproducible is the one that has to check.

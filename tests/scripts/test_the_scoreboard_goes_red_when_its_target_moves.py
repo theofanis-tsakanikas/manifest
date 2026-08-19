@@ -178,3 +178,58 @@ def test_the_gate_proof_badge_is_counted_too() -> None:
         "\n`gate-proof` at **57 refused, 0 accepted, 0 stale**"
     )
     assert preflight._counts_stated(readme)["gate-proof mutations"] == {"57", "58"}
+
+
+def test_the_claim_table_row_is_counted_too() -> None:
+    """The fourth silent failure, 2026-08-20. Same fact, fourth shape, nothing matched it.
+
+    `| The gates are attacked | 57 planted violations, each refused by name |` sat in the
+    contents table while the badge twelve lines up said 61. `(\\d+) planted gate violations`
+    was in the patterns; `(\\d+) planted violations` — the same sentence without the noun —
+    was not.
+    """
+    readme = (
+        "| [The gates are attacked](#x) | 57 planted violations, each refused by name |"
+        "\n`gate-proof` at **61 refused, 0 accepted, 0 stale**"
+    )
+    assert preflight._counts_stated(readme)["gate-proof mutations"] == {"57", "61"}
+
+
+def test_a_screenshots_alt_text_is_counted_too() -> None:
+    """Alt text is the figure a reader who cannot see the image is given, and it drifted.
+
+    It is also the only copy of the number that no sighted reader ever proof-reads, which is
+    why it was 57 over a picture that read 56 for a day.
+    """
+    readme = (
+        '<img src="images/gate_proof1.png" alt="gate-proof: 57 refused, 0 accepted, 0 stale">'
+        "\n`gate-proof` at **61 refused, 0 accepted, 0 stale**"
+    )
+    assert preflight._counts_stated(readme)["gate-proof mutations"] == {"57", "61"}
+
+
+def test_an_html_bolded_figure_is_counted_too() -> None:
+    """`**57 refused**` was matched and `<b>57 refused</b>` was not.
+
+    The README's captions are inside `<p align="center">` blocks, where markdown emphasis does
+    not render — so every caption bolds with `<b>`, and every caption was therefore outside the
+    one pattern written for bold.
+    """
+    readme = (
+        "<sub><b>57 refused, 0 accepted, 0 stale</b> — the whole run</sub>"
+        "\n`gate-proof` at **61 refused, 0 accepted, 0 stale**"
+    )
+    assert preflight._counts_stated(readme)["gate-proof mutations"] == {"57", "61"}
+
+
+def test_this_repositorys_own_readme_states_one_number_per_fact() -> None:
+    """The regression the three tests above are abstractions of.
+
+    Everything else in this file uses synthetic READMEs, deliberately — a test that reads the
+    real page goes red for reasons that have nothing to do with the mechanism. This one is the
+    exception on purpose: the failure being guarded against is *this page disagreeing with
+    itself*, and there is no synthetic stand-in for that.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    for fact, stated in preflight._counts_stated(readme).items():
+        assert len(stated) == 1, f"README states {sorted(stated)} for {fact}; it is one fact"
