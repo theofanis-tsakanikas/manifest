@@ -169,21 +169,33 @@ def main() -> int:
         )
 
     reachable, accepted = _reachable(), _accepted()
+
+    # **`security/` is walked for the same reason `core/` is, and it was not.**
+    #
+    # `security/injection.py` is the control `CLAUDE.md` and `SECURITY.md` both point a reader at
+    # for untrusted document text, and nothing in the running system calls it: the escalation
+    # handler sends the page as an image under its own prompt, which is a genuine structural
+    # fence and a different one. So the module is proved by `evals/injection` and asked by
+    # nobody — the exact state `core/reconciliation.py` was in while claim 4 was being scored.
+    #
+    # It is not a hole today. It is a control whose absence of a caller nothing was checking,
+    # which is how it stays absent when the text path finally arrives.
     orphans = []
-    for module in sorted(PACKAGE.glob("core/*.py")):
-        if module.name == "__init__.py":
-            continue
-        name = module.stem
-        if str(module.relative_to(ROOT)) in reachable:
-            continue
-        if name in accepted:
-            print(f"  {DIM}declared{RESET}  core/{name}.py — {accepted[name]}")
-            continue
-        orphans.append(name)
+    for package in ("core", "security"):
+        for module in sorted(PACKAGE.glob(f"{package}/*.py")):
+            if module.name == "__init__.py":
+                continue
+            name = module.stem
+            if str(module.relative_to(ROOT)) in reachable:
+                continue
+            if name in accepted:
+                print(f"  {DIM}declared{RESET}  {package}/{name}.py — {accepted[name]}")
+                continue
+            orphans.append(f"{package}/{name}")
 
     for name in orphans:
         problems.append(
-            f"`core/{name}.py` is a decision nothing in handlers/, gates/ or pipelines/ can "
+            f"`{name}.py` is a decision nothing in handlers/, gates/ or pipelines/ can "
             f"reach. It is proved offline and never asked — the state core/reconciliation.py, "
             f"core/review.py and core/entities.py were in while claims 4, 5 and 6 were being "
             f"scored against a system that had no path to any of them. Give it a caller that "
@@ -201,7 +213,7 @@ def main() -> int:
 
     print(
         f"  {GREEN}ok{RESET}    {len(real)} package(s) documented and present, and every module "
-        f"in core/ is reachable from something that runs"
+        f"in core/ and security/ is reachable from something that runs, or declared"
     )
     return 0
 

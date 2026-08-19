@@ -20,11 +20,33 @@ reaches_the_estate:
     a threshold at request time — that is the whole of decision 20 — so an import from a handler
     would be the defect rather than the fix.
 
+  injection: >-
+    **Nothing calls it, and that is the entry.** `CLAUDE.md` and `SECURITY.md` both point a
+    reader at `security/injection.py` as the control on untrusted document text, and no path in
+    the running estate reaches it: `handlers/escalate.py` sends the page to the model as an
+    *image*, under a prompt it composes itself. That is a genuine structural fence — a document
+    cannot become an instruction if the instruction never enters the prompt as text — and it is
+    a different fence from this module's.
+
+    So the route is not "it is used". It is: **there is no text-to-prompt path in this system
+    today**, `envelope()` is the fence for the one that does not exist yet, and `evals/injection`
+    is what proves the fence works — 0 false positives across 2,963 documents, and every planted
+    string recognised.
+
+    What this entry buys is the thing a comment cannot: on the day somebody adds a text-based
+    extractor, this declaration is the file that has to change, and changing it is where the
+    question *"does that path go through `envelope()`?"* gets asked. Without it, the module goes
+    on being cited by two documents and called by none.
+
 accepted_by: "Theofanis Tsakanikas"
-accepted_on: "2026-08-14"
+accepted_on: "2026-08-14"   # `injection` added 2026-08-19
 expires_on: "2027-02-14"
 
 ends_when: >-
-  The artefact route is checked by something narrower than this file — a test that renders the
+  For `injection`: a text-based extraction path exists and is asserted to pass through
+  `envelope()` before reaching a prompt — at which point the module has a caller and needs no
+  declaration. Until then the honest statement is that the fence guards a door not yet built.
+
+  For `calibration`: the artefact route is checked by something narrower than this file — a test that renders the
   artefact and asserts the handler resolves a threshold from it, which is a stronger statement
   than "there is a route" and would make this entry unnecessary.

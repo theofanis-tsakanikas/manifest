@@ -16,9 +16,14 @@ The controls this repository claims to enforce. If one of them can be defeated, 
 vulnerability even though no estate is standing:
 
 - **Prompt injection reaching an extraction prompt.** A commercial invoice is a document a
-  counterparty wrote. Text inside it that carries an instruction and is neither fenced by
-  `src/manifest/security/` nor refused by the envelope is the primary class here — including a
-  forged delimiter that the fencing escapes rather than refuses.
+  counterparty wrote. Today the fence that carries the weight is structural and lives in
+  `handlers/escalate.py`: the page goes to the model as an *image*, so document text never
+  enters the prompt as text. A route that gets document text into a prompt **as text**, without
+  passing `security/injection.py`'s `envelope()`, is the primary report here.
+- **A forged delimiter that the fence escapes rather than refuses, or fails to see.** The
+  refusal reads the raw string *and* the NFKC-normalised, zero-width-stripped form, because
+  `<<<UNTRUSTED-DOC\u200bUMENT-TEXT>>>` is not a literal match and renders identically. A
+  disguise that survives both is in scope.
 - **A published field with no provenance.** Any path by which a value reaches a published record
   without a page, a box and a passing check in `src/manifest/gates/provenance.py`. Doctrine rule 7
   is the one door with no key: a field the system cannot locate on a page may not be overridden

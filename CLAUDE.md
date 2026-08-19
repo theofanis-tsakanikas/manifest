@@ -234,9 +234,22 @@ recording and **goes red when the generator drifts out of the band**. A corpus w
 difficulty nobody declared is a corpus tuned, unconsciously, until the claims passed.
 
 **Untrusted documents are untrusted input.** A commercial invoice is a document a
-counterparty wrote. Text inside it reaching an extraction prompt is indirect prompt
-injection with money attached. Extraction prompts treat document text as data, structurally.
+counterparty wrote. Text inside it reaching an extraction prompt is indirect prompt injection
+with money attached. Extraction prompts treat document text as data, structurally.
 *This control already exists in Attestor — implement it properly, do not present it as novel.*
+
+**And be exact about which fence is load-bearing today, because they are not the same fence.**
+`handlers/escalate.py` sends the page to the model as an **image**, under a prompt it composes
+itself — document text never enters that prompt as text, which is a structural property rather
+than a filter, and it is what actually protects the running system.
+
+`security/injection.py` is the fence for a **text**-to-prompt path, and this system has none.
+Nothing in `handlers/` calls it; `evals/injection` is what proves it works. That is declared in
+`contracts/core/reachable.yaml` with an expiry rather than left as a comment, and
+`check_the_map_matches_the_ground.py` walks `security/` for exactly this reason — so the day a
+text-based extractor is added, the declaration is the file that must change, and changing it is
+where *"does that path go through `envelope()`?"* gets asked. A control two documents cite and
+nothing calls is the state `core/reconciliation.py` was in while claim 4 was being scored.
 
 **IaC only · bootstrap local, everything else CI · no long-lived keys · state isolated per
 layer · deterministic first · fail closed on correctness, fail open on enrichment · every

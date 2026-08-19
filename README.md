@@ -553,8 +553,14 @@ directory against what CI and the Makefile actually invoke, because three hand-m
   three modelled reviewers have three distinct pathologies; the estate proves the *columns* exist,
   not that oversight was good.
 - **The reader image carries CRITICAL CVEs in its Debian base packages, and nothing gates them.**
-  checkov scans Terraform to zero findings; no check reads the ECR image scan. That is a gap in the
-  gates, named here rather than discovered.
+  checkov scans Terraform to zero findings; no check reads the ECR image scan. Both base images
+  are now pinned to a digest and both are built by CI, so the input is fixed and the build is
+  checked — but the advisories against those pinned bases are still nobody's gate.
+- **`security/injection.py` has no caller in the running system.** The fence that carries the
+  weight today is structural and elsewhere: `handlers/escalate.py` sends the page as an image, so
+  document text never enters a prompt as text. The module is the fence for a text path that does
+  not exist yet, it is proved by `evals/injection`, and its absence of a caller is *declared*
+  in `contracts/core/reachable.yaml` with an expiry rather than left to be discovered.
 - **Required reviewers on the deploy environment are off**, under a dated acceptance that expires
   and that `check_deploy_path.py` refuses to let outlive its expiry
   ([`contracts/deploy/acceptance.yaml`](contracts/deploy/acceptance.yaml)).
@@ -618,9 +624,18 @@ Engineering rules are in [`CLAUDE.md`](CLAUDE.md).
 
 ## Security
 
-Untrusted document text is fenced structurally before it reaches any prompt, and the envelope
-refuses a forged delimiter rather than escaping it — `make injection`, with **0 false positives**
-across 2,963 documents of ordinary trade prose. Scope, reporting and known limitations are in
+Untrusted document text is fenced structurally before it reaches any prompt — and the README is
+exact about which fence carries the weight, because they are not the same one. Today it is
+`handlers/escalate.py`: the page goes to the model as an **image**, so document text never enters
+the prompt as text. `security/injection.py` is the fence for a text path this system does not yet
+have; its refusal reads the normalised form as well as the raw one, so a delimiter disguised by a
+zero-width character is refused rather than passed. `make injection` scores it at **0 false
+positives** across 2,963 documents of ordinary trade prose.
+
+That module having no caller is declared in [`contracts/core/reachable.yaml`](contracts/core/reachable.yaml)
+with an expiry, and `check_the_map_matches_the_ground.py` walks `security/` to keep it declared —
+a control two documents cite and nothing calls is exactly the state three core modules were in
+while their claims were being scored. Scope, reporting and known limitations are in
 [SECURITY.md](SECURITY.md).
 
 ## License
