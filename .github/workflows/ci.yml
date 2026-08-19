@@ -430,3 +430,14 @@ jobs:
         # catches a base image whose publisher moved the binary underneath it. That would move
         # every derived threshold in this repository on the next deploy, silently.
         run: docker build -t manifest-reader:ci .
+
+      - name: and so does the one the batch layer runs
+        # **`Dockerfile.emr` was built by nothing outside the deploy**, which is how a Dockerfile
+        # ends up on a floating `:latest` in a repository that pins actions to a commit SHA. A
+        # break in it surfaced at minute twenty of an apply, after the environment approval, with
+        # no offline check that could have caught it first.
+        #
+        # Building it here is what makes its base image pinnable: a digest nothing verifies is a
+        # digest nobody can move safely, and the point of pinning is to be able to move it on
+        # purpose and be told immediately if the result differs.
+        run: docker build -f Dockerfile.emr -t manifest-reprocessing:ci .

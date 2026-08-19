@@ -41,8 +41,26 @@ class SearchSurfaceError(RuntimeError):
 
 def call(method: str, url: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     """Sign, send, and return the parsed answer — or refuse with a reason worth reading."""
+    # **The scheme is asserted rather than assumed, and it costs nothing to assert.**
+    #
+    # `url` is built from `SEARCH_ENDPOINT`, which Terraform fills from the collection's own
+    # `collection_endpoint` — always `https://`. The check is not defending against that value
+    # changing; it is closing the shape of the hole, because `urlopen` will open `file://` and
+    # `ftp://` as readily as it opens `https://`, and an environment variable is the kind of
+    # input that acquires a new source later.
+    #
+    # It cannot break what works: a value without a scheme already raises inside `urlopen`, so
+    # this refuses only input that was refused anyway — and refuses it with a sentence that says
+    # what is wrong instead of `unknown url type`.
+    if not url.startswith("https://"):
+        raise SearchSurfaceError(
+            f"the search endpoint must be https, and this one is {url.split(':', 1)[0]!r}. "
+            f"Signing and sending a request to any other scheme is not something this handler "
+            f"is willing to do"
+        )
+
     body = json.dumps(payload).encode("utf-8") if payload is not None else b""
-    request = Request(url, data=body or None, method=method)  # noqa: S310 - https, from an env value
+    request = Request(url, data=body or None, method=method)  # noqa: S310 - https, asserted above
     request.add_header("Content-Type", "application/json")
     for header, value in _signature(method, url, body).items():
         request.add_header(header, value)

@@ -21,7 +21,19 @@
 # So this image is the smallest thing that lets the *planner* run: an interpreter and the AWS
 # SDK. Nothing in it decides anything.
 
-FROM public.ecr.aws/emr-serverless/spark/emr-7.5.0:latest
+# **Pinned to a digest, and `:latest` is what it replaced.**
+#
+# A floating tag on the image that runs the bulk reprocessing job is the one supply-chain input
+# this repository had not closed, in a repository that pins every GitHub action to a commit SHA
+# and compares the reader's version character for character. `:latest` on a Spark runtime is
+# also the worst place for it: the job it runs is the one that would reprocess four million
+# documents, and a base that moved underneath it would change what that job does without a
+# single line of this repository changing.
+#
+# Digest resolved on 2026-08-19 for the `latest` tag of `emr-7.5.0`. It is pinnable now because
+# `ci.yml` builds this file on every push — before that, nothing outside a deploy had ever built
+# it, and a digest nothing verifies is a digest nobody can move safely.
+FROM public.ecr.aws/emr-serverless/spark/emr-7.5.0@sha256:cf28c89d02957accbb550c16097369eefc0fb3463b7110bc7b61e7885a582d8e
 
 # Root for the install, `hadoop` for the run. EMR Serverless requires the image to end as the
 # user it started as — a custom image running as root is refused at application update, with a

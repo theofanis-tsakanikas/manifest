@@ -505,10 +505,15 @@ def _escape_the_envelope_instead_of_refusing_it(root: Path) -> bool:
     transformation that has to be right every time, refusing is a property that cannot be got
     wrong. There is no legitimate document containing this string.
     """
+    # The condition it disables gained a second clause when the refusal learned to read the
+    # normalised form as well. Anchoring on the whole line keeps this mutation aimed at the
+    # refusal itself rather than at a substring of it — the difference between a mutation that
+    # is refused and one that reports STALE, which is what this one did the moment that line
+    # changed underneath it.
     return _replace(
         root / "src/manifest/security/injection.py",
-        "    if delimiter in text:\n        raise EnvelopeError(",
-        "    if False:\n        raise EnvelopeError(",
+        "    if delimiter in text or delimiter in normalise(text):",
+        "    if False:",
     )
 
 
@@ -694,6 +699,25 @@ def _grant_a_verb_where_its_resources_cannot_match(root: Path) -> bool:
         """    resources = [
       "arn:aws:dynamodb:*:${data.aws_caller_identity.current.account_id}:table/${var.project}-*",
     ]""",
+    )
+
+
+def _let_a_disguised_delimiter_through(root: Path) -> bool:
+    """Read the raw text only, so an invisible character walks the fence.
+
+    **This was the repository's actual state.** `envelope` refused a document containing the
+    delimiter and read the raw string to decide — so `<<<UNTRUSTED-DOC\u200bUMENT-TEXT>>>`, one
+    zero-width space short of a literal match, passed the refusal and then rendered identically
+    to the delimiter in front of the model. Not escaped, not refused: passed.
+
+    The mutation removes one clause. Every other injection test still passes, the detector still
+    fires on the attack corpus, and the only thing that changes is which documents the fence
+    considers to be attacking it.
+    """
+    return _replace(
+        root / "src/manifest/security/injection.py",
+        "if delimiter in text or delimiter in normalise(text):",
+        "if delimiter in text:",
     )
 
 
@@ -1381,6 +1405,15 @@ MUTATIONS: tuple[Mutation, ...] = (
         "Framed as thoroughness. Catches one more attack and every amendment note that says "
         "'disregard the previous packing list'. Replaced an earlier mutation the harness "
         "reported as accepted, which is how the rule's real anchor was found.",
+    ),
+    Mutation(
+        "let a disguised delimiter through the fence",
+        "injection envelope",
+        ["pytest", "-q", "tests/security", "-x"],
+        "test_a_delimiter_disguised_by_a_zero_width_character_is_refused",
+        _let_a_disguised_delimiter_through,
+        "A fence a document steps over by adding an invisible character is not a fence. It is "
+        "the neighbour of the case SECURITY.md already names, and it was the worse one.",
     ),
     Mutation(
         "escape the envelope delimiter instead of refusing it",

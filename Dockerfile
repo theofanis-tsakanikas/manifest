@@ -42,7 +42,20 @@
 #
 # Trixie carries the 5.5 series. If a future base moves it again, this build fails again, by
 # name, and the answer is to re-record and accept the movement — never to widen the assertion.
-FROM public.ecr.aws/docker/library/python:3.12-slim-trixie
+# **Pinned to a digest, like every action in `.github/workflows/`.**
+#
+# A tag is a pointer somebody else can move, and this is the one supply-chain input that was
+# still floating in a repository that pins actions to a commit SHA and the reader's version
+# character for character. The digest was resolved on 2026-08-19 for `3.12-slim-trixie`.
+#
+# It is safe to pin here precisely because the build already refuses a reader it did not expect:
+# `EXPECTED_READER_VERSION` below compares the installed binary to the recording's own string,
+# so a base image carrying a different tesseract fails this build — in CI, offline, before any
+# deploy. Moving the pin is therefore checkable without standing anything up.
+#
+# To move it: resolve the tag's digest, change the line, and let CI build. If the reader moved
+# with it, `make ocr-record` is the ceremony that follows, not a wider comparison here.
+FROM public.ecr.aws/docker/library/python:3.12-slim-trixie@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a
 
 # **What the series check let through, and what it cost.**
 #

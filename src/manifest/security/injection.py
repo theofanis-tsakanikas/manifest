@@ -280,11 +280,31 @@ def envelope(text: str, delimiter: str = DEFAULT_DELIMITER) -> str:
             f"the delimiter {delimiter!r} is too short to be a boundary; a fence a document "
             f"could contain by accident is not a fence"
         )
-    if delimiter in text:
+    # **The refusal reads both forms, and the second one is the whole point.**
+    #
+    # Checking only the raw text left the exact evasion this envelope exists to stop: a document
+    # carrying `<<<UNTRUSTED-DOC\u200bUMENT-TEXT>>>` — the delimiter with one zero-width
+    # character inside it — is not equal to the delimiter, passes this refusal, and then renders
+    # *identically* to it in front of a model, because a zero-width space has no glyph. The same
+    # holds for the full-width and mathematical-alphanumeric variants that NFKC folds.
+    #
+    # `SECURITY.md` names "a forged delimiter that the fencing escapes rather than refuses" as
+    # in scope. This was the neighbouring case, and it was worse: not escaped, not refused,
+    # passed.
+    #
+    # `normalise` remains a detection aid and is still not applied to what goes into the
+    # envelope — the text a model sees is what the reader emitted, unchanged. What changed is
+    # that the *decision to refuse* now reads the folded form too.
+    if delimiter in text or delimiter in normalise(text):
+        disguised = (
+            " (disguised: it is not a literal match, only a visual one)"
+            if (delimiter not in text)
+            else ""
+        )
         raise EnvelopeError(
-            f"this document contains the envelope delimiter {delimiter!r}. It is refused "
-            f"rather than escaped: escaping is a transformation that has to be right, and "
-            f"there is no legitimate document that contains this string"
+            f"this document contains the envelope delimiter {delimiter!r}{disguised}. It is "
+            f"refused rather than escaped: escaping is a transformation that has to be right, "
+            f"and there is no legitimate document that contains this string"
         )
     return (
         f"{delimiter}\n"

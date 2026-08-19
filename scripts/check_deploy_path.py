@@ -668,6 +668,41 @@ def _check_the_runtime_artefacts_are_deployed() -> list[str]:
     return problems
 
 
+def _check_base_images_are_pinned() -> list[str]:
+    """Every `FROM` names a digest, never a tag.
+
+    **The same argument as the one above, one layer down, and it was the argument this
+    repository had not applied to itself.** Actions are pinned to a commit SHA because a tag
+    moves; `Dockerfile.emr` sat on `public.ecr.aws/…/emr-7.5.0:latest`, which is a tag that
+    moves *by design*, on the image that runs the bulk reprocessing job.
+
+    The reader image is the sharper case. Every threshold in this repository is derived from a
+    recording made by one binary, and the image asserts that binary's version at build time — so
+    a base whose publisher moved tesseract underneath the tag would fail the build rather than
+    move the numbers silently. That assertion is what makes a digest safe to *change*: resolve
+    the new one, let CI build, and be told immediately whether the reader moved with it.
+
+    A digest nothing builds is a digest nobody can move, so this check and the CI job that
+    builds each Dockerfile are one control in two halves.
+    """
+    problems: list[str] = []
+    for path in sorted(ROOT.glob("Dockerfile*")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped.upper().startswith("FROM "):
+                continue
+            reference = stripped.split(None, 1)[1].split(" AS ")[0].split(" as ")[0].strip()
+            if "@sha256:" in reference:
+                continue
+            problems.append(
+                f"{path.name}:{number} builds `FROM {reference}` — a tag, which the publisher "
+                f"can move. Pin it to a digest: this repository pins every action to a commit "
+                f"SHA for the same reason, and the reader's own version is compared character "
+                f"for character"
+            )
+    return problems
+
+
 def _check_actions_are_pinned() -> list[str]:
     """Every third-party action is pinned to a commit SHA, never to a tag.
 
@@ -1490,6 +1525,7 @@ def main() -> int:
         _check_the_runtime_artefacts_are_deployed,
         _check_a_trigger_can_actually_fire,
         _check_actions_are_pinned,
+        _check_base_images_are_pinned,
         _check_every_env_reference_is_defined,
         _check_shell_variables_are_assigned_in_their_job,
     ):
