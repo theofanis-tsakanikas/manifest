@@ -63,4 +63,3 @@ corpus/rendered/
 # hundreds of megabytes of intermediate footage that regenerate from nothing and belong in git
 # even less than the rasterised corpus does.
 promo/*.screenstudio/
-images/

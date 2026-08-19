@@ -1,0 +1,73 @@
+# **Version updates are declared and switched off. Security updates stay on.**
+#
+# This repository is a pinned reference implementation, not a library under maintenance. Its
+# dependency set is the combination the 501 tests and the 15 claim harnesses were validated
+# against, and several pins must move together or not at all — the reader binary, its language
+# data, and the recording every threshold derives from are one unit, and a bump to any of them is
+# the `make ocr-record` ceremony rather than a pull request.
+#
+# Every ecosystem this repository actually has is declared below, because omitting one reads as an
+# oversight rather than a decision. `open-pull-requests-limit: 0` switches off *version-update*
+# pull requests only. Dependabot **security** updates and alerts remain enabled in the repository
+# settings; they are a separate feature and they are the half worth having.
+#
+# What would have to change to turn version updates back on: CI would have to install from the
+# same requirements the image ships, build the image, and assert the cross-file invariant that
+# `Dockerfile`'s reader version matches `recordings/ocr/manifest.json`. Until it does, a green tick
+# on an untested upgrade is worse than no tick.
+version: 2
+
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/bootstrap"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/foundation"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/lakehouse"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/extraction"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/batch"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: terraform
+    directory: "/infra/analytics"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 0

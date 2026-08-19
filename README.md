@@ -1,290 +1,447 @@
+<p align="center">
+  <img src="images/banner.png" alt="Manifest — every field traces to a pixel" width="100%">
+</p>
+
 # Manifest
 
-**A document intelligence platform for cross-border trade. Every field traces to a pixel.**
+<p align="center">
+  <a href="https://github.com/theofanis-tsakanikas/manifest/actions/workflows/ci.yml"><img src="https://github.com/theofanis-tsakanikas/manifest/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.12+-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white" alt="Terraform">
+  <br>
+  <img src="https://img.shields.io/badge/AWS-Textract-FF9900?logo=amazonaws&logoColor=white" alt="AWS Textract">
+  <img src="https://img.shields.io/badge/AWS-Bedrock-FF9900?logo=amazonaws&logoColor=white" alt="AWS Bedrock">
+  <img src="https://img.shields.io/badge/AWS-SageMaker-FF9900?logo=amazonaws&logoColor=white" alt="SageMaker">
+  <img src="https://img.shields.io/badge/AWS-Step%20Functions-FF4F8B?logo=amazonaws&logoColor=white" alt="Step Functions">
+  <img src="https://img.shields.io/badge/Apache-Iceberg-1E90FF?logo=apacheiceberg&logoColor=white" alt="Apache Iceberg">
+  <img src="https://img.shields.io/badge/AWS-Redshift-8C4FFF?logo=amazonredshift&logoColor=white" alt="Redshift">
+  <img src="https://img.shields.io/badge/OCR-Tesseract-4A9?logo=tesseract&logoColor=white" alt="Tesseract">
+  <br>
+  <img src="https://img.shields.io/badge/tests-501%20passing-2ea44f" alt="501 tests passing">
+  <img src="https://img.shields.io/badge/gate--proof-56%20planted%20%C2%B7%2056%20refused-2ea44f" alt="gate-proof 56 refused">
+  <img src="https://img.shields.io/badge/live-34%2F34%20against%20the%20estate-2ea44f" alt="34/34 live checks">
+  <img src="https://img.shields.io/badge/thresholds-5%20derived%20%C2%B7%2031%20always--review-2ea44f" alt="5 derived, 31 always-review">
+  <img src="https://img.shields.io/badge/checkov-718%20passed%20%C2%B7%200%20findings-2ea44f" alt="checkov 0 findings">
+</p>
 
-*AWS Textract · Bedrock · Bedrock Data Automation · Lambda · Step Functions · EMR Serverless ·
-Iceberg on S3 · Athena · OpenSearch Serverless · Redshift Serverless · SageMaker · Terraform*
+**A document intelligence platform for cross-border trade, where a published field that cannot
+be located on a page is a build failure — and a confidence threshold nobody could derive means
+the field goes to a human, not to a number that sounds safe.**
 
-> **Manifest** — the trade document, and the word for *made evident*. Both meanings are the
-> project.
+*Textract · Bedrock Data Automation · Bedrock · SageMaker · Step Functions · Lambda · Iceberg on S3 · Athena · OpenSearch · Redshift · EMR Serverless · Terraform*
 
----
-
-> **Status: applied, verified end to end, and torn down.** `make preflight` runs **36 checks** —
-> every claim below, every consistency invariant, `terraform validate` against real provider
-> schemas across six layers, checkov at zero findings, and a check that the figures on this page
-> are the ones the run produced. All of them pass, in the reader image the recording came from.
->
-> **The estate has been deployed, verified end to end, and torn down — twice.** First on
-> 2026-08-10 with the escalation tiers off (13 of 13 checks), and again on **2026-08-12 with them
-> on: 14 of 14**, including the check that the cascade actually climbs. `scripts/e2e_verify.py`
-> puts documents through the running pipeline and asserts what came out, with five edge cases
-> that must each be refused by name.
->
-> An earlier revision of this block said "not yet deployed" and "neither workflow has been
-> dispatched". Both were true when written and false the moment the first apply succeeded, and a
-> repository describing a posture it no longer holds is the same defect whichever way the error
-> points.
->
-> **A managed extraction engine has now been called, and the date matters.** On **2026-08-12** a
-> bill of lading published 2 fields at tier 0 and abstained on 7, and those 7 went up to
-> **Textract** — CloudTrail records `DetectDocumentText` against the `manifest-escalate` role at
-> 06:40:39 EEST. That is the first billed read this project has performed. What it proves is that
-> the **routing works**: the abstaining fields were sent up and the confident ones were not.
-> It is **not** an accuracy figure for the escalated fraction — one document is not a
-> measurement, and *"accuracy held at X for Y% of the cost"* remains unavailable here.
->
-> **Both remaining tiers have since been called, and each moved a sentence rather than a claim.**
-> Bedrock Data Automation, on **2026-08-13**, returned a per-word confidence on every word — against
-> a published schema saying it reports none, and the schema is what had been checked. A page routed
-> there still cannot publish on that score, because **no threshold is derived from it**. The
-> multilingual model was called on **2026-08-15**, sending 7 fields of one abstaining document up to
-> the only tier that reads Greek and Dutch; it reports no confidence and is refused any it is asked
-> for. Neither is an accuracy figure, for the same reason as above.
->
-> No distributed job has run — claim 7 is proved by the pure planner and its ledger on a laptop, and
-> the batch layer is an adapter over that planner rather than the thing being proved. **One cost
-> figure is now measured**: Textract, **2,336 pages on 2026-08-15, $3.50**, quotable with that date
-> and that N. Every other cost figure here is labelled **modelled** everywhere it appears, down to
-> the column named `modelled_cost` in the warehouse, and becomes a measurement only when a run
-> produces one.
->
-> Every claim below is scored **offline, with no AWS account**, and stayed that way through the
-> deploy. A claim that needs a running estate to check is a claim you cannot reproduce.
-> See [`docs/DECISIONS.md`](docs/DECISIONS.md) 14 to 16.
+> **Manifest** — the trade document, and the word for *made evident*. Both meanings are the project.
 
 ---
 
 ## The problem
 
-A customs broker receives commercial documents — bills of lading, invoices, packing lists,
-certificates of origin, customs declarations, arrival notices. They arrive as scans of scans:
-skewed, stamped over the numbers, in three languages, with tables that break across pages and
-handwritten corrections in the margin.
+A customs broker receives the paperwork for a shipment: a bill of lading, a commercial invoice, a
+packing list, a certificate of origin, a customs declaration, an arrival notice. They arrive as
+scans of scans — skewed, stamped over the numbers, in three languages, with tables that break
+across pages and handwritten corrections in the margin. Three things have to come out of them: a
+structured record per document, agreement between documents that must agree, and a tariff
+classification. A wrong classification is quantifiable financial and legal exposure, and a wrong
+weight on a declaration is a customs problem that surfaces months later.
 
-The whole system is built around one boundary:
+Every system built for this eventually faces the same question, and most answer it with a number
+that sounds reassuring: *at what confidence do we publish?* Manifest refuses to answer it by
+hand. Each field declares an **error budget** — the acceptable rate of published-and-wrong — and
+the threshold is **derived** from that budget against a labelled set, with the upper confidence
+bound and N printed beside it. Where no threshold fits the budget at the data available, the
+field is declared **always-review**. On this corpus that is **31 of 36 fields**, and printing
+that number rather than hiding it is the point of the project.
 
-| Models own | Deterministic code owns |
+---
+
+## Status
+
+Deployed to a real AWS account on **19 August 2026** and torn down the same day. One dispatch of
+[`deploy.yml`](.github/workflows/deploy.yml) ran the whole test suite, then applied five Terraform
+layers — `foundation`, `lakehouse`, `extraction`, `batch`, `analytics` — in **49m 32s**, with
+Textract, Bedrock, SageMaker Serverless Inference, OpenSearch Serverless and Redshift Serverless
+all switched on. Documents were then put through the deployed pipeline and the estate was asked
+whether it had behaved.
+
+<p align="center">
+  <img src="images/e2e_verify2.png" width="900" alt="34 of 34 named checks passing against the deployed estate"><br>
+  <sub><b>34/34 against the live account</b> — not fixtures. Check <b>2</b>: 53 words, every one with
+  a real confidence and a real box, range 0.145–0.970, off a degraded page. Check <b>3b</b>: the
+  fields that abstained went <i>up a tier</i>, to a model that reports no confidence and may never
+  publish on it. Check <b>9</b>: an abstention lands in the lake as a row with a null value, because
+  dropping it would hide the review queue from the analytics layer.</sub>
+</p>
+
+<p align="center">
+  <img src="images/deploy_ci.png" width="900" alt="deploy #106, five layers, 49m 32s, success"><br>
+  <sub><b>One dispatch, gate first</b> — the whole suite runs upstream of every apply, so nothing
+  reaches AWS until all of it is green. <code>attack our own gates</code> 7m 40s and
+  <code>the claim gates</code> 10m 47s are inside that gate, not after it.</sub>
+</p>
+
+**The estate is destroyed.** The resting state of this repository is a state bucket, its key, five
+SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 501
+tests, 15 evaluation harnesses and 56 planted gate violations, on a laptop, in about ten minutes.
+
+---
+
+## The seven claims
+
+Every row is the output of one command in this repository, and
+[`scripts/preflight.py`](scripts/preflight.py) re-reads this table and fails the build when a
+figure here stops matching the figure that run produced.
+
+| | result |
 |---|---|
-| Reading characters off a degraded scan | Whether a value is confident enough to publish |
-| Proposing which field a token belongs to | Whether the value actually appears where its provenance says it does |
-| Proposing a tariff classification | Whether two documents agree |
-| Suggesting that two parties are the same entity | Whether a human's decision was recorded, and whether the human was actually looking |
+| **claim 1** · thresholds are derived, never chosen | **5** derived, **1** always-review by contract, **4** evidence-limited, **30** quality-limited — the reason named per field |
+| **claim 2** · every published field traces to a page | honest records **94/120** verified; corrupted boxes **120/120**, **120/120**, **6/6** refused, each by the layer that should catch it |
+| **claim 3** · re-extraction is reproducible and versioned | **3,000/3,000** documents publish an identical version from the same input; **3,000/3,000** get a new version from a reader change |
+| **claim 4** · disagreement is surfaced, never smoothed | exactly **123** planted disagreements found, **0** false positives on the set that agrees |
+| **claim 5** · the human loop is real, and measured | capacity **4,320** decisions/day declared against **120,000** queued — the gate fires, and passes only on a named acceptance that expires |
+| **claim 6** · entity resolution is reversible | **21** surface forms → **13** entities, **0** mixing two parties; un-merge re-points **3/3** downstream records |
+| **claim 7** · bulk reprocessing is idempotent | first pass 3,000, immediate re-run **0**, resume **exactly** the 1,500 remaining; **0.59 USD** per 1,000 pages, *modelled* |
 
-**A published field that cannot be located on a page is a build failure.**
+Four more that are not claims but are the reason the claims mean anything: the corpus stays inside
+its **declared operating envelope**; a confidence of 0.9 transports to paper nobody here designed
+(**ECE 0.0592** against **0.0371**); untrusted document text is fenced with **0 false positives**
+across 2,963 documents; and the derived policy is scored against the alternatives —
+publishing everything is **19.11%** wrong, a hand-picked 0.85 is **4.56%**, derived is **0.41%**
+with **no declared budget missed**.
 
 ---
 
-## The scoreboard
+## Contents
 
-Produced by `make claims` on a laptop with no AWS account. Every figure is the output of a
-command in this repository, not a summary of one.
-
-| check | result |
+| | |
 |---|---|
-| **claim 1** · derived thresholds | **5 derived**, 1 always-review by contract, **4 evidence-limited**, 30 quality-limited — with the reason named per field |
-| **claim 2** · provenance | honest records **30/40 verified**; corrupted boxes **40/40**, **40/40**, **2/2** refused, each by the layer it should be |
-| **claim 3** · reproducibility | **3,000/3,000** documents publish an identical version from the same input; **3,000/3,000** get a new version from a reader change |
-| **claim 4** · reconciliation | **123/123** planted disagreements found, **0** false positives on the set that agrees |
-| **claim 5** · the human loop | queue capacity **4,320 decisions/day** declared against **119,208** implied — the gate fires, and passes only on a named acceptance that expires 2027-02-09 |
-| **claim 6** · reversible identity | 21 surface forms → 13 entities, **0** mixing two parties; un-merge re-points **every** downstream record |
-| **claim 7** · scale and cost | first pass 3,000, re-run **0**, resume **exactly** the 1,500 remaining; **0.59 USD per 1,000 pages, modelled** |
-| **injection** | **0 false positives** on 2,963 documents of ordinary trade prose; 4/4 planted strings recognised; the envelope refuses a forged delimiter rather than escaping it |
-| **line-item totals** | **252/252** deliberately truncated tables caught — 211 by direction, 41 as totals the reader mangled |
-| **classification** | 6/6 contested headings abstain; nothing publishes at any score |
-| **claim 1 · the loop** | review evidence moves **4 fields out of always-review** — and the error budget is untouched in every one. A 100% agreement rate contributes **0 of 500** observations; two seconds on task contributes **0 of 100** |
-| **what it buys** | publishing everything: **19.11% wrong**, 34 declared budgets missed. A hand-picked 0.85: **4.56%**, 25 missed. Derived: **0.41%**, **none missed** — at 19,606 items queued. The queue cost is printed beside the wrong-rate, always |
-| **production drift** | the declared envelope fires on a −0.25 shift **and** on a +0.25 one; a 9-document window returns **undecided**, never *inside* |
-| **out of distribution** | on 100 pages of **real photographed paper** nobody here designed (CC BY 4.0, `corpus/external/LICENCE.md`): ECE **0.0592** against **0.0371** on the generated corpus. The reader's confidences transport — which is the only answer to *"did you tune the generator until the claims passed?"* that does not come from the generator's author |
-| **grounded classification** | a proposal must point at the nomenclature text it came from — claim 2's rule applied to text. 5 of 6 abstentions are **declared** contests, 1 is margin; a heading retrieval never surfaced is refused; nothing publishes at any score |
-| `make gate-proof` | **56 refused, 0 accepted, 0 stale** |
-| `terraform validate` | **6/6 layers** against real provider schemas |
-| `checkov` | **718 passed, 0 findings** across six layers; every exception carries a written reason beside the resource |
-| corpus reproduces | **3,000 documents** regenerate byte-identically from one seed |
-| test suite | **501 passing**, offline, credential-free |
-
-The last three rows are the ones worth reading first. A suite tells you the code does what it
-does; `gate-proof` breaks 55 controls on purpose and requires the **named** gate to refuse
-each one, for the right reason.
+| [The problem](#the-problem) · [Status](#status) | what breaks, and what actually ran |
+| [The seven claims](#the-seven-claims) | one command per row, and a check that re-reads it |
+| [Architecture](#architecture) | one diagram, four tiers, five layers |
+| [Thresholds are derived, not chosen](#thresholds-are-derived-not-chosen) | claim 1, and why 31 fields publish nothing |
+| [Every field is where the record says it is](#every-field-is-where-the-record-says-it-is) | claim 2, checked against the page |
+| [The human loop is real, and measured](#the-human-loop-is-real-and-measured) | claim 5, capacity and rubber stamps |
+| [A correction never erases](#a-correction-never-erases) | claims 3 and 4, versions and disagreement |
+| [The cascade, and what it may not claim](#the-cascade-and-what-it-may-not-claim) | claim 7, routing and a cost *model* |
+| [The gates are attacked](#the-gates-are-attacked) | 56 planted violations, each refused by name |
+| [Quickstart](#quickstart) · [Testing](#testing) · [Repository layout](#repository-layout) | |
+| [What this does not do](#what-this-does-not-do) · [Cost](#cost) · [Decisions](#decisions) | |
+| [Docs](#docs) · [Security](#security) · [License](#license) | |
 
 ---
 
-## The finding this project exists to produce
+## Architecture
 
-**Every field but four is `always-review`, and the harness says which of two things is wrong.**
+```mermaid
+flowchart TB
+  subgraph ingest["Untrusted documents"]
+    DOC["scan lands in S3<br/>the only trigger"]
+  end
 
-`procedure_code` reads **489 of 489 correctly** above 0.9 confidence. Its 95% upper bound on
-the error rate is still **0.61%**, against a declared budget of **0.10%**. No threshold fixes
-that, because the reader is not wrong — **there is not enough labelled evidence to prove it
-right**. Deriving one at that budget needs n≈2,995 at zero observed errors.
+  subgraph read["The cascade — read, then decide"]
+    T0["tier 0 · local OCR<br/>runs anywhere · costs nothing"]
+    T1["tier 1 · Textract<br/>per-word confidence"]
+    T2["tier 2 · Bedrock Data Automation<br/>reports a score · publishes on none"]
+    T3["tier 3 · Bedrock LLM<br/>Greek and Dutch · no confidence at all"]
+  end
 
-That is *evidence-limited*, and it has a different fix from *quality-limited*:
-`country_of_origin` is **174 wrong in 536** above 0.9, which is over-confidence, and no amount
-of extra data helps. The two have the same symptom — "no threshold" — and opposite answers, and
-telling them apart is the most useful thing `evals/calibration/` produces.
+  subgraph decide["Deterministic code — owns every decision"]
+    THR["threshold from the committed recording"]
+    PROV["provenance gate<br/>ink · re-read · check digit"]
+    REC["reconciliation across documents"]
+  end
 
-It is only visible because the bound is computed properly. A point estimate would have reported
-`procedure_code` at 0.0% error and derived a threshold, and the resulting number would have been
-a claim about 489 documents dressed up as a claim about the field.
+  subgraph out["Outcomes"]
+    PUB[("published record<br/>versioned, never overwritten")]
+    Q["review queue<br/>declared finite capacity"]
+  end
 
-**And then claim 5 bites.** Those thresholds queue 91% of extracted fields — 83× the declared
-capacity at the peak. `contracts/review/acceptance.yaml` accepts that overage **by name, with an
-expiry**, and every run prints the finding, the cause and the response in full. What is *not*
-done is the forbidden move: raising a threshold to reduce queue volume without changing the
-error budget, which inverts the derivation and turns a derived number into a chosen one.
-
----
-
-## The three things that make the claims hard to fake
-
-**The corpus is generated, degraded, and its difficulty is declared.** 500 shipments, 3,000
-documents, 3,255 pages in English, Greek and Dutch, rendered to PDF and then skewed, noised,
-JPEG-recompressed, stamped over and bled through. `corpus/envelope.yaml` declares the intended
-operating range — median confidence, the low-confidence tail, the abstention band per document
-type — and a check goes red when the generator drifts out of it, in either direction. A corpus
-degraded too gently makes every threshold trivially satisfiable; too hard and every claim is
-scored on pages nobody could read. **Both failures report green.**
-
-**A real reader actually runs.** The tier-0 engine is a local OCR binary, run here over the real
-degraded corpus, producing genuine confidences and genuine geometry — 3,255 pages, 182,049
-words, committed to `recordings/ocr/` with the engine version and a fingerprint. Every threshold
-is derived from that recording, never from a live run, because a binary's confidences differ
-between versions and a threshold that moved when a runner image changed would make claim 1 red
-for reasons unrelated to this repository. `make ocr-record` refuses to overwrite it without
-`ACCEPT=1` and prints what changed first.
-
-**Claim 4's planting cannot see what will find it.** `corpus/plant.py` perturbs a *fact about a
-shipment* — a weight, a container, a package count — and does not import the contract layer.
-`scripts/check_planting_is_blind.py` reads the import graph and fails if it ever does. Without
-that, "exactly N found, zero false positives" is one function agreeing with itself, reporting
-green forever.
-
----
-
-## What this repository will not claim
-
-Stated here rather than left to be inferred, because each one is a sentence a reader might
-otherwise supply for themselves.
-
-**Claim 2 says a field is *where the record says it is*. It does not say the value is right.**
-Layer B re-reads the crop through a different *segmentation* path, not a different classifier —
-a `0`/`O` confusion reproduces on both passes. The gate also does **not** catch a box pointing
-at an identical string elsewhere on the page, stated in ADR-0003 in advance, with a fixture
-whose expected result is *not caught*.
-
-**No accuracy figure exists for the cascade's upper tiers.** Pages have now been sent to tier 1
-— seven fields of one document, on 2026-08-12 — and that changes the sentence without changing
-the claim: **N=1 is not a measurement.** *"Accuracy held at X for Y% of the cost"* is still
-unavailable here and still does not appear. What the run establishes is the *routing*: the
-fields that abstained went up and the fields that cleared their thresholds did not. An accuracy
-figure needs a labelled corpus put through the tier, with its N and its date, reported separately
-from the offline eval rather than merged into it. **Tiers 2 and 3 have still never been called.**
-
-**The cost is a model.** The routing distribution is measured over the recording; the tier-1
-unit price is published, cited and dated. **Tier 2 carries no price at all** — it is charged per
-token, no call has been made here to count tokens with, and a per-page equivalent invented for
-the table would be exactly the fabricated number everything else avoids. Its volume is reported
-and its cost is a sensitivity sweep.
-
-**Entity resolution does not bridge scripts.** Four non-Latin surface forms resolve to
-themselves. String similarity cannot connect 北方桥货运 to *Northbridge Forwarding B.V.*, and
-nothing here pretends to. Near-matches become *candidates* for a human, never merges: reader
-damage and two different companies sit in the same similarity band, and no threshold separates
-them.
-
-**The AWS fixtures are authored, never captured — and that is now a choice rather than a
-circumstance.** Until 2026-08-12 no call had ever been made, so no response could have been
-recorded. One has been made since, to Textract, and the fixtures are *still* authored: replacing
-one is a deliberate act that changes that fixture's provenance in the same commit, and it has not
-been done. What is forbidden either way is an authored fixture presented as captured. See
-[`tests/extraction/fixtures/AUTHORED.md`](tests/extraction/fixtures/AUTHORED.md).
-
-**The AI Act finding is narrow on purpose.** No high-risk classification arises — Annex III does
-not list customs, and its nearest point is about natural persons crossing a border rather than
-cargo. That is **not** "the AI Act does not apply": Art. 4 and Art. 5 bind regardless of risk
-class and have since 2 February 2025. [`docs/REGULATORY.md`](docs/REGULATORY.md) carries the
-verification date beside every citation.
-
----
-
-## The finding that changed the architecture
-
-Verified 2026-08-09 and recorded in [`docs/AWS-CONSTRAINTS.md`](docs/AWS-CONSTRAINTS.md):
-**Textract, Bedrock Data Automation and Comprehend all document the same six input languages —
-English, German, Spanish, French, Italian, Portuguese.** The scenario's documents are in
-English, Greek and Dutch.
-
-Two of the three languages, including the language of one of the two offices, are outside every
-managed extraction service in the intended stack. That is a coverage problem, not a cost one,
-and it makes the local tier-0 reader the *only* reader for those pages rather than the cheap
-one. The cascade stops being a quality ladder and becomes routing between engines with
-**different competences**, with eligibility declared per language in
-[`contracts/cascade/routing.yaml`](contracts/cascade/routing.yaml) — because sending a Greek
-page to a service that does not read Greek does not fail loudly. It returns a confident-looking
-result over a language the model never saw.
-
-The same session established that **Amazon A2I closed to new customers on 2026-07-30**, so the
-review queue is ours to build. That is the better outcome: claim 5 is about a queue's declared
-capacity, its failure mode and its integrity metrics, and a managed worker pool supplies none of
-them.
-
----
-
-## What is built, and what is not
-
-The deploy path is complete and the system behind it is close to it. What remains open is
-listed rather than left for a reader to find.
-
-| Not built | Consequence, stated |
-|---|---|
-| **The public dataset** | The out-of-distribution honesty check. Every figure on the scoreboard is scored against a corpus this repository generated; until a real public document set is wired in, the only measurement against non-generated paper is the ISO 6346 check digit, which gives a **lower bound** on the error rate and nothing else |
-| **The human decision as a training signal** | A proposal below threshold cannot publish without a recorded decision, and `evals/review` asserts it. The decision *feeding back* is not built: the HS proposer is a similarity ranker over declared headings, not a model that learns, so there is nothing for a decision to train |
-
-Everything else on `PLAN.md` is ticked individually, with a harness behind it and — where it is
-a control — a `gate-proof` mutation that breaks it.
-
-Two smaller honesty notes that are not gaps but are easy to over-read:
-
-**The classification figures are not a claim about production accuracy.** They are measured over
-twelve headings chosen because this repository's own corpus falls under them. A tariff has five
-thousand headings and a real classifier meets goods nobody described in advance. What is proved
-is the *gate*: a contested heading abstains, and no score publishes anything.
-
-That now covers a fitted model as well as the similarity ranker. The endpoint serves one, fitted
-from 73 hand-written goods descriptions, and its held-out figure is a statement about that file —
-it appears on no scoreboard here and the sentence "the classifier is N% accurate" is one this
-project does not have. What the fit is worth reading for is that **the abstention gate refused
-the first three attempts**: two because the model separated contested pairs the trade does not,
-and the fix each time was the training set rather than the band.
-
-**The batch job has now been run, and what that is worth is narrow.** Two runs on 2026-08-13:
-thirteen documents planned and ten completed, then `skip 10, process 3` — the remainder, not the
-whole. The three are the malformed documents the edge-case checks upload; they carry no version,
-so the ledger does not record them and they are re-planned every time, which is the property that
-makes an interrupted job resumable.
-
-That is claim 7's idempotence **executed** rather than modelled. It is not a throughput figure and
-does not become one: the property is proved offline against the pure planner over three thousand
-documents in `evals/scale/`, on a laptop, which is where a claim anybody can reproduce belongs.
-Thirteen documents on one afternoon says only that the adapter does what the planner said.
-
----
-
-## Running it
-
-```bash
-make install       # venv + editable install
-make test          # 498 tests, offline, under a minute
-make claims        # every claim gate that exists
-make gate-proof    # break 56 controls on purpose; each must be refused, for the right reason
-make preflight     # all of it: correctness, consistency, deployability
-
-make corpus        # regenerate 3,000 documents from one seed (~20 minutes)
-make ocr-record    # the ceremony — refuses to overwrite without ACCEPT=1
+  DOC --> T0
+  T0 -->|"a field abstained"| T1 --> T2 --> T3
+  T0 & T1 & T2 & T3 --> THR --> PROV --> REC
+  PROV -->|"verified and above threshold"| PUB
+  THR -->|"below, or no threshold exists"| Q
+  Q -->|"a human decides"| PUB
+  PUB --> LAKE[("Iceberg on S3 → Athena → Redshift marts")]
 ```
 
-Requires Python 3.12+ and, for the corpus, an OCR binary with English, Greek and Dutch language
-data. No AWS account, no credentials, no network.
+Three things in that diagram carry the design. **Models only ever appear on the left**: they read
+characters and propose fields, and nothing in the middle column is a model. **The threshold does
+not come from the running system** — it is derived offline from a committed engine recording and
+shipped as an artefact, so a runner image upgrade cannot silently move a number. And **the queue
+is a first-class outcome**, not an error path: abstention is the safe state, and the volume it
+generates is measured against a declared capacity that the build will fail over.
+
+---
+
+## Thresholds are derived, not chosen
+
+Each field declares an error budget. The threshold is the lowest score whose 95% upper bound on
+the published-and-wrong rate still fits that budget — computed against the labelled set, with
+calibration measured and **N printed beside every figure**.
+
+<p align="center">
+  <img src="images/claim_1.png" width="900" alt="Per-field calibration table: threshold, budget, bound, N, coverage, ECE"><br>
+  <sub><b>Five thresholds, thirty-one refusals</b> — and the reason is named per field.
+  <code>gross_weight</code> derives <b>0.910</b> at a 0.0050 budget with a 0.0040 bound, covering
+  76.1% of 989 items at ECE 0.07. <code>date_of_issue</code> derives nothing:
+  <i>evidence-limited, 0/468 wrong above 0.9, needs n=1497</i> — the reader is not wrong, there is
+  not enough labelled data to prove it right. <code>line_item_count</code> is the opposite:
+  <i>212/237 wrong above 0.9</i>, which is over-confidence, not thin evidence.</sub>
+</p>
+
+The distinction in that last sentence is the whole section. **Evidence-limited** fields need more
+data or an escalation tier. **Quality-limited** fields need a better reader. Collapsing both into
+"low confidence" would hide which one you have, and they have opposite fixes.
+
+The derived artefact is what the deployed estate actually consults — not a number recomputed at
+runtime.
+
+<p align="center">
+  <img src="images/s3_thresholds.png" width="900" alt="The threshold artefact in S3, carrying its own provenance"><br>
+  <sub><b>The artefact states its own limits</b> — <code>reference-ocr@tesseract 5.5.0</code>, a
+  corpus fingerprint, a recording digest, and a note saying every figure is a statement about a
+  distribution this repository generated. The file name carries the reader and its version, so an
+  engine upgrade cannot read the old engine's thresholds.</sub>
+</p>
+
+---
+
+## Every field is where the record says it is
+
+Every published field carries a page, a bounding box and a document version. This is what that
+sentence means, drawn from the committed recording with `python3 scripts/provenance_still.py`:
+
+<p align="center">
+  <img src="images/provenance_box.png" width="900" alt="A published field outlined on the page it was read from"><br>
+  <sub><b>The record said <code>incoterm</code> was at
+  <code>[0.4962 0.2357 0.0250 0.0077]</code> on page 1, and it was</b> — the box drawn here is the
+  <i>reader's</i>, not the generator's, so it is the claim the system would have to defend rather
+  than the generator agreeing with itself. Note the mirrored text bleeding through from the reverse
+  of the sheet, and the speckle: this is what the corpus generator considers a normal page. Right
+  of the rule is the crop the provenance gate actually re-reads, at its real pixels.</sub>
+</p>
+
+Three checks of **declared and unequal strength** run on that crop: it carries ink where the
+record says a value is; re-read through a *different recognition path* it agrees with the
+published value; and a check-digit field that contradicts its own arithmetic is refused outright.
+
+<p align="center">
+  <img src="images/claim_2.png" width="900" alt="Provenance checked against the page, by layer"><br>
+  <sub><b>Each corruption refused by the layer that should catch it</b> — a box moved into the
+  margin: 120/120 refused, 69 by ink and 51 by re-read. A box shifted half a line: 120/120, all by
+  re-read. And the honest row: <code>identical string elsewhere</code> — <b>0/0 refused, expected
+  not caught</b>. The value genuinely is at those coordinates; that is a field-assignment defect,
+  not a provenance one, and it is measured here rather than hoped about.</sub>
+</p>
+
+The same claim, against the deployed estate, as two SQL statements a reviewer can read.
+
+<table>
+<tr>
+<td width="50%"><img src="images/query1_first.png" alt="154 published fields with their confidence and threshold"><br><sub><b>154 published fields</b> — every one with the confidence it was read at and the threshold it had to clear. This take exists so the next one means something.</sub></td>
+<td width="50%"><img src="images/query1_second.png" alt="The same query with AND confidence &lt; threshold: zero rows"><br><sub><b>Add one line, get nothing</b> — <code>AND confidence &lt; threshold</code> returns <b>0 rows</b>. Claim 1, as a query, against the estate rather than against a fixture.</sub></td>
+</tr>
+</table>
+
+---
+
+## The human loop is real, and measured
+
+A field below its threshold cannot publish without a recorded human decision. That much is
+common. What is not: **the review queue is a declared finite resource, and exceeding it fails the
+build.**
+
+<p align="center">
+  <img src="images/claim_5.png" width="900" alt="Queue capacity, reviewer integrity findings, and the named acceptance"><br>
+  <sub><b>27.8× capacity at the mean, 83.3× at the peak</b> — declared 4,320 decisions/day against
+  120,000 queued. The gate fires. It passes only on an acceptance signed by name that
+  <b>expires 2027-02-09</b>, and the finding is printed in full on every run. Below it,
+  reviewer integrity: <code>reviewer-2</code> at 100% agreement and a 2s median is named a rubber
+  stamp; <code>reviewer-3</code> at 0% agreement is <i>the same finding wearing the opposite
+  sign</i>.</sub>
+</p>
+
+For a reviewer's decision to be evidence later, the system has to record what the machine believed
+at the moment it asked.
+
+<p align="center">
+  <img src="images/dynamo_db.png" width="900" alt="The review decisions table with confidence, seconds on task and agreement"><br>
+  <sub><b>Three columns most systems never write</b> — <code>confidence</code> is what the model
+  thought when it queued the item, <code>seconds_on_task</code> is how long the human looked, and
+  <code>agreed_with_model</code> is whether they pushed back. The top row is a correction to
+  <code>北方桥货运</code>: the tier-0 reader has no data for Chinese, it did not guess, and a person
+  supplied the value. Without these three columns, no oversight measurement is possible at all.</sub>
+</p>
+
+---
+
+## A correction never erases
+
+A human decision produces a **new version** that points at the one it replaces. Both stay
+retrievable, and the reader identity carries the fact that a person was involved.
+
+<p align="center">
+  <img src="images/records_s3_1.png" width="900" alt="Two versions of one customs declaration, the second superseding the first"><br>
+  <sub><b>The same document, twice</b> — the machine's version has no <code>supersedes</code>. The
+  second reads <code>reference-ocr@tesseract 5.5.0<b>+review</b></code>, points at the first by
+  fingerprint, and names its reviewer. Nothing was overwritten; a re-extraction writes <i>beside</i>
+  the old record.</sub>
+</p>
+
+The state machine is where that rule is enforced, and where the branch that used to be missing now
+sits.
+
+<p align="center">
+  <img src="images/step_function_graph.png" width="900" alt="The extraction state machine, thirteen states"><br>
+  <sub><b><code>VerifyProvenance</code> sits before <code>Publish</code>, not after</b> — it is a
+  gate, not an audit. And <code>QueueTheAbstentions</code> runs alongside <code>Publish</code>:
+  the same document can publish some fields and owe the rest to a human in one execution. The
+  right-hand branch, <code>PublishTheAbstentions → QueueForReview</code>, exists because a document
+  that abstains on everything still has to write a record — otherwise a reviewer's decision has
+  nothing to supersede.</sub>
+</p>
+
+Across documents, disagreement is surfaced rather than smoothed.
+
+<p align="center">
+  <img src="images/claim_4.png" width="900" alt="123 planted disagreements found, zero false positives"><br>
+  <sub><b>123/123 found, 0 false positives</b> — and the sentence under it is the one that matters:
+  <i>the planting is blind to the contract; the expectation is derived from ground truth by a
+  separate path.</i> A generator that read the reconciliation rules to decide what to break, and a
+  detector that read the same rules to find it, would be one function agreeing with itself.</sub>
+</p>
+
+---
+
+## The cascade, and what it may not claim
+
+Four tiers. The bottom one is a local open-source reader that runs identically on a laptop and in
+the deployed estate, from the same container image — which is what makes claims 1 and 2 checkable
+without an AWS account.
+
+<p align="center">
+  <img src="images/query4.png" width="900" alt="Fields by language and reader tier"><br>
+  <sub><b>Dutch never reaches tier 1</b> — <code>nl</code> appears at tier 0 and tier 3 and nowhere
+  else, because the managed per-page reader does not carry it and the routing contract sends it
+  straight to the only tier that does. That is the contract as executed, not a diagram.</sub>
+</p>
+
+Above the readers, a classifier proposes tariff codes. It is allowed to rank. It is not allowed to
+decide.
+
+<p align="center">
+  <img src="images/sagemaker.png" width="860" alt="The classifier returns candidates and decided:false"><br>
+  <sub><b>Asked about frozen salmon, it proposed ceramic tiles — and nothing was published</b>.
+  The top two candidates are <code>0.0135</code> apart, the contract calls that contested, and
+  <code>"decided": false</code>. The system did not catch the error by knowing about fish; it
+  caught it because a margin that small is not a decision.</sub>
+</p>
+
+Cost is a **model**, and the schema is built so nobody can quote it as anything else.
+
+<p align="center">
+  <img src="images/claim_7.png" width="900" alt="Routing measured over the recording, with a sensitivity table"><br>
+  <sub><b>0.59 USD per 1,000 pages — <i>modelled</i></b>. Routing measured over 36,078 recorded
+  pages; tier 0 at 60.5% with no unit price because it costs nothing; tier 1 priced from a dated,
+  cited pricing page. Tier 3 is <b>NOT PRICED</b>: it bills per token, no call has been made to
+  count tokens with, and a per-page equivalent invented for the table would be the fabricated
+  figure everything else here avoids. The sensitivity rows are shown because the escalated
+  fraction is this model's largest unknown.</sub>
+</p>
+
+The sentence this repository will not write is *"accuracy held at X for Y% of the cost"*. The
+upper tiers have been called but never scored, so there is no accuracy figure for the escalated
+fraction. What the cascade proves is narrower and is stated as such: the routing rule sends
+low-confidence pages up, and the pages it keeps at tier 0 meet their fields' error budgets.
+
+---
+
+## The gates are attacked
+
+Every gate in this repository is broken on purpose and required to refuse — **by name, and for the
+right reason**. A mutation whose target has moved reports `STALE`, never `passed`.
+
+<p align="center">
+  <img src="images/gate_proof1.png" width="900" alt="gate-proof: 56 refused, 0 accepted, 0 stale"><br>
+  <sub><b>56 refused, 0 accepted, 0 stale</b> — and read the mutation names, not the count.
+  <i>let review volume relax the error budget</i> is the forbidden move from ADR-0001 planted as
+  code. <i>count an approval from a reviewer who agrees with everything</i> plants a rubber stamp
+  into the feedback loop. <i>grant a verb where its resources cannot match</i> was a real defect in
+  this repository, found by a teardown, before it became a test.</sub>
+</p>
+
+Each of the seven claims has its own command, and so does every rule that supports them.
+
+<p align="center">
+  <img src="images/make_help.png" width="900" alt="make help listing every target"><br>
+  <sub><b>Thirty-six targets, every one an argument</b> — <code>core-pure</code>,
+  <code>planting-blind</code>, <code>out-of-distribution</code>, <code>every-gate-runs</code>,
+  <code>map-matches</code>. If a claim in this README has no command beside it, it is not a claim
+  this repository makes.</sub>
+</p>
+
+---
+
+## Quickstart
+
+Requires Python 3.12+ and `make`. No AWS account, no credentials, no network.
+
+```bash
+# 1. Install into a local virtualenv
+make install
+
+# 2. The seven claims, each with its own harness
+make claim-1   # thresholds derived from error budgets, with N and ECE
+make claim-2   # every published field checked against the page
+make claim-5   # the queue's capacity, and reviewer integrity
+
+# 3. Break every gate on purpose — each must be refused by the named gate
+make gate-proof
+
+# 4. Everything CI runs, in one command
+make ci
+```
+
+The corpus is not committed — 3,255 rendered pages regenerate byte-identically from one seed with
+`make corpus`, and `make corpus-check` proves they do. Deploying is a separate, deliberate act:
+`deploy.yml` and `destroy.yml` are `workflow_dispatch` only and are described in
+[`docs/DAY-ONE.md`](docs/DAY-ONE.md).
+
+---
+
+## Testing
+
+**501 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
+(threshold derivation, reconciliation, entity resolution, versioning, drift, feedback), the
+contract loader, the engine adapters against documented response schemas, the handlers, and every
+gate.
+
+They deliberately do **not** cover: the accuracy of any reader, which is what `evals/` measures
+against a labelled set; and live AWS behaviour, which is what
+[`scripts/e2e_verify.py`](scripts/e2e_verify.py) checks against a deployed estate and which
+therefore needs credentials.
+
+```bash
+make test        # the suite
+make lint        # ruff check + format check, the exact command CI runs
+make preflight   # everything that must be true before the estate is stood up
+```
+
+The figures this README quotes are the figures those commands print, and a check enforces it.
+`make preflight` runs **36 checks**, one of which re-reads this file: the test suite at
+**501 passing**, `gate-proof` at **56 refused, 0 accepted, 0 stale**, and checkov at
+**718 passed, 0 findings** across six Terraform layers. A scoreboard drifts by the ordinary act of
+adding a gate, silently, in the direction of looking more finished than it is — so the repository
+whose first claim is that every number is reproducible is the one that has to check.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs eight jobs on every push: the
+suite, the 15 claim harnesses, the 56 gate mutations, `terraform validate` against real provider
+schemas, checkov at zero findings, a secret scan, the reader image build, and a full corpus
+regeneration that proves the committed ground truth reproduces.
+[`scripts/check_every_gate_runs.py`](scripts/check_every_gate_runs.py) compares the `evals/`
+directory against what CI and the Makefile actually invoke, because three hand-maintained lists of
+"what proves this repository" had already drifted once.
 
 ---
 
@@ -292,21 +449,121 @@ data. No AWS account, no credentials, no network.
 
 | Path | Purpose |
 |---|---|
-| [`contracts/`](contracts/) | **The source of truth** — document types, agreement rules, the party model, review capacity, cascade routing. YAML, never imported by name |
-| [`corpus/`](corpus/) | The generator, its ground truth, and `envelope.yaml` — the declared operating range |
-| [`src/manifest/core/`](src/manifest/core/) | **Pure.** No cloud SDK, no engine, no clock, and no engine named anywhere — enforced by a gate and three mutations |
-| [`src/manifest/extraction/`](src/manifest/extraction/) | `local/` runs; `aws/textract.py` has been called against the real service (2026-08-12); `bda.py` and `llm.py` are schema-tested and still uncalled |
-| [`src/manifest/handlers/`](src/manifest/handlers/) | The three functions that run in the estate. Each one calls `core` and decides nothing itself |
-| [`Dockerfile`](Dockerfile) | The tier-0 reader as an image — the same binary and language data that produced the recording, version asserted at build time |
-| [`src/manifest/gates/`](src/manifest/gates/) | The acceptance gates, one per claim |
-| [`recordings/ocr/`](recordings/ocr/) | The tier-0 reader's normalised output, with its version and fingerprint. Every threshold derives from here |
-| [`evals/`](evals/) | The seven claim harnesses, labelled and credential-free |
-| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` **is applied** and stays applied; the other five were applied from `deploy.yml` on 2026-08-10, verified, and destroyed on 2026-08-11 |
-| [`docs/adr/`](docs/adr/) | Five decisions, written before the code that assumes them |
+| [`contracts/`](contracts/) | **The source of truth.** YAML: document fields with error budgets, reconciliation rules, the party model, cascade routing. Never imported by name |
+| [`corpus/`](corpus/) | The generator, the committed ground truth, and [`envelope.yaml`](corpus/envelope.yaml) — the declared operating range a drifting generator fails against |
+| [`src/manifest/core/`](src/manifest/core/) | **Pure.** Every decision the system makes, as functions over plain data. No boto3, no engine, no engine names — enforced by `make core-pure` |
+| [`src/manifest/extraction/`](src/manifest/extraction/) | Engine adapters producing one normalised representation. `local/` runs; `aws/` is schema-tested |
+| [`src/manifest/handlers/`](src/manifest/handlers/) | The 14 functions that run in the estate. They may import boto3, they call `core`, and they decide nothing |
+| [`src/manifest/gates/`](src/manifest/gates/) | One module per claim |
+| [`evals/`](evals/) | The 15 claim harnesses — labelled, credential-free |
+| [`recordings/`](recordings/) | Golden engine output. Every threshold derives from here, never from a live run |
+| [`infra/`](infra/) | Six Terraform layers. `bootstrap/` applies from a laptop; the other five only from CI |
+| [`scripts/`](scripts/) | `gate_proof.py`, `preflight.py`, `e2e_verify.py`, `estate_sweep.py`, and the checks that read the repository about itself |
+| [`docs/`](docs/) | Scenario, regulatory posture, decisions, ADRs |
 
 ---
 
-## Licence
+## What this does not do
 
-MIT — see [LICENSE](LICENSE). Engineering rules live in [CLAUDE.md](CLAUDE.md); the four phases
-in [PLAN.md](PLAN.md).
+- **The corpus is generated, and every confidence in claims 1 and 2 comes from a real reader on
+  generated paper.** The one exception is `evals/external`: 100 pages of genuinely photographed
+  documents nobody here designed, where ECE is **0.0592** against **0.0371** on the generated set.
+  That transport is the only answer to *"did you tune the generator until the claims passed?"*
+  that does not come from the generator's author.
+- **No accuracy figure exists for the escalated fraction, and cannot yet.** Tier 1 has been called
+  (2,336 pages), tier 2 once, tier 3 on a handful of documents. Calls are not measurements.
+- **Tier 2 returns a per-word confidence that its published schema says it does not return.** The
+  schema is what had been checked. Nothing publishes on that score — not because the number is
+  absent, but because no threshold is derived from it.
+- **No distributed job has ever executed.** The `batch` layer applies and tears down; claim 7 is
+  proved by a pure planner and its ledger on a laptop, and the EMR layer is an adapter over that
+  planner rather than the thing being proved.
+- **A document that abstains on every field never reaches the lake.** Its branch ends at
+  `PublishTheAbstentions → QueueForReview`, with no `LandInTheLake`. The record and the queue item
+  both exist; the analytics layer undercounts abstention by exactly the hardest documents. Found
+  on 19 August 2026 by querying the estate, not by a test.
+- **`provenance_verified` conflates "the gate refused" with "the gate does not apply".** A field
+  published from a human decision carries `false`, because re-reading the crop would not agree
+  with a value a person supplied. The obvious query therefore reports 121 published fields without
+  verified provenance, and the correct one — restricted to machine-published fields — reports zero.
+- **The warehouse loads before any document exists.** On a fresh estate the marts are empty until a
+  second deploy runs the load again. The loader refuses to call that a successful load, which is
+  right, but the ordering is still a defect.
+- **The reviewer data in a deployed run is a synthetic harness identity** at 92.9% agreement across
+  two distinct time-on-task values. Reviewer integrity is proved offline in `make claim-5`, where
+  three modelled reviewers have three distinct pathologies; the estate proves the *columns* exist,
+  not that oversight was good.
+- **The reader image carries CRITICAL CVEs in its Debian base packages, and nothing gates them.**
+  checkov scans Terraform to zero findings; no check reads the ECR image scan. That is a gap in the
+  gates, named here rather than discovered.
+- **Required reviewers on the deploy environment are off**, under a dated acceptance that expires
+  and that `check_deploy_path.py` refuses to let outlive its expiry
+  ([`contracts/deploy/acceptance.yaml`](contracts/deploy/acceptance.yaml)).
+- **The budget guard measured the whole account rather than this project**, fired on a sibling
+  project's spend, and stopped this estate being deployable. The ceiling was raised under a dated
+  acceptance ([`contracts/deploy/budget.yaml`](contracts/deploy/budget.yaml)) while the cost filter
+  waits on a cost-allocation-tag backfill.
+- **Everything is `eu-central-1`, one run, one day.** No load testing, no concurrency testing, no
+  continuously green integration environment.
+
+---
+
+## Cost
+
+**Nothing is standing.** The estate exists only while a dispatch keeps it standing, and the
+teardown is exercised rather than written: `destroy.yml` runs the layers in reverse, each `if:
+always()`, and ends with [`scripts/estate_sweep.py`](scripts/estate_sweep.py), which sweeps twice —
+by tag and by name — and exits non-zero if anything survives that is not bootstrap's.
+
+| Figure | Basis |
+|---|---|
+| **$3.50** | **Measured.** Textract `DetectDocumentText` over 2,336 eligible corpus pages on 2026-08-15, at the published per-page rate |
+| **0.59 USD / 1,000 pages** | **Modelled.** Routing measured over 36,078 recorded pages × published unit prices; tier 3 explicitly not priced |
+| **under €150** | A **design ceiling** in [`CLAUDE.md`](CLAUDE.md), not a result. It may be quoted as a ceiling and not as an outcome |
+
+Every resource is tagged `manifest:expires-at` with a scheduled reaper, and an AWS Budget action
+detaches the deploy role's ability to create — while deliberately leaving its ability to tear
+down, because an estate that cannot be destroyed because it ran out of budget is the worst of
+both.
+
+---
+
+## Decisions
+
+Five decision records in [`docs/adr/`](docs/adr/), and a longer running ledger in
+[`docs/DECISIONS.md`](docs/DECISIONS.md) that keeps superseded entries rather than editing them —
+including two revisions of the same decision on the same day, because how each went wrong is the
+useful part.
+
+| | |
+|---|---|
+| [0001](docs/adr/0001-abstention-is-safe-but-not-free.md) | Abstention is the safe state and is not free. Raising a threshold to reduce queue volume is forbidden; the permitted responses are more data or more escalation |
+| [0002](docs/adr/0002-thresholds-are-derived-with-their-uncertainty.md) | A threshold carries its upper confidence bound and its N, or the field is always-review |
+| [0003](docs/adr/0003-provenance-is-checked-against-the-page.md) | Provenance is verified against the rendered page, and each layer declares what it cannot catch |
+| [0004](docs/adr/0004-the-cascade-and-the-normalised-representation.md) | One normalised representation; the core never learns which engine produced a value |
+| [0005](docs/adr/0005-the-local-engine-and-its-recording.md) | Thresholds derive from a committed recording, never from a live run. Regenerating it is a ceremony that prints every movement |
+
+---
+
+## Docs
+
+[SCENARIO](docs/SCENARIO.md) — the domain, document types, volumes and pathologies ·
+[REGULATORY](docs/REGULATORY.md) — the legal posture, where the answer is mostly *"the AI Act does
+not apply"*, and why that is the interesting part ·
+[DECISIONS](docs/DECISIONS.md) — the running ledger ·
+[AWS-CONSTRAINTS](docs/AWS-CONSTRAINTS.md) — what the managed services do and do not support, with
+citations · [DAY-ONE](docs/DAY-ONE.md) — standing the estate up and taking it down ·
+[PORTFOLIO-CONTEXT](docs/PORTFOLIO-CONTEXT.md) · [CHANGELOG](CHANGELOG.md)
+
+Engineering rules are in [`CLAUDE.md`](CLAUDE.md).
+
+## Security
+
+Untrusted document text is fenced structurally before it reaches any prompt, and the envelope
+refuses a forged delimiter rather than escaping it — `make injection`, with **0 false positives**
+across 2,963 documents of ordinary trade prose. Scope, reporting and known limitations are in
+[SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Theofanis Tsakanikas
