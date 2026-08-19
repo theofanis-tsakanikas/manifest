@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="images/banner.png" alt="Manifest — every field traces to a pixel" width="100%">
+  <img src="images/banner.png" width="100%"
+       alt="A scanned commercial invoice with five fields outlined by the system — one in teal marked published, four in carmine marked review — and a customs stamp reading MADE EVIDENT. Caption: Manifest, 5 published, 31 sent to a human.">
 </p>
 
 # Manifest
