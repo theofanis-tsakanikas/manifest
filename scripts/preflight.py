@@ -180,6 +180,16 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "screenshots redacted",
+        [PYTHON, "scripts/mask_account_id.py", "--check"],
+        "Every AWS console page prints the account id in its corner, and every terminal capture "
+        "of a bucket name or an ARN prints it again in the middle of the line. gitleaks gates "
+        "that identifier in text and never sees a screenshot, so it walks straight past both. "
+        "This is the same rule for pixels, and it found the id in the image this README opens "
+        "with.",
+    ),
+    Check(
+        "deployability",
         "pipeline routing",
         [PYTHON, "scripts/check_pipeline_routing.py"],
         "A document that publishes eight fields and abstains on four still sends the four to a "

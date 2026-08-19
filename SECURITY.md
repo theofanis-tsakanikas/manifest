@@ -32,7 +32,12 @@ vulnerability even though no estate is standing:
   decision. A path that lets one do so is the most serious class of defect in this project.
 - **An approval counted as evidence when nobody looked.** A route by which a rubber-stamp
   reviewer's agreement contributes to the feedback loop in `src/manifest/core/feedback.py`.
-- **A credential, account identifier or non-synthetic trade datum committed to the repository.**
+- **A credential, account identifier or non-synthetic trade datum committed to the repository** —
+  including in a screenshot. `gitleaks` reads bytes and a console capture is pixels, so
+  `scripts/mask_account_id.py --check` is the same rule applied to images and runs in
+  `make preflight`. It covers two exposures that look like one: the console's identity chip, and
+  the account id printed again inside every bucket name and ARN a terminal capture happens to
+  show.
 
 ## What is not in scope
 

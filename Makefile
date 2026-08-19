@@ -206,6 +206,10 @@ gate-proof: ## Break every gate on purpose; each must be refused, for the right 
 
 # ── Infrastructure (offline validation only — no cloud calls) ────────────────
 
+.PHONY: redact
+redact: ## Cover the AWS account id in every screenshot (--check in preflight)
+	$(PY) scripts/mask_account_id.py
+
 .PHONY: deploy-path
 deploy-path: ## Every applied layer is torn down, in reverse; both workflows human-only
 	$(PY) scripts/check_deploy_path.py
