@@ -274,6 +274,15 @@ at the moment it asked.
   supplied the value. Without these three columns, no oversight measurement is possible at all.</sub>
 </p>
 
+Downstream, that requirement is visible as an absence.
+
+<table>
+<tr>
+<td width="50%"><img src="images/redshift2.png" alt="Two duty lines, both human_decided true"><br><sub><b>Every duty line in the warehouse</b> — olive oil and woven sacks, <code>human_decided</code> <b>true</b> on both. A tariff code reaches this table only after a person approved it.</sub></td>
+<td width="50%"><img src="images/redshift3.png" alt="Count of machine-decided duty lines: zero"><br><sub><b>And the count of the other kind</b> — <code>WHERE NOT human_decided</code> returns <b>0</b>. A wrong classification is quantifiable financial and legal exposure, so there is no path that produces one on a model's say-so.</sub></td>
+</tr>
+</table>
+
 ---
 
 ## A correction never erases
@@ -292,14 +301,38 @@ retrievable, and the reader identity carries the fact that a person was involved
 The state machine is where that rule is enforced, and where the branch that used to be missing now
 sits.
 
+The state machine is where that rule is enforced. Below is the **same machine three times**,
+with a different execution lit up in each — the dimmed states are the ones that document did not
+enter. A document is not "correct" or "failed": it takes one of three routes, and which one is
+the system's actual output.
+
 <p align="center">
-  <img src="images/step_function_graph.png" width="900" alt="The extraction state machine, thirteen states"><br>
-  <sub><b><code>VerifyProvenance</code> sits before <code>Publish</code>, not after</b> — it is a
-  gate, not an audit. And <code>QueueTheAbstentions</code> runs alongside <code>Publish</code>:
-  the same document can publish some fields and owe the rest to a human in one execution. The
-  right-hand branch, <code>PublishTheAbstentions → QueueForReview</code>, exists because a document
-  that abstains on everything still has to write a record — otherwise a reviewer's decision has
-  nothing to supersede.</sub>
+  <img src="images/step_function_graph.png" width="900" alt="A document that published: thirteen states ending at Done"><br>
+  <sub><b>One · it published, and still owed the rest to a human</b> —
+  <code>VerifyProvenance</code> sits <i>before</i> <code>Publish</code>, so it is a gate rather
+  than an audit. And <code>QueueTheAbstentions</code> runs on the same path as
+  <code>Publish</code>: this document published some fields and sent the others to review in a
+  single execution. The right-hand branch is dark; it was never entered.</sub>
+</p>
+
+<p align="center">
+  <img src="images/step_function_graph1.png" width="900" alt="A document that abstained on every field"><br>
+  <sub><b>Two · it abstained on everything, and the run still succeeded</b> — the left column is
+  dark now. <code>PublishTheAbstentions → QueueForReview</code> is lit instead, and there is no
+  <code>Publish</code>, no <code>LandInTheLake</code>, no <code>IndexTheRecord</code>. A record is
+  still written, because a reviewer's decision needs something to supersede. This branch was
+  missing once: <code>Publish</code> and <code>QueueForReview</code> excluded each other, and a
+  document that published part of itself sent nobody the rest.</sub>
+</p>
+
+<p align="center">
+  <img src="images/step_function_graph2.png" width="900" alt="A document the system refused, ending at ExtractionFailed"><br>
+  <sub><b>Three · it was refused, deliberately</b> — <code>ExtractAndThreshold</code> carries the
+  warning marker and the run ends red at <code>ExtractionFailed</code>. Nothing downstream ran.
+  Three of the thirty-four end-to-end checks are documents that <i>must</i> be refused, and the
+  property they assert is not that the execution failed — every execution reaches some terminal
+  state — but that <b>no record was published</b>. An earlier version asserted the former and
+  passed on documents that sailed through.</sub>
 </p>
 
 Across documents, disagreement is surfaced rather than smoothed.
@@ -348,6 +381,18 @@ Cost is a **model**, and the schema is built so nobody can quote it as anything 
   count tokens with, and a per-page equivalent invented for the table would be the fabricated
   figure everything else here avoids. The sensitivity rows are shown because the escalated
   fraction is this model's largest unknown.</sub>
+</p>
+
+Those figures reach a warehouse under a column name chosen so nobody can quote them as
+anything else.
+
+<p align="center">
+  <img src="images/redshift1.png" width="900" alt="Modelled cost per reader tier in Redshift"><br>
+  <sub><b>The column is called <code>modelled_cost</code></b> — tier 0 read nine pages for
+  <b>0.0000 EUR</b> because it runs in the same image on a laptop and in the estate; tier 3 read
+  fifteen for <b>0.0600</b>. The cascade exists for that ratio. Naming the column this way is not
+  documentation — it is the schema refusing to let a modelled number be reported as a measured
+  one.</sub>
 </p>
 
 The sentence this repository will not write is *"accuracy held at X for Y% of the cost"*. The
