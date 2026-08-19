@@ -212,7 +212,7 @@ a declared finite capacity, that exceeding it fails the build, and that reviewer
 measured**. Those are properties of a queue's *design*, and they are exactly what a managed
 labelling service does not give you: it gives you a worker pool and a task UI. Building the queue
 means the capacity model, the integrity metrics and the decision record are all in
-`src/manifest/review/`, offline, testable, and attackable by `gate-proof` — which is the only
+`src/manifest/core/review.py`, offline, testable, and attackable by `gate-proof` — which is the only
 form in which claim 5 could have been proved anyway.
 
 What is lost: a hosted worker UI, and the Ground Truth private-workforce plumbing. Neither was

@@ -101,7 +101,7 @@ optional-layers: ## Every optional feature plans with its flag on and off (needs
 	$(PY) scripts/check_optional_layers_plan.py
 
 .PHONY: claims
-claims: core-pure map-matches planting-blind contracts-validate corpus-check envelope reader-version \
+claims: core-pure provenance-independent acceptances-expire map-matches planting-blind contracts-validate corpus-check envelope reader-version \
 	pipeline-routing \
 	claim-1 claim-2 claim-3 claim-4 claim-5 claim-6 claim-7 \
 	claim-1-loop drift grounding baseline out-of-distribution \
@@ -111,6 +111,14 @@ claims: core-pure map-matches planting-blind contracts-validate corpus-check env
 .PHONY: core-pure
 core-pure: ## The core imports no cloud SDK, no engine, and names no engine
 	$(PY) scripts/check_core_is_pure.py
+
+.PHONY: acceptances-expire
+acceptances-expire: ## Doctrine rule 6, over every acceptance rather than some of them
+	$(PY) scripts/check_acceptances_expire.py
+
+.PHONY: provenance-independent
+provenance-independent: ## The provenance verifier cannot reach the path that produced the record
+	$(PY) scripts/check_provenance_paths_are_independent.py
 
 .PHONY: claim-1-loop
 claim-1-loop: ## Review evidence moves N, and never an error budget

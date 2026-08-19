@@ -171,6 +171,22 @@ CHECKS: list[Check] = [
         "claims 1 to 6 can be checked at all without an account and without a billed API.",
     ),
     Check(
+        "deployability",
+        "acceptances are in date",
+        [PYTHON, "scripts/check_acceptances_expire.py"],
+        "Doctrine rule 6: exceptions expire. Eight files declared an expiry and three were "
+        "checked — each by whichever gate happened to read that file for its own reasons, so a "
+        "file no gate needed was a date nobody enforced.",
+    ),
+    Check(
+        "correctness",
+        "provenance independence",
+        [PYTHON, "scripts/check_provenance_paths_are_independent.py"],
+        "Claim 2's re-read is corroboration only if a different reader did it. ADR-0003 said "
+        "this was enforced by a gate; the gate did not exist, and the property held by nobody "
+        "having broken it.",
+    ),
+    Check(
         "correctness",
         "reader identity",
         [PYTHON, "scripts/reader_version_check.py"],
@@ -460,9 +476,23 @@ def run(check: Check) -> Result:
 #: patterns over the harness's output rather than as expected values, so this file states *where
 #: to look* and never *what the answer is* — a scoreboard check carrying its own copy of the
 #: figures would agree with itself for ever.
+#:
+#: **Keyed by the producing check's exact name, because a prefix read the wrong harness.** This
+#: was `startswith(f"claim {n}")`, and `claim 1 · the loop` sorts before `claim 1 · thresholds`
+#: in `CHECKS` — so claim 1's figures were read out of `evals.feedback`, which does not print
+#: them, and the README's claim-1 row was never compared to anything from the day the loop check
+#: was added. Nothing went red: the reader found no match and skipped, which is the failure this
+#: file now calls stale.
+#:
+#: Decision 24, on this file: the failure this project produces most is a check reading the
+#: wrong thing. A prefix match is how a check acquires a second candidate without anybody
+#: choosing one.
 CLAIM_FIGURES = {
-    "1": (r"(\d+) fields — (\d+) with a derived threshold, (\d+) always-review"),
-    "4": r"exactly (\d+) planted disagreements found",
+    "1": (
+        "claim 1 · thresholds",
+        r"(\d+) fields — (\d+) with a derived threshold, (\d+) always-review",
+    ),
+    "4": ("claim 4 · reconciliation", r"exactly (\d+) planted disagreements found"),
 }
 
 #: Figures the README states in prose rather than in a `**claim N**` row, keyed by the check
@@ -493,6 +523,35 @@ PROSE_FIGURES = {
         "the count of clean documents",
     ),
 }
+
+
+def _producer(report: Report, name_matches) -> Result | None:
+    """The result of the check that produces a figure, or `None` if it never ran.
+
+    **The distinction the three call sites below did not draw, and it is the whole of the bug.**
+    Each of them looked up a harness's output, ran a regex over it, and on no match did
+    `continue` — which is correct when the harness did not run (`--fast`, `--group`) and is the
+    silent failure when it ran and its summary line moved. A check whose target has moved has
+    stopped checking; it has not passed. This is Attestor's third rule, and this file is the
+    place in the repository where it was missing.
+
+    Returns `None` for "nothing to read" so the caller can tell an absent input from an
+    unrecognised one. A producer that *failed* also returns `None`: the run is already red for a
+    better-named reason, and a stale-pattern finding stacked on top of it points at the wrong
+    file.
+    """
+    for result in report.results:
+        if name_matches(result.check.name):
+            return result if result.status == "pass" else None
+    return None
+
+
+def _stale(label: str, name: str) -> str:
+    return (
+        f"`{name}` ran and produced no {label}. The pattern this check reads it with matched "
+        f"nothing, so the README figure it guards is unverified — and was reported green. A "
+        f"check whose target has moved is stale, not passed"
+    )
 
 
 def _scoreboard_figures(report: Report) -> dict[str, str]:
@@ -535,9 +594,12 @@ def _prose_figure_disagreements(report: Report, readme: str) -> list[str]:
     problems: list[str] = []
     stripped = re.sub(r"[,*`]", "", readme)
     for name, (pattern, label) in PROSE_FIGURES.items():
-        output = next((r.output for r in report.results if r.check.name == name), "")
-        found = re.search(pattern, re.sub(r"[,*`]", "", output), re.DOTALL)
+        producer = _producer(report, lambda n, w=name: n == w)
+        if producer is None:
+            continue
+        found = re.search(pattern, re.sub(r"[,*`]", "", producer.output), re.DOTALL)
         if not found:
+            problems.append(_stale(label, name))
             continue
         for number in found.groups():
             if number and number not in stripped:
@@ -563,12 +625,13 @@ def _claim_table_disagreements(report: Report, readme: str) -> list[str]:
     Phrasing is free to differ; the numbers are not.
     """
     problems: list[str] = []
-    for claim, pattern in CLAIM_FIGURES.items():
-        output = next(
-            (r.output for r in report.results if r.check.name.startswith(f"claim {claim}")), ""
-        )
-        found = re.search(pattern, output)
+    for claim, (produced_by, pattern) in CLAIM_FIGURES.items():
+        producer = _producer(report, lambda n, w=produced_by: n == w)
+        if producer is None:
+            continue
+        found = re.search(pattern, producer.output)
         if not found:
+            problems.append(_stale("summary line to read the figures from", produced_by))
             continue
         row = next((line for line in readme.splitlines() if f"**claim {claim}**" in line), "")
         if not row:
@@ -582,6 +645,47 @@ def _claim_table_disagreements(report: Report, readme: str) -> list[str]:
             if number and number not in stated
         ]
     return problems
+
+
+def _counts_stated(readme: str) -> dict[str, set[str]]:
+    """Every count the README states, per fact, from wherever on the page it is written.
+
+    Returned as a set per fact so the caller's rule is simply *more than one is a
+    contradiction*. Extracted from `check_the_scoreboard` so it can be attacked directly:
+    inlined, the only way to test it was to restate its patterns in the test, and a check
+    verified by a copy of itself is the thing this file exists to object to.
+    """
+    # **The badges were outside every one of these patterns, and drifted for it.** The three
+    # rows at the top of the README are shields.io URLs, so the figure in them is percent-encoded
+    # — `tests-512%20passing` — and matches nothing written for prose. On 2026-08-19 the badge
+    # said 502 while the sentence sixty lines down said 512, both on the same page, and the check
+    # that exists to stop exactly that reported green. The first number a reader sees was the one
+    # nothing checked.
+    #
+    # Decoded rather than pattern-matched in its encoded form: a badge is prose with punctuation
+    # escaped, and the rule is the same rule — one fact, one number, wherever it is written.
+    spelled = readme.replace("%20", " ").replace("%C2%B7", "·").replace("--", "-")
+    counted = {
+        # Every shape the README has ever written these in — bolded, bare before the noun, in a
+        # badge, in a sentence about running offline. Each was added after a figure drifted in
+        # exactly that shape, which is why the list looks arbitrary: it is a list of places this
+        # page has been wrong. `**502 tests**` and `: 502\ntests` were both outside it on
+        # 2026-08-19, and both were stale, on a page whose next sentence promises otherwise.
+        "tests": re.findall(
+            r"\*\*(\d+) passing\*\*|# (\d+) tests|tests-(\d+) passing"
+            r"|\*\*(\d+) tests\*\*|:\s*(\d+)\s*\n\s*tests[ ,]",
+            spelled,
+        ),
+        "gate-proof mutations": re.findall(
+            r"\*\*(\d+) refused|break (\d+) controls|breaks (\d+) controls"
+            r"|gate-proof-(\d+) planted|planted · (\d+) refused|(\d+) planted gate violations",
+            spelled,
+        ),
+    }
+    return {
+        name: {value for group in matches for value in group if value}
+        for name, matches in counted.items()
+    }
 
 
 def check_the_scoreboard(report: Report) -> Result:
@@ -607,10 +711,29 @@ def check_the_scoreboard(report: Report) -> Result:
         ),
     )
     figures = _scoreboard_figures(report)
-    if "gate-proof" not in figures or "checkov" not in figures:
+
+    # **"Did not run" and "ran, and I could not read it" were the same branch here.** The guard
+    # below used to be `if "gate-proof" not in figures` — which is true both when `--fast` skipped
+    # the harness and when the harness ran and renamed its summary line. The second case returned
+    # a green skip carrying the sentence "did not run (--fast)", which is a check reporting a
+    # reason that is not the reason. Ask the report which harnesses ran, and let the absence of a
+    # figure from one that did be the failure it is.
+    ran = {
+        key: _producer(report, lambda n, w=name: n == w) is not None
+        for key, name in (
+            ("tests", "test suite"),
+            ("gate-proof", "gate-proof"),
+            ("checkov", "checkov"),
+        )
+    }
+    if not ran["gate-proof"] and not ran["checkov"]:
         return Result(check, "skip", 0.0, "gate-proof and checkov did not run (--fast)")
 
-    problems: list[str] = []
+    problems: list[str] = [
+        _stale("figure this check knows how to read", key)
+        for key, did in ran.items()
+        if did and key not in figures
+    ]
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
     # **The number has to be right everywhere it appears, not somewhere.**
@@ -627,14 +750,8 @@ def check_the_scoreboard(report: Report) -> Result:
     problems += _claim_table_disagreements(report, readme)
     problems += _prose_figure_disagreements(report, readme)
 
-    counted = {
-        "tests": re.findall(r"\*\*(\d+) passing\*\*|# (\d+) tests", readme),
-        "gate-proof mutations": re.findall(
-            r"\*\*(\d+) refused|break (\d+) controls|breaks (\d+) controls", readme
-        ),
-    }
-    for name, matches in counted.items():
-        spoken = {value for group in matches for value in group if value}
+    counted = _counts_stated(readme)
+    for name, spoken in counted.items():
         if len(spoken) > 1:
             problems.append(
                 f"README states the {name} count as {sorted(spoken, key=int)} in different "

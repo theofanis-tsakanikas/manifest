@@ -1,13 +1,21 @@
 # ADR-0005 — The tier-0 engine, and why its output is a committed recording
 
 **Status:** accepted · **Date:** 2026-08-09 · **Documentation verified:** 2026-08-09
+**Amended 2026-08-19:** the premise in Context has been superseded; the decision is stronger for it.
+
+> **This was reasoned from "there is no billed API to get them from" and that stopped being
+> true.** The estate has been applied since 2026-08-10 and Textract read 2,336 pages on
+> 2026-08-15. The decision survives on its better argument, which was always the second one: a
+> threshold derived from a live call is a threshold nobody else can reproduce, and a recording
+> made by a binary anyone can run is one they can. The recording is still the unit of evidence,
+> and CI still derives every threshold from it rather than from a service.
 
 ## Context
 
 Claims 1 and 2 need **real confidence scores and real geometry on really degraded pages**.
-Nothing is ever applied to AWS (decision 14), so there is no billed API to get them from, and
-inventing them would be fabricating exactly the kind of result this portfolio exists to argue
-against. Decision 16 therefore puts a local open-source engine at the bottom of the cascade,
+Decision 14, **as it stood on the date above**, deferred every apply — so there was no billed API
+to get them from, and inventing them would be fabricating exactly the kind of result this
+portfolio exists to argue against. Decision 16 therefore puts a local open-source engine at the bottom of the cascade,
 running on the machine, on the real corpus.
 
 `docs/AWS-CONSTRAINTS.md` then made that decision load-bearing for a second reason: Textract,
@@ -110,9 +118,17 @@ silently reduce the corpus to English and every claim with it.
 
 ### Fixture policy for the AWS adapters
 
-They are written, and never called. Their fixtures are **authored from the documented response
-schema** — labelled as authored in the fixture file, in the test name and in the README. Never
-described as captured responses, because none was captured. Each adapter carries a
+They are written, and **all three have now been called** — Textract and the escalation model on
+2026-08-15, Bedrock Data Automation on 2026-08-13. Their fixtures are nonetheless still
+**authored from the documented response schema**, labelled as authored in the fixture file, in
+the test name and in the README, and that is now a choice rather than a description of what has
+happened. The two artefacts do different jobs: a fixture proves the mapping handles every
+documented field *including the ones no call happened to return*, and a captured response proves
+only what one call returned. What the calls produced lives in `recordings/`, where a real
+confidence belongs. A captured response may replace an authored fixture — and when it does, the
+`_note` changes in the same commit, because an authored fixture presented as captured is the
+defect this policy exists to prevent, and it is a defect in **either** direction. Each adapter
+carries a
 schema-conformance test asserting the mapping handles every documented field of the response,
 including the ones this system does not use, so that a future need for `Polygon` is a change to
 the representation rather than a discovery about the adapter.

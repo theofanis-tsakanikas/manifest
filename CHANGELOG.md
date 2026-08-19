@@ -9,6 +9,69 @@ version.
 
 ---
 
+## 2026-08-19 — third audit
+
+One lens: **which controls exist on paper and are enforced by nobody.** Everything below was
+found by asking that, and every one of them passed every gate this repository had.
+
+### Fixed
+
+- **The scoreboard read the wrong harness for claim 1, and had done since the loop check was
+  added.** `preflight.py` matched the producing check with `startswith("claim 1")`, and
+  `claim 1 · the loop` (`evals.feedback`) sorts before `claim 1 · thresholds`
+  (`evals.calibration`) — so the README's claim-1 row was compared against a harness that does
+  not print those figures, found no match, and skipped. The row happened to be correct. It had
+  never been checked. Decision 24, on the file that exists to catch decision 24.
+- **Three places where the scoreboard went quiet instead of red.** Every figure reader in it did
+  `if not found: continue`, which is right when the harness did not run and is a silent pass when
+  it ran and its summary line moved. It now tells those apart and calls the second one **stale**,
+  which is Attestor's third rule and was missing from the one file in the repository that quotes
+  it. The stale detection is what surfaced the claim-1 defect above, on its first run.
+- **The badges were outside every figure check.** They are shields.io URLs, so `502%20passing`
+  matched no pattern written for prose: the badge said 502 tests while a sentence sixty lines
+  down said 512, on the same page, and the check that exists to stop exactly that was green. The
+  first number a reader sees was the one nothing checked. Two more shapes — `**502 tests**` and a
+  count wrapped across a line — were outside it too, and both were stale.
+- **Seven paths in the prose pointed at nothing.** `src/manifest/cascade/`, `review/`,
+  `versioning/` and `entities/` moved into `core/` and four documents did not, `CLAUDE.md`
+  included.
+- **`check_no_stale_never.py` never scanned `docs/`.** Written in the previous audit, it took a
+  list of directories and three root files; the three doc files it *exempts* read as though the
+  directory had been considered. It had not been opened. Three assertions in the ADRs were stale,
+  and one of them was a live rule rather than history — ADR-0005 said the AWS adapters "are
+  written, and never called", and all three have been called.
+- **An acceptance with no closing condition.** `contracts/review/acceptance.yaml` had `response`
+  — what is being pursued — and nothing saying what ends it. An acceptance whose only end is a
+  date is renewed by retyping the date, and the question of whether it is still needed is never
+  put. `ends_when` is now required by the contract model.
+
+### Added
+
+- **`scripts/check_provenance_paths_are_independent.py`** — the gate ADR-0003 declared on
+  2026-08-09 under the heading *"independence is enforced by a gate, not intended"*, and which
+  was never written. The property held for ten days because nobody had reason to break it, and
+  the sentence asserting it was enforced is precisely why nobody looked. Claim 2's re-read is the
+  weakest of its three checks and its entire value is *whose* reading it is; one convenience
+  import of `core/fields.py` turns it into the field assembler agreeing with itself, with every
+  test still passing. Walks the import graph transitively and names the chain.
+- **`scripts/check_acceptances_expire.py`** — doctrine rule 6 over every acceptance rather than
+  some of them. Eight contracts declare an `expires_on`; **three were enforced**, each by
+  whichever gate happened to open that file for its own purpose. The other five declared a date
+  no code read. That is not five oversights but one structural fact: the enforcement was a side
+  effect of the file being needed for something else, so a file nothing needed got none.
+- **A dangling-path sweep in `check_the_map_matches_the_ground.py`** — every repository path the
+  prose names, against the disk. A dead path costs one line and reads like evidence.
+- **`check_every_gate_runs.py` now covers `scripts/` as well as `evals/`** — a check wired into
+  nothing is a file that looks like enforcement. Comments are stripped first, because a comment
+  naming a script does not run it; the Dockerfile explains the font probe seven lines above the
+  `RUN` that invokes it.
+- **Four gate-proof mutations** (58–61), one per control above, and
+  `tests/scripts/test_the_scoreboard_goes_red_when_its_target_moves.py` — 14 tests attacking the
+  scoreboard directly, because it is the one gate `gate-proof` cannot afford to mutate: each
+  mutation would cost a full `make preflight`.
+
+---
+
 ## 2026-08-19
 
 ### Fixed

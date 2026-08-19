@@ -1046,6 +1046,95 @@ def _let_the_acceptance_outlive_its_expiry(root: Path) -> bool:
     )
 
 
+def _leave_a_gate_on_disk_and_run_it_nowhere(root: Path) -> bool:
+    """Take the font probe out of the image build, its only invoker.
+
+    **`check_every_gate_runs.py` compared `evals/` to CI and the Makefile and stopped there**, so
+    a check written into `scripts/` and wired to nothing sat on disk looking like enforcement.
+    That is the same failure it refuses for a harness, one directory across, and this repository
+    has produced the shape twice in three days: ADR-0003 declared a gate nobody wrote, and
+    `security/injection.py` is a control two documents cite and nothing calls.
+
+    `check_corpus_font.py` is the sharpest case because it has exactly one invoker and it is not
+    a workflow: it runs at image build time, which is the only place it can catch the failure it
+    exists for — a font that draws empty boxes instead of Chinese party names, on a page that
+    renders, in a corpus that generates, with every check downstream green.
+    """
+    return _replace(
+        root / "Dockerfile",
+        "COPY scripts/check_corpus_font.py ${LAMBDA_TASK_ROOT}/scripts/\n"
+        "RUN PYTHONPATH=${LAMBDA_TASK_ROOT} python "
+        "${LAMBDA_TASK_ROOT}/scripts/check_corpus_font.py",
+        "# the font probe removed",
+    )
+
+
+def _let_an_acceptance_no_other_gate_reads_expire(root: Path) -> bool:
+    """Expire `contracts/core/reachable.yaml`, which until 2026-08-19 nothing checked the date of.
+
+    **Chosen deliberately over the deploy acceptance, which has had its own mutation for weeks.**
+    Eight files in `contracts/` declare an expiry. Three were enforced, each by whichever gate
+    happened to open that file for its own purpose — the deploy gate reads the deploy
+    acceptance, the envelope gate reads the corpus one. The other five, including this one,
+    declared a date that no code read.
+
+    That is not five oversights. It is one structural fact: the enforcement was a side effect of
+    the file being needed for something else, so a file nothing needed got none. Doctrine rule 6
+    belongs to the repository rather than to whichever gate opens the file, and this mutation
+    fails only against a check that believes that.
+    """
+    return _replace(
+        root / "contracts/core/reachable.yaml",
+        'expires_on: "2027-02-14"',
+        # **After the 2026-08-14 it was accepted, and before today.** The first attempt used
+        # 2026-01-01, which tripped the *"expired before it was accepted"* branch instead — a
+        # different refusal, correctly refused, for a reason the mutation was not testing. A
+        # planted defect that fires the wrong arm of a check is a mutation agreeing with itself.
+        'expires_on: "2026-08-16"',
+    )
+
+
+def _point_the_prose_at_a_file_that_is_not_there(root: Path) -> bool:
+    """Make the README name a script that does not exist.
+
+    **The defect this reproduces was found in an ADR, not in code.** ADR-0003 carries the heading
+    *"independence is enforced by a gate, not intended"* and names
+    `scripts/check_provenance_paths_are_independent.py`. The file was not written for ten days.
+    The property it describes held the whole time — so nothing failed, no test went red, and the
+    document asserting the enforcement was precisely the reason nobody checked for it.
+
+    A path in prose is the cheapest possible evidence: it costs one line and reads like a
+    guarantee. This makes writing a dead one cost a red build.
+    """
+    return _replace(
+        root / "README.md",
+        "[`scripts/estate_sweep.py`](scripts/estate_sweep.py)",
+        "[`scripts/estate_sweep.py`](scripts/the_estate_sweep.py)",
+    )
+
+
+def _let_the_verifier_reuse_the_field_assembler(root: Path) -> bool:
+    """Give `gates/provenance.py` the module that produced the record it is checking.
+
+    **ADR-0003 declared a gate for this and the gate was never written.** The property held
+    anyway — the verifier imports geometry, text and check digits — but it held because nobody
+    had a reason to break it, and the reason is easy to have: `core/fields.py` already knows how
+    to find a value under a caption, and the verifier is looking for a value under a caption.
+
+    Reuse it and claim 2's second check stops being corroboration. The same anchor logic runs
+    over the same words and reaches the same answer, and the re-read reports agreement — which
+    is a function agreeing with itself, printed as independent evidence. Nothing else in the
+    repository fails: every test passes, the harness scores green, and the strongest thing the
+    README says about provenance quietly becomes untrue.
+    """
+    return _replace(
+        root / "src/manifest/gates/provenance.py",
+        "from manifest.core.geometry import Box, PageSize",
+        "from manifest.core.fields import extract\n"
+        "from manifest.core.geometry import Box, PageSize",
+    )
+
+
 def _use_an_env_variable_that_is_not_defined(root: Path) -> bool:
     """Take `PROJECT` back out of the deploy's env block.
 
@@ -1615,6 +1704,42 @@ MUTATIONS: tuple[Mutation, ...] = (
         _let_the_acceptance_outlive_its_expiry,
         "An acceptance nobody revisits is a permanent decision in temporary clothes, and it "
         "happens by a date passing while everything stays green.",
+    ),
+    Mutation(
+        "leave a gate on disk and run it nowhere",
+        "every gate runs",
+        [sys.executable, "scripts/check_every_gate_runs.py"],
+        "nothing invokes it",
+        _leave_a_gate_on_disk_and_run_it_nowhere,
+        "A check nobody runs is the hardest version to see: the file is there, and it passes "
+        "when you run it by hand.",
+    ),
+    Mutation(
+        "let an acceptance no other gate reads expire",
+        "acceptances are in date",
+        [sys.executable, "scripts/check_acceptances_expire.py"],
+        "Doctrine rule 6",
+        _let_an_acceptance_no_other_gate_reads_expire,
+        "Five of eight expiries were enforced by nobody, because each of the three that were "
+        "got it as a side effect of some other gate needing to open the file.",
+    ),
+    Mutation(
+        "point the prose at a file that is not there",
+        "the map matches the ground",
+        [sys.executable, "scripts/check_the_map_matches_the_ground.py"],
+        "and there is nothing there",
+        _point_the_prose_at_a_file_that_is_not_there,
+        "How a declared gate goes unwritten for ten days: ADR-0003 named one, the heading said "
+        "it was enforced rather than intended, and the sentence was the reason nobody looked.",
+    ),
+    Mutation(
+        "let the verifier reuse the assembler that produced the record",
+        "provenance independence",
+        [sys.executable, "scripts/check_provenance_paths_are_independent.py"],
+        "reaches the path it is meant to be independent of",
+        _let_the_verifier_reuse_the_field_assembler,
+        "ADR-0003 said this was enforced by a gate. The gate was declared and never written, "
+        "so for the whole life of claim 2 the independence was a habit rather than a rule.",
     ),
     Mutation(
         "use an env variable the workflow never defines",

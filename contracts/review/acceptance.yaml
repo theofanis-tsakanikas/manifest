@@ -67,6 +67,19 @@ acceptances:
       reduce queue volume without changing the error budget, which inverts the derivation and
       turns a derived number into a chosen one.
 
+    # **Added 2026-08-19, when a sweep over every acceptance in the repository found this one
+    # had no closing condition.** It had `response` — what is being pursued — which is not the
+    # same thing and cannot be checked. An acceptance whose end is a date and nothing else is
+    # renewed by retyping the date, and the question of whether it is still needed never gets
+    # asked. This states what has to be true for it to lapse rather than be renewed.
+    ends_when: >-
+      The cascade's upper tiers have been **scored**, not merely called, and the queue that
+      results fits the declared capacity — or the error budgets are revised deliberately, on
+      their own terms, with the revision recorded as its own decision.
+
+      Being unable to score the upper tiers is not a reason to renew. It is the finding, and on
+      the date above it returns and CI goes red, which is the whole of doctrine rule 6.
+
     # What this acceptance does not do, stated so it cannot drift into doing it:
     #   - it does not change a single error budget
     #   - it does not raise a threshold

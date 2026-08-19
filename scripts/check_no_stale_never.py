@@ -32,7 +32,12 @@ GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
 #: Where prose about the system lives. Not `docs/DECISIONS.md` or `docs/NEXT.md`, which keep
 #: superseded text on purpose and mark it, and not `CHANGELOG.md`, which is a record of what was
 #: true when. Those three are the house's way of remembering; the rest must be current.
-SEARCHED = ("src", "scripts", "evals", "contracts", "infra", "tests")
+#: **`docs/` was missing from this list on the first version, and the exemptions below hid it.**
+#: Three doc files are exempt because they keep superseded text on purpose — which reads as though
+#: the rest of the directory was considered and included. It was not scanned at all, so the five
+#: documents that describe the system to a reader were the only prose in the repository this
+#: check could not see.
+SEARCHED = ("src", "scripts", "evals", "contracts", "infra", "tests", "docs")
 ALSO = ("CLAUDE.md", "README.md", "SECURITY.md")
 #: `test_authored_aws_fixtures.py` is the file that *enforces* the AUTHORED.md rule, so it has to
 #: quote the sentence it forbids. An enforcer reading as a violator is the same confusion this

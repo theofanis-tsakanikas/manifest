@@ -1,12 +1,22 @@
 # ADR-0004 — The cascade routes between engines with different competences
 
 **Status:** accepted · **Date:** 2026-08-09 · **Documentation verified:** 2026-08-09
+**Amended 2026-08-19:** the premise in Context below has been superseded and the decision has not.
+
+> **The premise this was reasoned from is no longer true, and the conclusion is unchanged.**
+> Decision 14 deferred every apply when this was written; it was revised twice on
+> 2026-08-10, the estate has been applied and torn down many times since, and all three managed
+> readers have now been called. What that changed is one sentence in this file's Context. What it
+> did not change is the decision: the cascade still routes between engines of different
+> competence, and its eval still proves only that the routing climbs — **no upper tier has been
+> scored**, so there is still no accuracy figure for the escalated fraction. See
+> `docs/DECISIONS.md` 14 for the revisions and their dates.
 
 ## Context
 
 Decision 9 said: cheap engine first, escalate where confidence is low, and the saving is a
-measured number. Decision 14 — nothing is ever applied to AWS — made the second half impossible,
-and decision 9 has been rewritten. This ADR settles what the cascade *is* and what its eval is
+measured number. Decision 14, **as it stood on the date above**, deferred every apply — which
+made the second half impossible, and decision 9 has been rewritten. This ADR settles what the cascade *is* and what its eval is
 able to prove.
 
 Then `docs/AWS-CONSTRAINTS.md` changed the design. Verified 2026-08-09: **Amazon Textract,

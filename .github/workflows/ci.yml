@@ -123,6 +123,21 @@ jobs:
         # stops being runnable by a stranger, and that was the whole of the evidence.
         run: python scripts/check_core_is_pure.py
 
+      - name: every acceptance in the repository is still in date
+        # Doctrine rule 6. Eight contracts declare an expiry; until 2026-08-19 three were checked
+        # — each by the gate that happened to open that file for its own purpose. An acceptance
+        # nobody has to renew is not an exception, it is a policy change written as a temporary
+        # measure, and five of them were on that path.
+        run: python scripts/check_acceptances_expire.py
+
+      - name: the provenance verifier cannot reach the path that produced the record
+        # Claim 2's re-read is the weakest of its three checks and its entire value is *whose*
+        # reading it is. ADR-0003 said this was enforced by a gate rather than intended; the gate
+        # was declared and never written, and the property held for a year because nobody had
+        # reason to break it. One convenience import and the corroboration becomes the field
+        # assembler agreeing with itself, with every test still passing.
+        run: python scripts/check_provenance_paths_are_independent.py
+
       - name: the documented tree exists, and every core module has a caller that runs
         # `check_core_is_pure.py` says nothing cloud gets *into* the core. This says nothing pure
         # is left *orphaned* in it — a decision this repository proved and does not make, which

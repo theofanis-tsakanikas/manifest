@@ -82,10 +82,61 @@ def _declared() -> dict[str, str]:
     return dict(loaded.get("not_in_ci") or {})
 
 
+#: Everything that can invoke a check. The Dockerfile is in the list because one check is run
+#: there and nowhere else — `check_corpus_font.py` probes the font at image build time, which is
+#: the only place it can catch the failure it exists for. A sweep that knew about the first three
+#: would have reported it as unrun, which is the wrong finding stated confidently.
+INVOKERS = (
+    "scripts/preflight.py",
+    "Makefile",
+    ".github/workflows/ci.yml",
+    ".github/workflows/deploy.yml",
+    ".github/workflows/destroy.yml",
+    "Dockerfile",
+    "Dockerfile.emr",
+)
+
+
+def _checks_nothing_runs() -> list[str]:
+    """Every `scripts/check_*.py` against everything that could invoke one.
+
+    **This file's whole subject applied to `scripts/`, where it was not applied.** It compared
+    `evals/` to CI and the Makefile and stopped there, so a gate written into `scripts/` and
+    wired to nothing would sit on disk looking like enforcement. That is the same failure it
+    refuses for a harness, one directory across.
+
+    The repository has produced this exact shape twice in three days: ADR-0003 declared a gate
+    that was never written, and `security/injection.py` is a control two documents cite and
+    nothing calls. A check nobody runs is the version of it that is hardest to see, because the
+    file is there and it passes when you run it by hand.
+    """
+    # **Comments stripped, because a comment naming a script does not run it.** The Dockerfile
+    # explains `check_corpus_font.py` in a comment seven lines above the `RUN` that invokes it,
+    # and `preflight.py` discusses several checks it does not call. Searching the raw text finds
+    # the prose about a gate and reports the gate as wired — the same defect the scoreboard check
+    # had, where a comment recording a service's removal proved the service was still there.
+    invokers = "\n".join(
+        "\n".join(
+            line
+            for line in (ROOT / name).read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith(("#", "//"))
+        )
+        for name in INVOKERS
+        if (ROOT / name).exists()
+    )
+    return [
+        f"scripts/{check.name} exists and nothing invokes it — not preflight, not the Makefile, "
+        f"not a workflow, not an image build. A gate wired into nothing is a file that looks "
+        f"like enforcement and is not"
+        for check in sorted(ROOT.glob("scripts/check_*.py"))
+        if check.name not in invokers
+    ]
+
+
 def main() -> int:
     harnesses, in_ci, in_make = _harnesses(), _run_by_ci(), _run_by_make()
     declared = _declared()
-    problems: list[str] = []
+    problems: list[str] = _checks_nothing_runs()
 
     for name in sorted(harnesses - in_ci):
         if name in declared:
@@ -123,8 +174,9 @@ def main() -> int:
         return 1
 
     print(
-        f"  {GREEN}ok{RESET}    {len(harnesses)} claim harness(es), every one run by CI and by "
-        f"`make claims`" + (f", {len(declared)} declared absent with a reason" if declared else "")
+        f"  {GREEN}ok{RESET}    {len(harnesses)} claim harness(es) and "
+        f"{len(list(ROOT.glob('scripts/check_*.py')))} check script(s), every one run by "
+        f"something" + (f", {len(declared)} declared absent with a reason" if declared else "")
     )
     return 0
 

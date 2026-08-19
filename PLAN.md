@@ -167,7 +167,7 @@ in the README rather than skipped.
       `contracts/cascade/` declares tier 2 as "written as an adapter, schema-tested", and the
       router sends every low-confidence Greek and Dutch page to it. A page routed to an adapter
       that does not exist is the abstention path taken for a reason nobody declared.
-- [x] `src/manifest/cascade/` — tiered routing with the escalation rule from ADR-0004, the
+- [x] `src/manifest/core/cascade.py` — tiered routing with the escalation rule from ADR-0004, the
       measured routing distribution, and the modelled cost that follows from it.
 - [x] `recordings/ocr/` and `make ocr-record` — the engine's normalised output over the
       corpus, committed with its version and fingerprint, and the **ceremony**: printing every
@@ -192,7 +192,7 @@ in the README rather than skipped.
       2,963 documents**, 4/4 planted strings recognised read directly. Two `gate-proof`
       mutations, one of which was reported *accepted* and is why the rule now anchors on its
       object rather than on an imperative.
-- [x] `src/manifest/review/` — the queue, the capacity model, and the first integrity metrics.
+- [x] `src/manifest/core/review.py` — the queue, the capacity model, and the first integrity metrics.
 - [x] `infra/foundation/` and `infra/extraction/` — Terraform, validated, not applied.
 
 **Done when:** claims 1 and 2 pass offline, `gate-proof` breaks both, and no field can be
@@ -208,7 +208,7 @@ it. `gate-proof` breaks eight controls across the two.
 
 *Unlocks claims 3, 4 and 6.*
 
-- [x] `src/manifest/versioning/` — document versions, supersession, re-extraction diff. A new
+- [x] `src/manifest/core/versioning.py` — document versions, supersession, re-extraction diff. A new
       engine version produces a new record version and a diff; the prior stays retrievable.
 - [x] `evals/reprocessing/` — **claim 3**. Same document, same version, identical record;
       version change produces a diff and never a silent overwrite.
@@ -218,7 +218,7 @@ it. `gate-proof` breaks eight controls across the two.
       document, blind to the reconciliation contract**; the expected findings come from ground
       truth by a separate path. A planter that reads the contract to decide what to break and
       a detector that reads it to find the break is one function agreeing with itself.
-- [x] `src/manifest/entities/` — resolution across scripts and surface forms, with an
+- [x] `src/manifest/core/entities.py` — resolution across scripts and surface forms, with an
       explainable match reason, and **un-merge with lineage intact**.
 - [x] `evals/entities/` — **claim 6**. Merge, verify downstream, un-merge, verify everything is
       correctly re-pointed.

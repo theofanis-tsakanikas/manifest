@@ -458,6 +458,14 @@ class CapacityAcceptance(Strict):
     finding: Annotated[str, Field(min_length=40)]
     cause: Annotated[str, Field(min_length=40)]
     response: Annotated[str, Field(min_length=40)]
+    #: **What has to be true for this to lapse rather than be renewed.**
+    #:
+    #: `response` names what is being pursued and this names the condition that ends it, and the
+    #: difference is the whole of doctrine rule 6. An acceptance whose only end is a date is
+    #: renewed by retyping the date; the question of whether it is still needed is never put.
+    #: This field was absent when the acceptance was written and was added on 2026-08-19, by a
+    #: sweep over every acceptance in the repository rather than by anybody reading this one.
+    ends_when: Annotated[str, Field(min_length=40)]
     changes_nothing_about_publication: bool
 
     @model_validator(mode="after")

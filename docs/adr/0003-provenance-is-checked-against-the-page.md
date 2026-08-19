@@ -101,13 +101,21 @@ test:
 
 ### Independence is enforced by a gate, not intended
 
-`scripts/check_provenance_paths_are_independent.py`, arriving in Phase 2 with the verifier: the
+`scripts/check_provenance_paths_are_independent.py` — **declared here on 2026-08-09 and not
+written until 2026-08-19**, which is the most instructive thing in this ADR. The heading says
+*enforced by a gate, not intended*, and for ten days the enforcement was the intention: the
+verifier imported geometry, text and check digits and nothing else, because nobody had needed to
+break it. An audit looking for paths the prose names that the disk does not have is what found
+it. The gate now exists, walks the import graph transitively, and ships with the mutation below.
+
+It says: the
 verification module may import the normalised representation, `core/geometry.py` and the raster
 adapter, and **may not import the field-assembly module that produced the record**. The check
 reads the import graph.
 
-It ships with its mutation in the same commit — make the verifier call the extractor's own
-field assembler and require the named gate to refuse it. Without that gate, "independent" is a
+It ships with its mutation — make the verifier call the extractor's own field assembler and
+require the named gate to refuse it. That is `gate-proof`'s *let the verifier reuse the assembler
+that produced the record*. Without that gate, "independent" is a
 sentence in a document, and the first refactor that notices the duplication deletes the claim.
 
 ### What "document version" means, so it cannot become a timestamp

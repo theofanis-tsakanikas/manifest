@@ -175,6 +175,67 @@ def _unindexed_docs() -> list[str]:
     return problems
 
 
+#: Every top-level directory a document might point a reader into. A path in prose that names
+#: something outside these is a URL, a shell fragment or an example, and not this check's business.
+NAMED_ROOTS = (
+    "src",
+    "evals",
+    "scripts",
+    "contracts",
+    "corpus",
+    "infra",
+    "tests",
+    "docs",
+    "pipelines",
+    "recordings",
+    "analytics",
+    "images",
+    ".github",
+)
+
+PROSE = ("README.md", "CLAUDE.md", "SECURITY.md", "PLAN.md")
+
+
+def _paths_that_go_nowhere() -> list[str]:
+    """Every repository path the prose names, against the disk.
+
+    **The map check compared CLAUDE.md's tree to `src/manifest/` and stopped there**, so it saw
+    the packages and none of the several hundred other paths the documents point a reader at. An
+    audit on 2026-08-19 found seven dead ones, and the worst was not a typo: ADR-0003 names
+    `scripts/check_provenance_paths_are_independent.py` under a heading reading *"independence is
+    enforced by a gate, not intended"*, and the gate did not exist. The property held anyway, by
+    habit, for ten days — and the document asserting it was enforced was the reason nobody looked.
+
+    A dead path is cheap to write and reads as evidence. This makes it cost something.
+    """
+    problems: list[str] = []
+    #: A markdown link writes the path twice — once in the label, once in the target — so one
+    #: dead link is two matches. Reported once: a reader fixing it has one thing to fix.
+    already: set[tuple[str, int, str]] = set()
+    documents = [ROOT / name for name in PROSE] + sorted(ROOT.glob("docs/**/*.md"))
+    pattern = re.compile(
+        r"[`(]((?:" + "|".join(re.escape(root) for root in NAMED_ROOTS) + r")/[\w./-]*[\w/])[`)]"
+    )
+    for document in documents:
+        if not document.exists():
+            continue
+        for number, line in enumerate(document.read_text(encoding="utf-8").splitlines(), 1):
+            for match in pattern.finditer(line):
+                named = match.group(1)
+                if (ROOT / named.rstrip("/")).exists():
+                    continue
+                signature = (str(document), number, named)
+                if signature in already:
+                    continue
+                already.add(signature)
+                problems.append(
+                    f"{document.relative_to(ROOT)}:{number} points at `{named}` and there is "
+                    f"nothing there. Either it moved and the prose did not, or it was never "
+                    f"written and the sentence describes a repository this is not"
+                )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -192,6 +253,7 @@ def main() -> int:
         )
 
     problems += _unindexed_docs()
+    problems += _paths_that_go_nowhere()
 
     reachable, accepted = _reachable(), _accepted()
 

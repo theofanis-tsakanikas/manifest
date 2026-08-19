@@ -19,8 +19,8 @@
   <img src="https://img.shields.io/badge/AWS-Redshift-8C4FFF?logo=amazonredshift&logoColor=white" alt="Redshift">
   <img src="https://img.shields.io/badge/OCR-Tesseract-4A9?logo=tesseract&logoColor=white" alt="Tesseract">
   <br>
-  <img src="https://img.shields.io/badge/tests-502%20passing-2ea44f" alt="502 tests passing">
-  <img src="https://img.shields.io/badge/gate--proof-57%20planted%20%C2%B7%2057%20refused-2ea44f" alt="gate-proof 57 refused">
+  <img src="https://img.shields.io/badge/tests-516%20passing-2ea44f" alt="516 tests passing">
+  <img src="https://img.shields.io/badge/gate--proof-61%20planted%20%C2%B7%2061%20refused-2ea44f" alt="gate-proof 61 refused">
   <img src="https://img.shields.io/badge/live-34%2F34%20against%20the%20estate-2ea44f" alt="34/34 live checks">
   <img src="https://img.shields.io/badge/thresholds-5%20derived%20%C2%B7%2031%20always--review-2ea44f" alt="5 derived, 31 always-review">
   <img src="https://img.shields.io/badge/checkov-718%20passed%20%C2%B7%200%20findings-2ea44f" alt="checkov 0 findings">
@@ -82,8 +82,8 @@ whether it had behaved.
 </p>
 
 **The estate is destroyed.** The resting state of this repository is a state bucket, its key, five
-SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 502
-tests, 15 evaluation harnesses and 57 planted gate violations, on a laptop, in twelve minutes.
+SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 516
+tests, 15 evaluation harnesses and 61 planted gate violations, on a laptop, in twelve minutes.
 
 ---
 
@@ -435,7 +435,14 @@ right reason**. A mutation whose target has moved reports `STALE`, never `passed
 
 <p align="center">
   <img src="images/gate_proof1.png" width="900" alt="gate-proof: 57 refused, 0 accepted, 0 stale"><br>
-  <sub><b>57 refused, 0 accepted, 0 stale</b> — and read the mutation names, not the count.
+  <sub><b>57 refused, 0 accepted, 0 stale</b> on the run of 2026-08-19 that this picture is of;
+  the harness plants <b>61</b> since. The four added all break the same thing — a control that
+  exists on paper and is enforced by nobody: <i>let the verifier reuse the assembler that
+  produced the record</i> (ADR-0003 declared that gate and it was never written),
+  <i>point the prose at a file that is not there</i> (which is how nobody noticed),
+  <i>let an acceptance no other gate reads expire</i> (five of eight were in that state), and
+  <i>leave a gate on disk and run it nowhere</i>. The picture is the run, not the current count;
+  read the mutation names, not either number.
   <i>let review volume relax the error budget</i> is the forbidden move from ADR-0001 planted as
   code. <i>count an approval from a reviewer who agrees with everything</i> plants a rubber stamp
   into the feedback loop. <i>grant a verb where its resources cannot match</i> was a real defect in
@@ -484,7 +491,7 @@ The corpus is not committed — 3,255 rendered pages regenerate byte-identically
 
 ## Testing
 
-**502 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
+**516 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
 (threshold derivation, reconciliation, entity resolution, versioning, drift, feedback), the
 contract loader, the engine adapters against documented response schemas, the handlers, and every
 gate.
@@ -501,14 +508,23 @@ make preflight   # everything that must be true before the estate is stood up
 ```
 
 The figures this README quotes are the figures those commands print, and a check enforces it.
-`make preflight` runs **38 checks**, one of which re-reads this file: the test suite at
-**502 passing**, `gate-proof` at **57 refused, 0 accepted, 0 stale**, and checkov at
+`make preflight` runs **40 checks**, one of which re-reads this file: the test suite at
+**516 passing**, `gate-proof` at **61 refused, 0 accepted, 0 stale**, and checkov at
 **718 passed, 0 findings** across six Terraform layers. A scoreboard drifts by the ordinary act of
 adding a gate, silently, in the direction of looking more finished than it is — so the repository
 whose first claim is that every number is reproducible is the one that has to check.
 
+That check has itself gone quiet three times — verifying three figures while twenty drifted,
+finding the stack line by paragraph index until a banner moved it, and reading a pytest summary
+line a `-q` had suppressed — each time reporting green rather than red, because every figure
+reader in it skipped a pattern that matched nothing. It now distinguishes *the harness did not
+run* from *the harness ran and I could not read it*, and calls the second one **stale**. Being the
+one gate `gate-proof` cannot afford to attack — mutating it costs a full `make preflight` per
+mutation — it is attacked directly instead, in
+[`tests/scripts/test_the_scoreboard_goes_red_when_its_target_moves.py`](tests/scripts/test_the_scoreboard_goes_red_when_its_target_moves.py).
+
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs eight jobs on every push: the
-suite, the 15 claim harnesses, the 57 gate mutations, `terraform validate` against real provider
+suite, the 15 claim harnesses, the 61 gate mutations, `terraform validate` against real provider
 schemas, checkov at zero findings, a secret scan, the reader image build, and a full corpus
 regeneration that proves the committed ground truth reproduces.
 [`scripts/check_every_gate_runs.py`](scripts/check_every_gate_runs.py) compares the `evals/`
@@ -525,7 +541,7 @@ directory against what CI and the Makefile actually invoke, because three hand-m
 | [`corpus/`](corpus/) | The generator, the committed ground truth, and [`envelope.yaml`](corpus/envelope.yaml) — the declared operating range a drifting generator fails against |
 | [`src/manifest/core/`](src/manifest/core/) | **Pure.** Every decision the system makes, as functions over plain data. No boto3, no engine, no engine names — enforced by `make core-pure` |
 | [`src/manifest/extraction/`](src/manifest/extraction/) | Engine adapters producing one normalised representation. `local/` runs; `aws/` is schema-tested |
-| [`src/manifest/handlers/`](src/manifest/handlers/) | Fourteen modules — **13 of them Lambda functions** in the estate, plus `emit.py`, the adapter three of them import to ship a span. They may import boto3, they call `core`, and they decide nothing |
+| [`src/manifest/handlers/`](src/manifest/handlers/) | Fifteen modules — **13 of them Lambda functions** in the estate, plus `emit.py`, the adapter three of them import to ship a span, and `_aoss.py`, one signed OpenSearch request shared by the writer and the reader. They may import boto3, they call `core`, and they decide nothing |
 | [`src/manifest/gates/`](src/manifest/gates/) | One module per claim |
 | [`evals/`](evals/) | The 15 claim harnesses — labelled, credential-free |
 | [`recordings/`](recordings/) | Golden engine output. Every threshold derives from here, never from a live run |

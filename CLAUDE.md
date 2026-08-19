@@ -351,7 +351,7 @@ whole account rather than this project, which is a different defect with a diffe
   disables the deploy role at its threshold. Both written, both validated, neither exercised.
 - **The expensive things are per-page: Textract, Bedrock Data Automation, LLM extraction.**
   Volume is the cost driver, so volume is a design parameter — the cascade in
-  `src/manifest/cascade/` exists to keep the expensive engine off pages that do not need it.
+  `src/manifest/core/cascade.py` exists to keep the expensive engine off pages that do not need it.
 - **What the cascade's saving actually is:** the tier-routing distribution over the corpus is
   measured offline; unit prices come from published pricing pages, cited and dated. The
   product is a **cost model**. Say "modelled" every single time. A modelled figure that says
