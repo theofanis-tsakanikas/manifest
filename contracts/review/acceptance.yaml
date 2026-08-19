@@ -25,16 +25,28 @@ acceptances:
     # that nobody inherits it without deciding again.
     expires_on: "2027-02-09"
 
+    # **Corrected 2026-08-19: this said 33, and the harness says 31.** A figure typed into a
+    # contract is a figure nothing recomputes, and this one had drifted two fields — which is
+    # exactly the failure the repository spends its life removing, sitting inside the file that
+    # accepts a failure. `evals/review` prints the live number on every run; read that, not this.
     finding: >-
       The derived thresholds queue about 91% of extracted fields, roughly 83x the declared
       capacity at the peak multiplier. The dominant term is fields with no derivable threshold:
-      33 of 36 fields cannot support one at their declared error budget on this corpus.
+      31 of 36 fields cannot support one at their declared error budget on this corpus.
 
+    # **Corrected 2026-08-19, and this one inverted the diagnosis rather than mis-stating a
+    # count.** It read "most fields are evidence-limited rather than quality-limited — the reader
+    # is not wrong, there is not enough labelled data". `evals/calibration` says the opposite:
+    # 25 quality-limited against 4 evidence-limited. The two have opposite fixes — more data
+    # against a better reader — so an acceptance that names the wrong one points its own response
+    # at the wrong remedy. The response below happens to survive the correction, because
+    # escalation is a better reader; that it survives is luck rather than reasoning.
     cause: >-
       Extraction runs at tier 0 only. `docs/AWS-CONSTRAINTS.md` establishes that Greek and Dutch
       have no managed reader in the stack at all, and `evals/calibration/` establishes that most
-      fields are evidence-limited rather than quality-limited — the reader is not wrong, there
-      is not enough labelled data to prove it right at budgets between 0.1% and 2%.
+      of these fields are **quality-limited** rather than evidence-limited: 25 against 4. Real
+      errors survive at high confidence, which is over-confidence rather than thin evidence, and
+      it is the reader that has to change rather than the size of the labelled set.
 
     response: >-
       ADR-0001's second permitted response: escalate more. The cascade's upper tiers are the

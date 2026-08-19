@@ -30,7 +30,7 @@ reaches_the_estate:
 
     So the route is not "it is used". It is: **there is no text-to-prompt path in this system
     today**, `envelope()` is the fence for the one that does not exist yet, and `evals/injection`
-    is what proves the fence works — 0 false positives across 2,963 documents, and every planted
+    is what proves the fence works — 0 false positives across 2,969 documents, and every planted
     string recognised.
 
     What this entry buys is the thing a comment cannot: on the day somebody adds a text-based

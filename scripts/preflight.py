@@ -60,7 +60,9 @@ RUFF = _tool("ruff")
 CHECKOV = str(_CV) if (_CV := ROOT / ".venv-checkov" / "bin" / "checkov").exists() else "checkov"
 
 #: Which paragraph of the README carries the service line: title, tagline, services.
-SUBTITLE_PARAGRAPH = 2
+#: The stack line is italic and dot-separated; three separators is more than any prose line
+#: in this README carries, and fewer than the stack has ever had.
+SUBTITLE_MIN_SEPARATORS = 3
 
 LINT_PATHS = ["src", "tests", "scripts", "corpus", "evals", "pipelines"]
 
@@ -449,11 +451,37 @@ def run(check: Check) -> Result:
 #: to look* and never *what the answer is* — a scoreboard check carrying its own copy of the
 #: figures would agree with itself for ever.
 CLAIM_FIGURES = {
-    "1": (
-        r"(\d+) thresholds derived, (\d+) fields always-review by contract, "
-        r"(\d+) evidence-limited, (\d+) quality-limited"
-    ),
+    "1": (r"(\d+) fields — (\d+) with a derived threshold, (\d+) always-review"),
     "4": r"exactly (\d+) planted disagreements found",
+}
+
+#: Figures the README states in prose rather than in a `**claim N**` row, keyed by the check
+#: whose output produces them.
+#:
+#: **Every one of these had drifted.** The audit of 2026-08-19 found the README claiming ECE
+#: 0.0371 for a corpus that scores 0.0815, a baseline of 19.11/4.56/0.41 against a run producing
+#: 26.72/4.68/0.22, and 2,963 clean documents against 2,969 — while the two figures the scoreboard
+#: check *did* cover were both correct. The mechanism worked; it was pointed at two rows out of a
+#: page of numbers.
+#:
+#: The claim-row check reads a line containing `**claim N**`. These do not live in such a line, so
+#: they are matched anywhere in the file: the rule is only that the figure the harness printed
+#: appears somewhere the reader can find it.
+PROSE_FIGURES = {
+    "the out-of-distribution column": (
+        r"ECE ([\d.]+) on ours against ([\d.]+) on theirs",
+        "the out-of-distribution ECE pair",
+    ),
+    "what the discipline buys": (
+        r"naive\s+published\s+[\d,]+\s+published-and-wrong\s+[\d,]+ \(\s*([\d.]+)%\).*?"
+        r"chosen\s+published\s+[\d,]+\s+published-and-wrong\s+[\d,]+ \(\s*([\d.]+)%\).*?"
+        r"derived\s+published\s+[\d,]+\s+published-and-wrong\s+[\d,]+ \(\s*([\d.]+)%\)",
+        "the baseline comparison",
+    ),
+    "injection": (
+        r"documents carrying none\s+(\d+)",
+        "the count of clean documents",
+    ),
 }
 
 
@@ -479,6 +507,36 @@ def _scoreboard_figures(report: Report) -> dict[str, str]:
     # prints, and the two agreeing is the whole point of the check.
     figures["preflight"] = f"{len(report.results) + 1} checks"
     return figures
+
+
+def _prose_figure_disagreements(report: Report, readme: str) -> list[str]:
+    """Figures the README states in prose, against the harness that produced them.
+
+    **The gap the claim-table check left, and it was the larger half.** That check reads a line
+    containing `**claim N**`; the README states just as many numbers in ordinary sentences, and
+    on 2026-08-19 every one of those had drifted while both covered rows were correct. A check
+    aimed at two rows on a page of numbers reports green about the page.
+
+    Matched anywhere in the file rather than on a particular line: the requirement is that the
+    figure the harness printed is somewhere a reader can find it, not that a sentence is phrased
+    a given way. A number that has changed meaning still fails, which is the point — the ECE pair
+    that started this was not only stale, it was the wrong way round.
+    """
+    problems: list[str] = []
+    stripped = re.sub(r"[,*`]", "", readme)
+    for name, (pattern, label) in PROSE_FIGURES.items():
+        output = next((r.output for r in report.results if r.check.name == name), "")
+        found = re.search(pattern, re.sub(r"[,*`]", "", output), re.DOTALL)
+        if not found:
+            continue
+        for number in found.groups():
+            if number and number not in stripped:
+                problems.append(
+                    f"`{name}` produced {number} for {label} and the README states no such "
+                    f"figure. Either the number moved and the prose did not, or the prose is "
+                    f"describing a run that no longer happens"
+                )
+    return problems
 
 
 def _claim_table_disagreements(report: Report, readme: str) -> list[str]:
@@ -557,6 +615,7 @@ def check_the_scoreboard(report: Report) -> Result:
     # was supposed to catch it. So every count the README states is now extracted and required
     # to match, wherever it is written.
     problems += _claim_table_disagreements(report, readme)
+    problems += _prose_figure_disagreements(report, readme)
 
     counted = {
         "tests": re.findall(r"\*\*(\d+) passing\*\*|# (\d+) tests", readme),
@@ -583,9 +642,37 @@ def check_the_scoreboard(report: Report) -> Result:
     # subtitle is the worst place in the repository for one: it is the first line a reader sees.
     # `Comprehend` sat there for a day after being deliberately removed everywhere else —
     # including from the core purity gate's list of forbidden names.
-    # The italic service line, which is the third paragraph: title, tagline, services.
-    paragraphs = readme.split("\n\n")
-    subtitle = paragraphs[SUBTITLE_PARAGRAPH] if len(paragraphs) > SUBTITLE_PARAGRAPH else ""
+    # **Found by its shape, not by its position, and the difference was a real failure.**
+    #
+    # This read `paragraphs[2]` on the assumption that the file opens title, tagline, services.
+    # The README was restructured on 2026-08-19 to add a banner and three rows of badges, the
+    # stack line moved to the fifth paragraph, and the check began reading the badge block —
+    # which names no services, so it reported OpenSearch, EMR Serverless and Lambda as missing
+    # from a line that lists all three.
+    #
+    # It was right to fire: something moved underneath it. But an index into a document is a
+    # dependency on layout that nothing declares, and the next reshuffle breaks it again. The
+    # stack line has a shape no other line in the file has — italic, dot-separated, several
+    # entries — so that is what identifies it.
+    subtitle = next(
+        (
+            line
+            for line in readme.splitlines()
+            if line.startswith("*")
+            and line.rstrip().endswith("*")
+            and line.count("·") >= SUBTITLE_MIN_SEPARATORS
+        ),
+        "",
+    )
+    if not subtitle:
+        # **An absent input, not a wrong answer.** With no line found, every service would read
+        # as "not named" and the check would report eight findings that are really one — or,
+        # worse, if the service list ever emptied too, none at all. The failure that looks most
+        # like success is the one where the comparison had nothing on one side.
+        problems.append(
+            "the README has no italic dot-separated stack line, so there is nothing to compare "
+            "the estate against. This check cannot pass by finding nothing"
+        )
     # **Comments stripped first.** Without this the check read `comprehend:` out of the comment
     # that records its removal and reported the service as present — a gate finding a service in
     # the prose explaining that the service is gone. What the subtitle must match is what the
@@ -598,16 +685,20 @@ def check_the_scoreboard(report: Report) -> Result:
         )
         for path in sorted(ROOT.glob("infra/*/*.tf"))
     ).lower()
-    for service, token in {
-        "Comprehend": "comprehend:",
-        "OpenSearch": "opensearchserverless",
-        "SageMaker": "sagemaker",
-        "Redshift": "redshiftserverless",
-        "EMR Serverless": "emrserverless",
-        "Lambda": "aws_lambda_function",
-        "Textract": "textract:",
-        "Bedrock": "bedrock:",
-    }.items():
+    for service, token in (
+        {}
+        if not subtitle
+        else {
+            "Comprehend": "comprehend:",
+            "OpenSearch": "opensearchserverless",
+            "SageMaker": "sagemaker",
+            "Redshift": "redshiftserverless",
+            "EMR Serverless": "emrserverless",
+            "Lambda": "aws_lambda_function",
+            "Textract": "textract:",
+            "Bedrock": "bedrock:",
+        }
+    ).items():
         named = service.lower() in subtitle.lower()
         present = token in estate
         if named and not present:

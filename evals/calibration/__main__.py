@@ -121,10 +121,40 @@ def main() -> int:
         n for n, e in report.items() if (e.get("limit") or {}).get("kind") == "quality_limited"
     ]
 
+    # **The four counts are not a partition, and the line used to read as though they were.**
+    #
+    # `derived`, `evidence` and `quality` are computed independently over the same fields: a
+    # `limit` says what constrained a field, not whether it ended up publishing, so a field can
+    # carry a derived threshold *and* be quality-limited. Printed as a flat list, the numbers
+    # invited addition — 5 + 1 + 4 + 30 against 36 fields — and the README copied them.
+    #
+    # So the split is stated first and the overlap named after it. A reader who adds the first
+    # line gets the right total; a reader who wants the reason reads the second.
+    total = len(report)
+    always_review = total - derived
+    both = len([n for n in quality if not report[n].get("always_review")])
     print(
-        f"\nclaim 1: {derived} thresholds derived, {declared} fields always-review by contract, "
-        f"{len(evidence)} evidence-limited, {len(quality)} quality-limited."
+        f"\nclaim 1: {total} fields — {derived} with a derived threshold, "
+        f"{always_review} always-review."
     )
+    empty = [
+        n
+        for n, e in report.items()
+        if (e.get("limit") or {}).get("kind") == "no_confident_population"
+    ]
+    print(
+        f"  of the {always_review} always-review: {declared} declared so by contract, "
+        f"{len(evidence)} evidence-limited, {len(quality) - both} quality-limited, "
+        f"{len(empty)} with no confident population to judge at all"
+        + (f" ({', '.join(sorted(empty))})" if empty else "")
+        + "."
+    )
+    if both:
+        print(
+            f"  {both} of the {derived} derived field(s) are quality-limited as well: the limit "
+            f"records what constrained the threshold, not whether the field publishes. That is "
+            f"why these counts overlap and are not added."
+        )
     print(
         "\nNo field publishes below its threshold, and a field with no threshold publishes "
         "nothing. That is the claim, and it holds — including in the direction nobody wants, "

@@ -95,7 +95,7 @@ figure here stops matching the figure that run produced.
 
 | | result |
 |---|---|
-| **claim 1** · thresholds are derived, never chosen | **5** derived, **1** always-review by contract, **4** evidence-limited, **30** quality-limited — the reason named per field |
+| **claim 1** · thresholds are derived, never chosen | **36** fields — **5** with a derived threshold, **31** always-review; of those, **1** by contract, **4** evidence-limited, **25** quality-limited, **1** with no confident population to judge at all |
 | **claim 2** · every published field traces to a page | honest records **94/120** verified; corrupted boxes **120/120**, **120/120**, **6/6** refused, each by the layer that should catch it |
 | **claim 3** · re-extraction is reproducible and versioned | **3,000/3,000** documents publish an identical version from the same input; **3,000/3,000** get a new version from a reader change |
 | **claim 4** · disagreement is surfaced, never smoothed | exactly **123** planted disagreements found, **0** false positives on the set that agrees |
@@ -103,12 +103,15 @@ figure here stops matching the figure that run produced.
 | **claim 6** · entity resolution is reversible | **21** surface forms → **13** entities, **0** mixing two parties; un-merge re-points **3/3** downstream records |
 | **claim 7** · bulk reprocessing is idempotent | first pass 3,000, immediate re-run **0**, resume **exactly** the 1,500 remaining; **0.59 USD** per 1,000 pages, *modelled* |
 
-Four more that are not claims but are the reason the claims mean anything: the corpus stays inside
-its **declared operating envelope**; a confidence of 0.9 transports to paper nobody here designed
-(**ECE 0.0592** against **0.0371**); untrusted document text is fenced with **0 false positives**
-across 2,963 documents; and the derived policy is scored against the alternatives —
-publishing everything is **19.11%** wrong, a hand-picked 0.85 is **4.56%**, derived is **0.41%**
-with **no declared budget missed**.
+Four more that are not claims but are the reason the claims mean anything. The corpus stays
+inside its **declared operating envelope**. A confidence of 0.9 transports to paper nobody here
+designed — and in the direction that is awkward to report: **ECE 0.0815** on the generated corpus
+against **0.0592** on 100 pages of real photographed documents, so the reader is *better*
+calibrated on paper it has never seen than on paper this repository drew. Untrusted document text
+is fenced with **0 false positives** across **2,969** documents of ordinary trade prose. And the
+derived policy is scored against the alternatives: publishing everything is **26.72%** wrong, a
+hand-picked 0.85 is **4.68%**, derived is **0.22%** — with **no declared budget missed**, at
+**19,626** items queued, and the queue cost printed beside the wrong-rate every time.
 
 ---
 
@@ -526,9 +529,11 @@ directory against what CI and the Makefile actually invoke, because three hand-m
 
 - **The corpus is generated, and every confidence in claims 1 and 2 comes from a real reader on
   generated paper.** The one exception is `evals/external`: 100 pages of genuinely photographed
-  documents nobody here designed, where ECE is **0.0592** against **0.0371** on the generated set.
-  That transport is the only answer to *"did you tune the generator until the claims passed?"*
-  that does not come from the generator's author.
+  documents nobody here designed, where ECE is **0.0592** against **0.0815** on the generated set
+  — the reader is *better* calibrated on paper it has never seen. That transport is the only
+  answer to *"did you tune the generator until the claims passed?"* that does not come from the
+  generator's author, and it is the answer that would have been worth suppressing if the numbers
+  had gone the other way.
 - **No accuracy figure exists for the escalated fraction, and cannot yet.** Tier 1 has been called
   (2,336 pages), tier 2 once, tier 3 on a handful of documents. Calls are not measurements.
 - **Tier 2 returns a per-word confidence that its published schema says it does not return.** The
@@ -630,7 +635,7 @@ exact about which fence carries the weight, because they are not the same one. T
 the prompt as text. `security/injection.py` is the fence for a text path this system does not yet
 have; its refusal reads the normalised form as well as the raw one, so a delimiter disguised by a
 zero-width character is refused rather than passed. `make injection` scores it at **0 false
-positives** across 2,963 documents of ordinary trade prose.
+positives** across 2,969 documents of ordinary trade prose.
 
 That module having no caller is declared in [`contracts/core/reachable.yaml`](contracts/core/reachable.yaml)
 with an expiry, and `check_the_map_matches_the_ground.py` walks `security/` to keep it declared —
