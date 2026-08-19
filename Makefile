@@ -206,6 +206,10 @@ gate-proof: ## Break every gate on purpose; each must be refused, for the right 
 
 # ── Infrastructure (offline validation only — no cloud calls) ────────────────
 
+.PHONY: stale-never
+stale-never: ## No file claims the system never did something it has done
+	$(PY) scripts/check_no_stale_never.py
+
 .PHONY: redact
 redact: ## Cover the AWS account id in every screenshot (--check in preflight)
 	$(PY) scripts/mask_account_id.py

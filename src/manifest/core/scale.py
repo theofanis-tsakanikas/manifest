@@ -17,8 +17,10 @@ not nothing, which is the silent one.
 **Cost is a model, and it is labelled a model everywhere it appears.** The routing distribution
 across cascade tiers is *measured* on the corpus; the unit prices are *published* figures, cited
 and dated where they are used. The product is an estimate, and the value of the escalated
-fraction is an **assumption** whose sensitivity is shown rather than hidden — because the upper
-tiers are never called and there is no accuracy figure for them (ADR-0004).
+fraction is an **assumption** whose sensitivity is shown rather than hidden — because no upper
+tier has ever been *scored*, which is a different sentence from the one that used to be here.
+All three have now been called; none has been measured against ground truth, so there is still
+no accuracy figure for them (ADR-0004), and that is the half the cost model depends on.
 """
 
 from __future__ import annotations

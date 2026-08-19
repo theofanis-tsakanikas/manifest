@@ -1,5 +1,22 @@
 # What is left, written 2026-08-14, with the estate torn down
 
+> **Superseded on 2026-08-19, and kept rather than edited.** This is a dated snapshot, in the same
+> spirit as `docs/DECISIONS.md`: how a thing looked before it was fixed is the useful half, and a
+> file rewritten in place destroys it. What is below was true on 14 August. Six of its statements
+> are no longer:
+>
+> | Then | Now |
+> |---|---|
+> | 32/32 end to end | **34/34** — `harvest` and `watch` gained checks 26 and 27 |
+> | `gold.declaration_line` is empty | **2 rows**, both `human_decided` — the mart joined on a version that could never carry the decision |
+> | Only 5 of **40** fields publish | 5 of **36**; the 40 was a count of declarations, not of fields |
+> | `gold.published_field` 196 | **106** on the run of 19 August |
+> | The teardown left SageMaker's lineage behind | **Fixed** — 116 associations cut, 33 entities removed, and the permission that made it possible was granted on a statement that could not match it |
+> | The reviewer-identity retention question is open | **Answered** under Art. 6(1)(f) in `docs/REGULATORY.md`; still not *implemented*, which is in the README's limits |
+>
+> For the current state, read the README's **What this does not do** and `CHANGELOG.md`. This file
+> is history.
+
 Not a backlog. What this repository **showed on a running estate**, and what it did not — the
 second half being the part that goes missing when somebody is pleased with the first.
 

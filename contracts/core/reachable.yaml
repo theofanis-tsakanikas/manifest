@@ -38,8 +38,35 @@ reaches_the_estate:
     question *"does that path go through `envelope()`?"* gets asked. Without it, the module goes
     on being cited by two documents and called by none.
 
+  artefact: >-
+    `scripts/train_classifier.py` imports it during the deploy — `deploy.yml`, *"fit and upload
+    the classification artefact"* — and writes the fitted pipeline into `model.tar.gz` in the
+    records bucket. The estate never fits a model at request time, so an import from a handler
+    would be the defect rather than the fix. Same shape as `calibration` above: a producer, a
+    named artefact, a consumer.
+
+  inference: >-
+    **Packaged as `code/inference.py` inside `model.tar.gz` and run by SageMaker's own serving
+    container.** No Python in this repository imports it and none should: it is the entry point
+    of a different process, in a different image, started by a service. The route is checkable —
+    `scripts/train_classifier.py` puts it there and `handlers/classify.py` calls the endpoint
+    that runs it — which is the standard this file sets, and it is why the entry is a route
+    rather than the words "it is used".
+
+  grounding: >-
+    **Nothing calls it, and the entry says so.** `evals/grounding` proves it and
+    `handlers/classify.py` does not reach it: the estate's classification path applies the
+    abstention band from `classification/hs.py`, and the grounding check — that a proposal must
+    point at the nomenclature text it came from — is scored offline and not yet enforced in the
+    running system.
+
+    That is claim 2's rule applied to text, and it is the same state `security/injection.py` is
+    in. Declared for the same reason: on the day the estate enforces grounding, this entry is
+    what has to change, and changing it is where somebody asks whether the path really goes
+    through `check()`.
+
 accepted_by: "Theofanis Tsakanikas"
-accepted_on: "2026-08-14"   # `injection` added 2026-08-19
+accepted_on: "2026-08-14"   # `injection` and the three `classification` entries added 2026-08-19
 expires_on: "2027-02-14"
 
 ends_when: >-

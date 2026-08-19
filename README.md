@@ -83,7 +83,7 @@ whether it had behaved.
 
 **The estate is destroyed.** The resting state of this repository is a state bucket, its key, five
 SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 502
-tests, 15 evaluation harnesses and 57 planted gate violations, on a laptop, in about ten minutes.
+tests, 15 evaluation harnesses and 57 planted gate violations, on a laptop, in twelve minutes.
 
 ---
 
@@ -121,7 +121,7 @@ hand-picked 0.85 is **4.68%**, derived is **0.22%** — with **no declared budge
 |---|---|
 | [The problem](#the-problem) · [Status](#status) | what breaks, and what actually ran |
 | [The seven claims](#the-seven-claims) | one command per row, and a check that re-reads it |
-| [Architecture](#architecture) | one diagram, four tiers, five layers |
+| [Architecture](#architecture) | one diagram: four tiers routed by language, and where a model may not decide |
 | [Thresholds are derived, not chosen](#thresholds-are-derived-not-chosen) | claim 1, and why 31 fields publish nothing |
 | [Every field is where the record says it is](#every-field-is-where-the-record-says-it-is) | claim 2, checked against the page |
 | [The human loop is real, and measured](#the-human-loop-is-real-and-measured) | claim 5, capacity and rubber stamps |
@@ -142,11 +142,15 @@ flowchart TB
     DOC["scan lands in S3<br/>the only trigger"]
   end
 
-  subgraph read["The cascade — read, then decide"]
-    T0["tier 0 · local OCR<br/>runs anywhere · costs nothing"]
-    T1["tier 1 · Textract<br/>per-word confidence"]
+  subgraph read["The cascade — the contract routes by language, not in a line"]
+    T0["tier 0 · local OCR<br/>every language it has data for · costs nothing"]
+    T1["tier 1 · Textract<br/>per-word confidence · six languages"]
     T2["tier 2 · Bedrock Data Automation<br/>reports a score · publishes on none"]
-    T3["tier 3 · Bedrock LLM<br/>Greek and Dutch · no confidence at all"]
+    T3["tier 3 · Bedrock LLM<br/>the only tier that reads Greek and Dutch<br/>no confidence at all"]
+  end
+
+  subgraph propose["Models propose"]
+    HS["SageMaker · HS classifier<br/>ranks candidates · may not break its own tie"]
   end
 
   subgraph decide["Deterministic code — owns every decision"]
@@ -161,20 +165,27 @@ flowchart TB
   end
 
   DOC --> T0
-  T0 -->|"a field abstained"| T1 --> T2 --> T3
+  T0 -->|"a field abstained<br/>and the language is eligible"| T1
+  T0 -->|"Greek, Dutch, Chinese, Arabic<br/>skip 1 and 2 entirely"| T3
+  T1 --> T2 --> T3
   T0 & T1 & T2 & T3 --> THR --> PROV --> REC
+  PROV --> HS
+  HS -->|"a clear winner"| PUB
+  HS -->|"contested · no winner"| Q
   PROV -->|"verified and above threshold"| PUB
   THR -->|"below, or no threshold exists"| Q
   Q -->|"a human decides"| PUB
   PUB --> LAKE[("Iceberg on S3 → Athena → Redshift marts")]
 ```
 
-Three things in that diagram carry the design. **Models only ever appear on the left**: they read
-characters and propose fields, and nothing in the middle column is a model. **The threshold does
-not come from the running system** — it is derived offline from a committed engine recording and
-shipped as an artefact, so a runner image upgrade cannot silently move a number. And **the queue
-is a first-class outcome**, not an error path: abstention is the safe state, and the volume it
-generates is measured against a declared capacity that the build will fail over.
+Four things in that diagram carry the design. **Models only ever propose** — they read characters
+and rank candidates, and nothing in the `decide` column is a model. **The cascade is not a line**:
+eligibility is declared per language in `contracts/cascade/routing.yaml`, so Greek, Dutch, Chinese
+and Arabic skip tiers 1 and 2 outright rather than being tried and failing there. **The threshold
+does not come from the running system** — it is derived offline from a committed engine recording
+and shipped as an artefact, so a runner image upgrade cannot silently move a number. And **the
+queue is a first-class outcome**, not an error path: abstention is the safe state, and the volume
+it generates is measured against a declared capacity that the build will fail over.
 
 ---
 
@@ -302,9 +313,6 @@ retrievable, and the reader identity carries the fact that a person was involved
   the old record.</sub>
 </p>
 
-The state machine is where that rule is enforced, and where the branch that used to be missing now
-sits.
-
 The state machine is where that rule is enforced. Below is the **same machine three times**,
 with a different execution lit up in each — the dimmed states are the ones that document did not
 enter. A document is not "correct" or "failed": it takes one of three routes, and which one is
@@ -333,9 +341,10 @@ the system's actual output.
   <img src="images/step_function_graph2.png" width="900" alt="A document the system refused, ending at ExtractionFailed"><br>
   <sub><b>Three · it was refused, deliberately</b> — <code>ExtractAndThreshold</code> carries the
   warning marker and the run ends red at <code>ExtractionFailed</code>. Nothing downstream ran.
-  Three of the thirty-four end-to-end checks are documents that <i>must</i> be refused, and the
-  property they assert is not that the execution failed — every execution reaches some terminal
-  state — but that <b>no record was published</b>. An earlier version asserted the former and
+  <b>Five</b> of the thirty-four end-to-end checks are documents that <i>must</i> be refused —
+  one stopped by the trigger's own pattern before any compute ran, four that start and must be
+  refused by name — and the property they assert is not that the execution failed, because every
+  execution reaches some terminal state, but that <b>no record was published</b>. An earlier version asserted the former and
   passed on documents that sailed through.</sub>
 </p>
 
@@ -437,7 +446,7 @@ Each of the seven claims has its own command, and so does every rule that suppor
 
 <p align="center">
   <img src="images/make_help.png" width="900" alt="make help listing every target"><br>
-  <sub><b>Thirty-six targets, every one an argument</b> — <code>core-pure</code>,
+  <sub><b>Every claim has a command beside it</b> — <code>core-pure</code>,
   <code>planting-blind</code>, <code>out-of-distribution</code>, <code>every-gate-runs</code>,
   <code>map-matches</code>. If a claim in this README has no command beside it, it is not a claim
   this repository makes.</sub>
@@ -447,7 +456,8 @@ Each of the seven claims has its own command, and so does every rule that suppor
 
 ## Quickstart
 
-Requires Python 3.12+ and `make`. No AWS account, no credentials, no network.
+Requires Python 3.12+ and `make`. Step 1 installs from PyPI; **everything after it runs with no
+AWS account, no credentials and no network.**
 
 ```bash
 # 1. Install into a local virtualenv
@@ -491,7 +501,7 @@ make preflight   # everything that must be true before the estate is stood up
 ```
 
 The figures this README quotes are the figures those commands print, and a check enforces it.
-`make preflight` runs **37 checks**, one of which re-reads this file: the test suite at
+`make preflight` runs **38 checks**, one of which re-reads this file: the test suite at
 **502 passing**, `gate-proof` at **57 refused, 0 accepted, 0 stale**, and checkov at
 **718 passed, 0 findings** across six Terraform layers. A scoreboard drifts by the ordinary act of
 adding a gate, silently, in the direction of looking more finished than it is — so the repository
@@ -515,7 +525,7 @@ directory against what CI and the Makefile actually invoke, because three hand-m
 | [`corpus/`](corpus/) | The generator, the committed ground truth, and [`envelope.yaml`](corpus/envelope.yaml) — the declared operating range a drifting generator fails against |
 | [`src/manifest/core/`](src/manifest/core/) | **Pure.** Every decision the system makes, as functions over plain data. No boto3, no engine, no engine names — enforced by `make core-pure` |
 | [`src/manifest/extraction/`](src/manifest/extraction/) | Engine adapters producing one normalised representation. `local/` runs; `aws/` is schema-tested |
-| [`src/manifest/handlers/`](src/manifest/handlers/) | The 14 functions that run in the estate. They may import boto3, they call `core`, and they decide nothing |
+| [`src/manifest/handlers/`](src/manifest/handlers/) | Fourteen modules — **13 of them Lambda functions** in the estate, plus `emit.py`, the adapter three of them import to ship a span. They may import boto3, they call `core`, and they decide nothing |
 | [`src/manifest/gates/`](src/manifest/gates/) | One module per claim |
 | [`evals/`](evals/) | The 15 claim harnesses — labelled, credential-free |
 | [`recordings/`](recordings/) | Golden engine output. Every threshold derives from here, never from a live run |
@@ -561,6 +571,11 @@ directory against what CI and the Makefile actually invoke, because three hand-m
   checkov scans Terraform to zero findings; no check reads the ECR image scan. Both base images
   are now pinned to a digest and both are built by CI, so the input is fixed and the build is
   checked — but the advisories against those pinned bases are still nobody's gate.
+- **`classification/grounding.py` has no caller in the running system either.** A proposal
+  pointing at the nomenclature text it came from is claim 2's rule applied to text; it is scored
+  by `evals/grounding` and the estate does not yet enforce it. Declared alongside the rest in
+  `contracts/core/reachable.yaml`, and found by widening the reachability check to a third
+  package rather than by the check itself.
 - **`security/injection.py` has no caller in the running system.** The fence that carries the
   weight today is structural and elsewhere: `handlers/escalate.py` sends the page as an image, so
   document text never enters a prompt as text. The module is the fence for a text path that does
@@ -623,7 +638,9 @@ not apply"*, and why that is the interesting part ·
 [DECISIONS](docs/DECISIONS.md) — the running ledger ·
 [AWS-CONSTRAINTS](docs/AWS-CONSTRAINTS.md) — what the managed services do and do not support, with
 citations · [DAY-ONE](docs/DAY-ONE.md) — standing the estate up and taking it down ·
-[PORTFOLIO-CONTEXT](docs/PORTFOLIO-CONTEXT.md) · [CHANGELOG](CHANGELOG.md)
+[PORTFOLIO-CONTEXT](docs/PORTFOLIO-CONTEXT.md) ·
+[NEXT](docs/NEXT.md) — a dated snapshot of 14 August, kept rather than edited, with a table at the
+top naming the six statements in it that are no longer true · [CHANGELOG](CHANGELOG.md)
 
 Engineering rules are in [`CLAUDE.md`](CLAUDE.md).
 

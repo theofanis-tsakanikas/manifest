@@ -1,7 +1,11 @@
 """Mapping a managed OCR response into the normalised representation.
 
-Written against the documented response schema (`docs/AWS-CONSTRAINTS.md`, verified 2026-08-09)
-and **never called**. Its fixtures are authored from that schema.
+Written against the documented response schema (`docs/AWS-CONSTRAINTS.md`, verified 2026-08-09).
+**Called for the first time on 2026-08-15** — 2,336 eligible pages, 127,142 words, normalised and
+committed to `recordings/textract/` — and the documented shape held. Its fixtures stay authored
+from that schema rather than captured, for the reason in
+`tests/extraction/fixtures/AUTHORED.md`: the recording proves what the service returns, and the
+fixture proves the documentation was read correctly. They are different claims.
 
 Three things the documentation decides, each of which would otherwise be a guess:
 

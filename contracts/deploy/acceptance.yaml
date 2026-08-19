@@ -20,15 +20,27 @@ acceptance:
   accepted_on: "2026-08-10"
   expires_on: "2026-11-10"
 
+  # **Rewritten 2026-08-19: the reason had outlived its own tense.** This was accepted on
+  # 2026-08-10 with "the first deploy has never been run" as its argument. It has now been run
+  # many times — and the prediction it rested on was correct rather than wrong, which is why the
+  # acceptance stands rather than lapses. Recorded here rather than edited into the past tense
+  # silently: an acceptance whose stated reason no longer describes the world is an acceptance
+  # nobody can evaluate.
   why: >-
-    The first deploy of this estate has never been run, and the deploy role has never been
-    exercised. `scripts/check_deploy_path.py` can prove that a grant exists for every service the
-    layers declare; it cannot prove any of them is sufficient, and only a real apply will say.
-    That first apply is expected to fail on a missing permission, be corrected, and be run again
-    — several times. An approval prompt on each iteration is a person clicking a button to
-    approve a run whose purpose is to discover what is broken, which is the shape of an approval
-    that teaches somebody to approve without reading. Doctrine rule 2, applied to this repository
+    `scripts/check_deploy_path.py` can prove that a grant exists for every service the layers
+    declare; it cannot prove any of them is sufficient, and only a real apply says so. That
+    prediction has been tested: the estate has been deployed and torn down repeatedly since
+    2026-08-10, and the failures were exactly the predicted kind — an IAM verb granted on a
+    statement whose resources could not match it, an immutable image tag, a permission the
+    teardown needed and did not hold. Each was found by an apply, corrected, and re-run.
+
+    An approval prompt on each of those iterations is a person clicking a button to approve a
+    run whose purpose is to discover what is broken, which is the shape of an approval that
+    teaches somebody to approve without reading. Doctrine rule 2, applied to this repository
     rather than to its reviewers.
+
+    What would end it: the estate applying cleanly from a cold start with no correction needed,
+    at which point the iteration this excuses no longer happens and the prompt costs nothing.
 
   # What is deliberately NOT given up. Removing a reviewer is not removing the gate; the gate
   # has four parts and this takes one of them.

@@ -50,13 +50,22 @@ acceptances:
 
     response: >-
       ADR-0001's second permitted response: escalate more. The cascade's upper tiers are the
-      designed answer and no page has yet been sent to one, so their effect is an assumption and
-      is labelled one. Two facts verified since this was written sharpen it rather than soften
-      it: neither upper tier reports a confidence, so escalating past the per-page OCR tier
-      *adds* to this queue rather than reducing it. The acceptance therefore understates the
-      pressure rather than overstating it, which is the safe direction for it to be wrong. What is NOT being done is ADR-0001's forbidden move —
-      raising a confidence threshold to reduce queue volume without changing the error budget,
-      which inverts the derivation and turns a derived number into a chosen one.
+      designed answer, and pages have now been sent to all three — Textract 2,336 on 2026-08-15,
+      Bedrock Data Automation on 2026-08-13, the multilingual model on 2026-08-15. **None has
+      been scored**, so their effect on this queue is still an assumption and is still labelled
+      one; what changed is the reason, from "nothing has been called" to "nothing has been
+      measured", which is a narrower and more awkward statement.
+
+      Two facts verified since this was written sharpen the acceptance rather than soften it.
+      Neither tier 2 nor tier 3 publishes on a self-reported score, so escalating past the
+      per-page OCR tier *adds* to this queue rather than reducing it. And tier 1, which does
+      publish on its own score, derived a usable threshold for only 3 of its 35 fields. The
+      acceptance therefore understates the pressure rather than overstating it, which is the safe
+      direction for it to be wrong.
+
+      What is NOT being done is ADR-0001's forbidden move — raising a confidence threshold to
+      reduce queue volume without changing the error budget, which inverts the derivation and
+      turns a derived number into a chosen one.
 
     # What this acceptance does not do, stated so it cannot drift into doing it:
     #   - it does not change a single error budget

@@ -1,8 +1,18 @@
 # The two controls that decide whether this estate can quietly cost money.
 #
-# Both are written, both validate, **neither has ever fired, because nothing has been applied**.
-# They are design constraints for the day somebody does apply this — not budget management for
-# a running system, and nothing in this repository is entitled to describe them as tested.
+# **One of them has now fired, and the other has not.** This header used to say that neither had
+# ever fired and give the estate's unapplied state as the reason. That reason lapsed on
+# 2026-08-10, and the claim itself was wrong about the more interesting half five days later.
+#
+# The budget action **fired on 2026-08-15**: it attached its deny policy to the deploy role and
+# the estate stopped being deployable. The brake worked exactly as written. What was wrong was
+# what it measured — the whole account rather than this project, so a sibling project's spend
+# tripped it. That is a different defect with a different fix, recorded with a dated acceptance
+# in `contracts/deploy/budget.yaml`, and it does not make the guard untested. It makes it the
+# only control here that has been.
+#
+# The reaper has still never fired, and the reason is below: nothing has yet passed its
+# `manifest:expires-at`, because every estate so far was destroyed by hand the same day.
 
 # ── The budget guard is NOT here ─────────────────────────────────────────────
 #

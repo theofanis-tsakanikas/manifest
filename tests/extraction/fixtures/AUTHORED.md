@@ -1,7 +1,15 @@
 # These fixtures are **authored**, not captured
 
 Every JSON file in this directory was written by hand from the *documented* response schema.
-**No call has been made to any AWS service from this repository, and no response has ever been captured.**
+**These fixtures remain authored; that is now a deliberate choice rather than a description of
+what this repository has done.** Calls have been made — Textract read 2,336 pages on 2026-08-15
+and the normalised result is committed to `recordings/textract/`, Bedrock Data Automation
+answered on 2026-08-13, and the multilingual model was called on 2026-08-15. What has *not*
+happened is a raw service response being captured into this directory to replace one of these,
+and the reason is that the two artefacts do different jobs: a recording carries real confidences
+for threshold derivation, while a fixture tests the adapter against the shape the documentation
+declares. Replacing the second with the first would delete the only check that the documentation
+was read correctly.
 Each fixture names its source document and the date that document was read, in its
 own `_note`, because "the documentation" is a moving target and a fixture that does not say
 which version it was authored from cannot be checked against a later one.
@@ -27,5 +35,7 @@ What these therefore prove: that the mapping handles the documented shape, inclu
 this system does not use, and that it refuses a response that does not match rather than
 quietly producing a short reading.
 
-What they cannot prove: that the service returns this shape. Only a call could show that, and
-no call is made.
+What they cannot prove: that the service returns this shape. Only a call shows that — and one
+has been made: `recordings/textract/manifest.json` is what the service actually returned over
+2,336 pages, normalised. When those two disagree, the fixture is the thing that was wrong about
+the documentation, and both facts are worth having separately.

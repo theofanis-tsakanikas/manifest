@@ -182,6 +182,16 @@ CHECKS: list[Check] = [
     ),
     Check(
         "deployability",
+        "no stale never",
+        [PYTHON, "scripts/check_no_stale_never.py"],
+        "Nine files claimed nothing had ever been applied after five applies, and a second wave "
+        "claimed the managed readers were never called after all three had been. Both were found "
+        "by reading, a week apart, and the second used different wording from the first — which "
+        "is why grepping for last week's phrasing found nothing. An underclaim reads as modesty "
+        "and is exactly as false as the overclaim this repository spends its life removing.",
+    ),
+    Check(
+        "deployability",
         "screenshots redacted",
         [PYTHON, "scripts/mask_account_id.py", "--check"],
         "Every AWS console page prints the account id in its corner, and every terminal capture "

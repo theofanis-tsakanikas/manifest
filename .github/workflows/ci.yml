@@ -131,6 +131,12 @@ jobs:
         # against a system that had no path to any of them.
         run: python scripts/check_the_map_matches_the_ground.py
 
+      - name: no file claims the system never did something it has done
+        # An underclaim is as false as an overclaim and reads as modesty, so nobody re-reads it.
+        # Nine files said "nothing has ever been applied" after five applies; a second wave said
+        # "never called" after all three managed readers had been.
+        run: python scripts/check_no_stale_never.py
+
       - name: every claim harness on disk is run by this workflow
         # The check that would have caught the largest gap this project has had. Three
         # hand-maintained lists of what proves this repository — `make claims`, the job below,

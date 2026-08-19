@@ -114,6 +114,20 @@ def test_every_fixture_in_this_directory_declares_how_it_was_obtained() -> None:
             f"Documentation moves; a fixture with no date cannot be checked against a later "
             f"version of the schema it claims to follow"
         )
-    assert "no response has ever been captured" in (
-        (FIXTURES / "AUTHORED.md").read_text(encoding="utf-8").lower()
+    # **This asserted "no response has ever been captured" until 2026-08-19, and by then one
+    # had been** — Textract read 2,336 pages on 2026-08-15 into `recordings/textract/`. A test
+    # that enforces a sentence about what the repository has never done becomes, the moment the
+    # repository does it, a gate defending a false statement.
+    #
+    # What the fixtures are for has not changed, so that is what is asserted now: they are
+    # authored, and the file says so in the words `remain authored`.
+    note = (FIXTURES / "AUTHORED.md").read_text(encoding="utf-8").lower()
+    assert "remain authored" in note, (
+        "AUTHORED.md must state that these fixtures are authored rather than captured. It may "
+        "not state that no response has ever been captured — one has, and the recording is "
+        "committed"
+    )
+    assert "no response has ever been captured" not in note, (
+        "AUTHORED.md still claims nothing was ever captured. `recordings/textract/` is 2,336 "
+        "pages of real Textract output"
     )

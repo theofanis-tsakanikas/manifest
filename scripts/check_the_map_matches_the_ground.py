@@ -152,6 +152,29 @@ def _accepted() -> dict[str, str]:
     return dict(loaded.get("reaches_the_estate") or {})
 
 
+def _unindexed_docs() -> list[str]:
+    """Every file under `docs/` is named by the README's Docs index.
+
+    **`docs/NEXT.md` sat unindexed for five days and went stale while it sat.** The README
+    standard's rule is that an undiscoverable doc does not exist; the sharper version, learned
+    here, is that an undiscoverable doc is not *maintained* either — nobody re-reads what nothing
+    links to, so it keeps asserting 32/32 against a suite that reports 34/34.
+
+    ADRs are exempt: the Decisions section links the directory and inlines the table, and a new
+    ADR is meant to arrive without editing the Docs line.
+    """
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    problems = []
+    for path in sorted((ROOT / "docs").glob("*.md")):
+        if f"docs/{path.name}" not in readme:
+            problems.append(
+                f"`docs/{path.name}` exists and the README's Docs index does not name it. An "
+                f"undiscoverable document is one nobody re-reads, which is how it goes on being "
+                f"true about a system that has moved"
+            )
+    return problems
+
+
 def main() -> int:
     problems: list[str] = []
 
@@ -168,6 +191,8 @@ def main() -> int:
             f"package nobody documented is a package nobody reviews"
         )
 
+    problems += _unindexed_docs()
+
     reachable, accepted = _reachable(), _accepted()
 
     # **`security/` is walked for the same reason `core/` is, and it was not.**
@@ -181,7 +206,13 @@ def main() -> int:
     # It is not a hole today. It is a control whose absence of a caller nothing was checking,
     # which is how it stays absent when the text path finally arrives.
     orphans = []
-    for package in ("core", "security"):
+    # **`classification/` was the third package with this shape and nothing looked at it.**
+    # Walking `core/` and `security/` left `artefact`, `inference` and `grounding` unexamined:
+    # two reached by routes an import graph cannot see — one packaged into `model.tar.gz` and run
+    # by the serving container, one imported by the training script the deploy runs — and one,
+    # `grounding`, with no caller in the running system at all. Found by an audit rather than by
+    # this check, which is the argument for widening it rather than for trusting it further.
+    for package in ("core", "security", "classification"):
         for module in sorted(PACKAGE.glob(f"{package}/*.py")):
             if module.name == "__init__.py":
                 continue
@@ -213,7 +244,8 @@ def main() -> int:
 
     print(
         f"  {GREEN}ok{RESET}    {len(real)} package(s) documented and present, and every module "
-        f"in core/ and security/ is reachable from something that runs, or declared"
+        f"in core/, security/ and classification/ is reachable from something that runs, "
+        f"or declared"
     )
     return 0
 
