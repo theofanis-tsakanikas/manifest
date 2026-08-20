@@ -378,6 +378,24 @@ Conventional Commits: `<type>(<scope>): <description>`
 Types: `feat | fix | infra | docs | refactor | test | chore`
 Scopes: `contracts | core | extraction | cascade | classification | entities | review | versioning | gates | infra | ci | evals | corpus`
 
+**`main` is protected, and a direct push to it is refused.** Work on a branch, push once, open a
+PR, and merge when all **eight** CI checks are green. There are no required reviewers — the same
+reason `contracts/deploy/acceptance.yaml` gives — so the gate is the checks and nothing else.
+
+*Why this exists, in one sentence:* on 2026-08-19 a red commit landed on `main` by direct push and
+sat there for nineteen hours, and two more commits were pushed on top of it before anybody read the
+badge. Nothing in the workflow made anyone look, so the workflow is what changed.
+
+`enforce_admins` is **on**, which means it refuses the author too. That is deliberate: turning the
+protection off for one push is a visible, deliberate act, while leaving a standing bypass on is an
+exception nobody re-reads — the exact shape doctrine rule 6 exists to remove. If a real emergency
+needs it, switch it off, do the thing, and switch it back.
+
+**Commit freely on the branch; the wait is per PR, not per commit.** This repository averaged
+seventeen commits a day over the fortnight to 2026-08-20 and peaked at fifty-one, and one CI cycle
+is about thirty-five minutes because the corpus job regenerates three thousand documents. Those
+numbers only reconcile one way: a branch carries a day's commits and is opened as one PR.
+
 ---
 
 ## Before any change — checklist
