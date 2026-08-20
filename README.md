@@ -19,7 +19,7 @@
   <img src="https://img.shields.io/badge/AWS-Redshift-8C4FFF?logo=amazonredshift&logoColor=white" alt="Redshift">
   <img src="https://img.shields.io/badge/OCR-Tesseract-4A9?logo=tesseract&logoColor=white" alt="Tesseract">
   <br>
-  <img src="https://img.shields.io/badge/tests-520%20passing-2ea44f" alt="520 tests passing">
+  <img src="https://img.shields.io/badge/tests-527%20passing-2ea44f" alt="527 tests passing">
   <img src="https://img.shields.io/badge/gate--proof-61%20planted%20%C2%B7%2061%20refused-2ea44f" alt="gate-proof 61 refused">
   <img src="https://img.shields.io/badge/live-34%2F34%20against%20the%20estate-2ea44f" alt="34/34 live checks">
   <img src="https://img.shields.io/badge/thresholds-5%20derived%20%C2%B7%2031%20always--review-2ea44f" alt="5 derived, 31 always-review">
@@ -82,7 +82,7 @@ whether it had behaved.
 </p>
 
 **The estate is destroyed.** The resting state of this repository is a state bucket, its key, five
-SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 520
+SSM parameters and a deploy role. Everything below also runs with **no AWS account at all**: 527
 tests, 15 evaluation harnesses and 61 planted gate violations, on a laptop, in twelve minutes.
 
 ---
@@ -488,7 +488,7 @@ The corpus is not committed — 3,255 rendered pages regenerate byte-identically
 
 ## Testing
 
-**520 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
+**527 tests** — offline, credential-free, and requiring no engine binary. They cover the pure core
 (threshold derivation, reconciliation, entity resolution, versioning, drift, feedback), the
 contract loader, the engine adapters against documented response schemas, the handlers, and every
 gate.
@@ -506,7 +506,7 @@ make preflight   # everything that must be true before the estate is stood up
 
 The figures this README quotes are the figures those commands print, and a check enforces it.
 `make preflight` runs **40 checks**, one of which re-reads this file: the test suite at
-**520 passing**, `gate-proof` at **61 refused, 0 accepted, 0 stale**, and checkov at
+**527 passing**, `gate-proof` at **61 refused, 0 accepted, 0 stale**, and checkov at
 **718 passed, 0 findings** across six Terraform layers. A scoreboard drifts by the ordinary act of
 adding a gate, silently, in the direction of looking more finished than it is — so the repository
 whose first claim is that every number is reproducible is the one that has to check.
