@@ -1,0 +1,54 @@
+# Paths this repository's prose names, and deliberately does not contain.
+#
+# `scripts/check_the_map_matches_the_ground.py` asserts that every repository path a document
+# points a reader at is really here. It used to ask the filesystem, and the filesystem is not the
+# repository: a git-ignored artefact sitting on the author's laptop made the check green there
+# and red in CI, on the same commit. It now asks `git ls-files`, which answers the same
+# everywhere — and that turns two correct sentences into findings, because the paths they name
+# are genuinely not in this repository.
+#
+# They are not dead pointers. They are produced. So the route is declared here, and the rule is
+# the one `contracts/core/reachable.yaml` sets: **the entry must name what produces the path**,
+# so somebody can go and check. "It is generated" is not a producer.
+#
+# The check also refuses an entry nothing points at any more, and an entry for a path git has
+# since started tracking. An excuse that outlives its reason is how the next real finding gets
+# excused with it.
+#
+# Doctrine rule 6: exceptions expire. `scripts/check_acceptances_expire.py` walks every
+# `contracts/**/*.yaml` and reads the dates below, so this cannot become permanent by being
+# forgotten.
+version: 1
+
+produced_not_committed:
+  corpus/rendered: >-
+    Produced by `make corpus` from the committed seed, and git-ignored by design: it is roughly
+    three thousand rasterised documents that regenerate byte-identically from
+    `corpus/generator/`, and the CI job *"the generator reproduces the committed ground truth"*
+    is the check that they do. Committing the rasters would put hundreds of megabytes in git to
+    prove a property a deterministic generator already proves on every push.
+
+    The consumer is `make ocr-record`, which reads these pages and writes `recordings/ocr/` —
+    and *that* is committed, because it is the unit of evidence every threshold derives from.
+
+  infra/bootstrap/terraform.tfvars: >-
+    Written by hand by the author before the one local apply `infra/bootstrap` permits, and
+    git-ignored because it carries the escalation model's ARN for the account this estate is
+    applied into. `docs/DECISIONS.md` names it in the sentence that explains why it is absent —
+    *"which `.gitignore` refuses"* — so the prose and this declaration say the same thing, and
+    the check now enforces that they keep saying it.
+
+    The consumer is `infra/bootstrap/variables.tf`, which declares `escalation_model_arn` with
+    no default, so a missing value fails the apply rather than defaulting to something plausible.
+
+accepted_by: "Theofanis Tsakanikas"
+accepted_on: "2026-08-20"
+expires_on: "2027-02-20"
+
+ends_when: >-
+  For `corpus/rendered`: never, unless the generator stops being deterministic — in which case
+  the corpus job is the thing that has broken and this entry is the smaller problem.
+
+  For `infra/bootstrap/terraform.tfvars`: the escalation model ARN moves into SSM alongside the
+  other five parameters, at which point the file has no reason to exist and neither has this
+  entry.

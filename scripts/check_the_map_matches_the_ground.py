@@ -34,6 +34,7 @@ from __future__ import annotations
 import ast
 import collections
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,6 +44,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GUIDE = ROOT / "CLAUDE.md"
 PACKAGE = ROOT / "src" / "manifest"
 ACCEPTANCE = ROOT / "contracts" / "core" / "reachable.yaml"
+GENERATED = ROOT / "contracts" / "ci" / "generated_paths.yaml"
 
 GREEN, RED, DIM, RESET = "\033[32m", "\033[31m", "\033[2m", "\033[0m"
 
@@ -196,8 +198,64 @@ NAMED_ROOTS = (
 PROSE = ("README.md", "CLAUDE.md", "SECURITY.md", "PLAN.md")
 
 
+def _tracked() -> set[str]:
+    """Every path this repository contains, according to git rather than to this machine.
+
+    **The disk is not the repository, and reading it made this check answer differently on
+    different computers.** `_paths_that_go_nowhere` used `Path.exists()`. On the author's laptop
+    `corpus/rendered/` and `infra/bootstrap/terraform.tfvars` are sitting there — both
+    git-ignored, both produced locally — so the check was green. In CI, which clones, they are
+    absent and the check was red. Same commit, two answers, and the one from the machine that
+    could not be inspected was the one anybody would have trusted.
+
+    A gate whose result depends on where it runs is not a gate. `git ls-files` is the same set
+    everywhere, so this is now a statement about the repository rather than about a filesystem.
+    """
+    #: S603/S607: a fixed argv with no interpolated input, and `git` off PATH is how every
+    #: other tool in this repository is invoked. Pinning an absolute path here would break the
+    #: container, the runner and the laptop, each of which keeps git somewhere different.
+    result = subprocess.run(  # noqa: S603
+        ["git", "-C", str(ROOT), "ls-files"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        #: **`gate_proof.py` copies this repository without `.git`**, so inside a mutation there
+        #: is no index to read. Falling back to the disk there is sound rather than a hole: the
+        #: copy is made with `.venv`, `__pycache__`, the caches, `out/` and `rendered/` excluded,
+        #: so the git-ignored clutter that made the disk lie is not in it either.
+        #:
+        #: It is still an approximation, so it does not get to be the thing this gate is proved
+        #: by. `tests/scripts/test_the_map_reads_the_repository_not_the_disk.py` builds a real
+        #: repository with a real ignored file and asserts the branch above — the one CI runs.
+        return {str(path.relative_to(ROOT)) for path in ROOT.rglob("*") if ".git" not in path.parts}
+    listed = result.stdout.splitlines()
+    paths = set(listed)
+    #: A path in prose usually names a directory — `evals/calibration/` — and git tracks files,
+    #: not directories. Every parent of every tracked file is therefore a directory this
+    #: repository contains.
+    for name in listed:
+        for parent in Path(name).parents:
+            if str(parent) != ".":
+                paths.add(str(parent))
+    return paths
+
+
+def _generated() -> dict[str, str]:
+    """Paths the prose names that this repository deliberately does not contain.
+
+    Same standard as `contracts/core/reachable.yaml`: the entry must name what *produces* the
+    path, so a reader can go and check. "It is generated" is not a producer.
+    """
+    if not GENERATED.exists():
+        return {}
+    loaded = yaml.safe_load(GENERATED.read_text(encoding="utf-8")) or {}
+    return dict(loaded.get("produced_not_committed") or {})
+
+
 def _paths_that_go_nowhere() -> list[str]:
-    """Every repository path the prose names, against the disk.
+    """Every repository path the prose names, against what git tracks.
 
     **The map check compared CLAUDE.md's tree to `src/manifest/` and stopped there**, so it saw
     the packages and none of the several hundred other paths the documents point a reader at. An
@@ -209,6 +267,8 @@ def _paths_that_go_nowhere() -> list[str]:
     A dead path is cheap to write and reads as evidence. This makes it cost something.
     """
     problems: list[str] = []
+    tracked, generated = _tracked(), _generated()
+    seen_generated: set[str] = set()
     #: A markdown link writes the path twice — once in the label, once in the target — so one
     #: dead link is two matches. Reported once: a reader fixing it has one thing to fix.
     already: set[tuple[str, int, str]] = set()
@@ -222,17 +282,39 @@ def _paths_that_go_nowhere() -> list[str]:
         for number, line in enumerate(document.read_text(encoding="utf-8").splitlines(), 1):
             for match in pattern.finditer(line):
                 named = match.group(1)
-                if (ROOT / named.rstrip("/")).exists():
+                bare = named.rstrip("/")
+                if bare in tracked:
+                    continue
+                if bare in generated:
+                    seen_generated.add(bare)
                     continue
                 signature = (str(document), number, named)
                 if signature in already:
                     continue
                 already.add(signature)
                 problems.append(
-                    f"{document.relative_to(ROOT)}:{number} points at `{named}` and there is "
-                    f"nothing there. Either it moved and the prose did not, or it was never "
-                    f"written and the sentence describes a repository this is not"
+                    f"{document.relative_to(ROOT)}:{number} points at `{named}` and this "
+                    f"repository does not contain it. Either it moved and the prose did not, or "
+                    f"it was never written and the sentence describes a repository this is not. "
+                    f"If it is produced rather than committed, name what produces it in "
+                    f"{GENERATED.relative_to(ROOT)}"
                 )
+
+    #: A declaration that stopped being needed is the same defect wearing the opposite sign: it
+    #: excuses a path nothing points at any more, and the next dead pointer at that path is
+    #: excused with it.
+    for bare in sorted(set(generated) - seen_generated):
+        problems.append(
+            f"{GENERATED.relative_to(ROOT)} declares `{bare}` as produced rather than "
+            f"committed, and no prose in this repository names it any more. Remove the entry: an "
+            f"excuse nothing needs is an excuse nobody re-reads"
+        )
+    for bare in sorted(set(generated) & tracked):
+        problems.append(
+            f"{GENERATED.relative_to(ROOT)} declares `{bare}` as produced rather than "
+            f"committed, and git tracks it. The declaration is stale and now hides real findings "
+            f"about a path that is really here"
+        )
     return problems
 
 

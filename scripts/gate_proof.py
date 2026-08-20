@@ -1727,7 +1727,7 @@ MUTATIONS: tuple[Mutation, ...] = (
         "point the prose at a file that is not there",
         "the map matches the ground",
         [sys.executable, "scripts/check_the_map_matches_the_ground.py"],
-        "and there is nothing there",
+        "does not contain it",
         _point_the_prose_at_a_file_that_is_not_there,
         "How a declared gate goes unwritten for ten days: ADR-0003 named one, the heading said "
         "it was enforced rather than intended, and the sentence was the reason nobody looked.",
