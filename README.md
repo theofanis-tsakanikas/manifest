@@ -1,6 +1,6 @@
 <p align="center">
   <img src="images/banner.png" width="100%"
-       alt="A scanned commercial invoice with five fields outlined by the system — one in teal marked published, four in carmine marked review — and a customs stamp reading MADE EVIDENT. Caption: Manifest, 5 published, 31 sent to a human.">
+       alt="Manifest — a commercial invoice with its 36 fields outlined, five in teal and thirty-one in carmine, above a four-tier reader cascade: tier 0 local OCR, tier 1 Textract, tier 2 Bedrock Data Automation, and tier 3 a Bedrock LLM marked NO CONFIDENCE REPORTED, reached only by Greek, Dutch, Chinese and Arabic — routed, not tried. Every tier feeds one derived threshold, taken from a committed recording rather than from the running system, which splits into a versioned published record and a review queue with a declared capacity. Caption: no field published on a threshold nobody could derive — 5 derived, 31 always-review, 61 gates planted, 61 refused.">
 </p>
 
 # Manifest
