@@ -16,9 +16,12 @@ acceptance:
     The `deploy` and `destroy` GitHub environments carry no required-reviewer protection rule.
     A dispatch proceeds without a second human approving it.
 
+  # **Renewed 2026-10-25, condition unmet.** First accepted 2026-08-10, lapsed or lapsing on 2026-11-10.
+  # Nothing has landed on `main` since 2026-08-20 and the estate has not been brought up since,
+  # so `ends_when` below is exactly as far away as it was; the date moves, the condition does not.
   accepted_by: "Theofanis Tsakanikas"
-  accepted_on: "2026-08-10"
-  expires_on: "2026-11-10"
+  accepted_on: "2026-10-25"
+  expires_on: "2027-01-25"
 
   # **Rewritten 2026-08-19: the reason had outlived its own tense.** This was accepted on
   # 2026-08-10 with "the first deploy has never been run" as its argument. It has now been run

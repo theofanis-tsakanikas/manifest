@@ -16,9 +16,12 @@ acceptance:
     document corpus inside the reader image and compares it against the committed ground truth
     does not run as part of the deploy gate. Every push to `main` still runs it, unchanged.
 
+  # **Renewed 2026-10-25, condition unmet.** First accepted 2026-08-12, lapsed or lapsing on 2026-09-12.
+  # Nothing has landed on `main` since 2026-08-20 and the estate has not been brought up since,
+  # so `ends_when` below is exactly as far away as it was; the date moves, the condition does not.
   accepted_by: "Theofanis Tsakanikas"
-  accepted_on: "2026-08-12"
-  expires_on: "2026-09-12"
+  accepted_on: "2026-10-25"
+  expires_on: "2027-01-25"
 
   why: >-
     Measured on run 31591747023: the gate takes 36 minutes and the corpus job is 24 of them. The
