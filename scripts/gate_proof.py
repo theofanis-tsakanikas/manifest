@@ -1041,7 +1041,7 @@ def _let_the_acceptance_outlive_its_expiry(root: Path) -> bool:
     """
     return _replace(
         root / "contracts/deploy/acceptance.yaml",
-        'expires_on: "2026-11-10"',
+        'expires_on: "2027-01-25"',
         'expires_on: "2020-01-01"',
     )
 
